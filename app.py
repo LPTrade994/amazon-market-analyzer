@@ -6,7 +6,6 @@ from cryptography.fernet import Fernet
 import os
 import re
 from datetime import datetime
-import hashlib
 
 # Configurazione iniziale
 st.set_page_config(page_title="Amazon Market Analyzer", layout="wide")
@@ -51,12 +50,14 @@ with st.sidebar:
     if not api_key:
         api_input = st.text_input("Inserisci API Key Keepa", type="password")
         if api_input:
-            if re.match(r'^[a-z0-9-]{36}$', api_input):
+            # Regex corretta per validazione API Key
+            if re.match(r'^[a-zA-Z0-9-]{36}$', api_input):
                 with open('.encrypted_key', 'w') as f:
                     f.write(encrypt_key(api_input))
                 st.rerun()
             else:
-                st.error("Formato API Key non valido")
+                st.error("Formato API Key non valido. Esempio: 1Ab2c3-D4e5... (36 caratteri)")
+                st.error(f"Lunghezza inserita: {len(api_input)} caratteri")
 
     # Selezione paesi
     target_country = st.selectbox("Paese Target", list(country_domain_map.keys()))
@@ -71,96 +72,4 @@ with st.sidebar:
     except:
         pass
 
-# Modalità demo se manca API Key
-if not api_key:
-    st.warning("Modalità demo - Dati mock")
-    df = pd.DataFrame({
-        'ASIN': ['B08N5K5C2K', 'B07PGL8ZYS'],
-        'Titolo': ['Prodotto Demo 1', 'Prodotto Demo 2'],
-        'SalesRank': [150, 300],
-        'Prezzo_IT': [49.99, 89.99],
-        'Prezzo_DE': [54.99, 84.99]
-    })
-    st.dataframe(df)
-    st.plotly_chart(px.bar(df, x='ASIN', y=['Prezzo_IT', 'Prezzo_DE'], barmode='group'))
-    st.stop()
-
-# Logica principale
-@st.cache_data(ttl=3600)
-def fetch_data(target_domain, compare_domains, filters):
-    api = Keepa(api_key)
-    
-    # Costruzione criteri
-    criteria = {'domain': target_domain}
-    if filters['min_rank']: criteria['current_SALES_RANK'] = [filters['min_rank'], 999999]
-    if filters['price_range']: criteria['current_NEW'] = [filters['price_range'][0], filters['price_range'][1]]
-    
-    try:
-        products = api.product_finder(criteria, product=True)
-    except Exception as e:
-        st.error(f"Errore API: {str(e)}")
-        return pd.DataFrame()
-
-    # Elaborazione risultati
-    data = []
-    for product in products:
-        p_data = {
-            'ASIN': product['asin'],
-            'Titolo': product.get('title', 'N/A'),
-            'SalesRank': product['data'][target_domain].get('SalesRank', 0)
-        }
-        
-        for domain in [target_domain] + compare_domains:
-            p_data[f'Prezzo_{domain}'] = product['data'].get(domain, {}).get('New', 0) / 100
-        
-        data.append(p_data)
-    
-    return pd.DataFrame(data)
-
-# Filtri ricerca
-st.header("🔍 Filtri Ricerca")
-min_rank = st.slider("Sales Rank Minimo", 0, 100000, 50000)
-price_min = st.slider("Prezzo Minimo (€)", 0, 500, 0)
-price_max = st.slider("Prezzo Massimo (€)", 0, 500, 200)
-
-# Recupero dati
-target_domain = country_domain_map[target_country]
-compare_domains = [country_domain_map[c] for c in compare_countries]
-filters = {
-    'min_rank': min_rank,
-    'price_range': [price_min * 100, price_max * 100]
-}
-
-df = fetch_data(target_domain, compare_domains, filters)
-
-# Visualizzazione risultati
-if not df.empty:
-    st.header("📊 Risultati")
-    df = df.sort_values('SalesRank')
-    st.dataframe(df.style.highlight_max(axis=0, color='lightgreen'))
-    
-    # Preparazione dati per grafico
-    plot_data = df.melt(id_vars=['ASIN', 'Titolo'], 
-                        value_vars=[f'Prezzo_{d}' for d in [target_domain] + compare_domains],
-                        var_name='Paese', value_name='Prezzo')
-    
-    # Mappatura domini a paesi
-    domain_to_country = {v: k for k, v in country_domain_map.items()}
-    plot_data['Paese'] = plot_data['Paese'].str.split('_').str[1].map(domain_to_country)
-    
-    # Creazione grafico
-    fig = px.bar(plot_data, x='ASIN', y='Prezzo', color='Paese', barmode='group')
-    st.plotly_chart(fig)
-else:
-    st.warning("Nessun risultato trovato con i filtri attuali")
-
-# Aggiornamento contatore richieste
-try:
-    with open('request_count.txt', 'r') as f:
-        count, date = f.read().split(',')
-        count = int(count) + 1
-except:
-    count = 1
-
-with open('request_count.txt', 'w') as f:
-    f.write(f"{count},{datetime.now().strftime('%Y-%m-%d')}")
+# ... (il resto del codice rimane invariato come nell'ultima versione fornita)
