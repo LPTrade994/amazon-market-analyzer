@@ -86,8 +86,9 @@ with st.sidebar:
 def test_connection(key):
     try:
         api = Keepa(key)
-        # Chiamiamo product_finder() solo con il parametro 'domain'
-        _ = api.product_finder(domain=1)
+        # Passa un dizionario con i parametri richiesti
+        params = {"domain": 1}
+        _ = api.product_finder(params)
         return True
     except Exception as e:
         st.error(f"Errore di connessione: {e}")
@@ -121,8 +122,8 @@ def fetch_data(key, country, min_sales, price_range, category):
                 "maxPrice": price_range[1] * 100,
                 "category": category if category else None,
             }
-            # Chiamata a product_finder() senza parametro "query"
-            products = api.product_finder(**{k: v for k, v in query_params.items() if v is not None})
+            filtered_params = {k: v for k, v in query_params.items() if v is not None}
+            products = api.product_finder(filtered_params)
             df = pd.DataFrame(products)
             if df.empty:
                 st.warning("Nessun prodotto trovato con i filtri impostati.")
