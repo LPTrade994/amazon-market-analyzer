@@ -54,7 +54,8 @@ def load_encrypted_api_key():
     return None
 
 #############################
-# Funzione per caricare le categorie dal file JSON
+# (Opzionale) Se volessi caricare le categorie da un file JSON, potresti usare questa funzione.
+# Per questa soluzione, tuttavia, preferiamo un input manuale.
 #############################
 @st.cache_data(ttl=86400)
 def load_categories_from_file():
@@ -64,8 +65,7 @@ def load_categories_from_file():
         return categories
     except Exception as e:
         st.error(f"Errore nel caricamento del file categorie: {e}")
-        # Ritorna una mappatura demo in caso di errore
-        return {"Elettronica": "12345", "Libri": "23456", "Moda": "34567", "Casa e Giardino": "45678"}
+        return {}
 
 #############################
 # Funzione per testare la connessione con Keepa API
@@ -82,7 +82,7 @@ def test_connection(key):
 
 #############################
 # Carica la API Key da st.secrets, .env o dal file cifrato.
-# Se non disponibile, usa la chiave fornita per test (non usarla in produzione)
+# Se non disponibile, utilizza la chiave fornita (questo metodo non è consigliato per la produzione).
 #############################
 api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_encrypted_api_key() or "1nf5mcc4mb9li5hc2l9bnuo2oscq0io4f7h26vfeekb9fccr6e9q6hve5aqcbca4"
 
@@ -91,6 +91,7 @@ api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_
 #############################
 with st.sidebar:
     st.header("⚙️ Configurazione")
+    # Campo per inserire la API Key (password)
     input_api = st.text_input("Inserisci API Key", value="" if api_key is None else api_key, type="password")
     if st.button("Salva API Key"):
         if input_api:
@@ -109,12 +110,12 @@ with st.sidebar:
     price_min = st.number_input("Prezzo minimo (€)", min_value=1, max_value=10000, value=10)
     price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
     st.markdown("---")
-    st.markdown("### Seleziona Categoria")
-    # Carica le categorie dal file JSON per avere un elenco più completo
-    categories_dict = load_categories_from_file()
-    categoria_scelta = st.selectbox("Categoria", list(categories_dict.keys()))
-    category = categories_dict[categoria_scelta]
+    # Inserisci manualmente l'ID della Categoria
+    st.markdown("### Inserisci ID Categoria")
+    # L'utente può inserire direttamente l'ID, garantendo l'univocità e la flessibilità
+    category = st.text_input("Categoria (ID)", value="", placeholder="Inserisci l'ID della categoria oppure lascia vuoto per non filtrare")
     st.markdown("---")
+    # Pulsante per avviare la ricerca
     search_trigger = st.button("Cerca")
 
 #############################
@@ -141,8 +142,8 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
     if key and test_connection(key):
         try:
             api = Keepa(key)
-            # Qui dovrai implementare le chiamate reali all'API di Keepa per ottenere i dati in base ai paesi.
-            # Per questo esempio, simuliamo i dati "reali":
+            # Qui dovrai implementare le chiamate reali all'API di Keepa.
+            # Per questo esempio, simuliamo i dati reali:
             data = {
                 "ASIN": ["B0001", "B0002", "B0003"],
                 "title": ["Prodotto 1", "Prodotto 2", "Prodotto 3"],
@@ -153,6 +154,12 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
             df = pd.DataFrame(data)
             if min_sales > 0 and "salesLastMonth" in df.columns:
                 df = df[df["salesLastMonth"] >= min_sales]
+            # Aggiungi il filtro della categoria solo se è stato inserito un ID
+            if category.strip() != "":
+                # Filtra il DataFrame sulla base della categoria se presente nel dato (dipende dai dati reali)
+                # Per esempio, se la colonna "category" esistesse:
+                # df = df[df["category"] == category]
+                pass  # Modifica qui in base ai dati reali
             return df
         except Exception as e:
             st.error(f"Errore durante il fetch dei dati: {e}")
