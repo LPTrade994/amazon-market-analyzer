@@ -18,7 +18,7 @@ API_LIMIT_DAILY = 250
 api_requests_count = 0  # Nota: questo contatore non viene persistito tra sessioni
 
 #############################
-# Funzioni per la gestione dell'API Key (cifratura con Fernet)
+# FUNZIONI PER LA GESTIONE DELL'API KEY (CIFRATURA CON FERNET)
 #############################
 def get_fernet():
     key_file = "key.key"
@@ -54,8 +54,8 @@ def load_encrypted_api_key():
     return None
 
 #############################
-# (Opzionale) Se volessi caricare le categorie da un file JSON, potresti usare questa funzione.
-# Per questa soluzione, tuttavia, preferiamo un input manuale.
+# (Opzionale) Funzione per caricare le categorie da file JSON
+# Se preferisci inserire manualmente l'ID della categoria, questa parte non è utilizzata.
 #############################
 @st.cache_data(ttl=86400)
 def load_categories_from_file():
@@ -82,7 +82,7 @@ def test_connection(key):
 
 #############################
 # Carica la API Key da st.secrets, .env o dal file cifrato.
-# Se non disponibile, utilizza la chiave fornita (questo metodo non è consigliato per la produzione).
+# Se non disponibile, usa la chiave fornita (non usarla in produzione).
 #############################
 api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_encrypted_api_key() or "1nf5mcc4mb9li5hc2l9bnuo2oscq0io4f7h26vfeekb9fccr6e9q6hve5aqcbca4"
 
@@ -106,16 +106,17 @@ with st.sidebar:
     st.markdown("---")
     # Filtri di Ricerca
     st.markdown("### Filtri di Ricerca")
+    # Input numerico per le vendite minime (per il paese di confronto)
     min_sales = st.number_input("Vendite minime ultimi 30gg [Paese di Confronto]", min_value=0, max_value=10000, value=0, step=1)
+    # Input manuale per l'intervallo di prezzo
     price_min = st.number_input("Prezzo minimo (€)", min_value=1, max_value=10000, value=10)
     price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
     st.markdown("---")
-    # Inserisci manualmente l'ID della Categoria
+    # Campo per inserire manualmente l'ID della Categoria
     st.markdown("### Inserisci ID Categoria")
-    # L'utente può inserire direttamente l'ID, garantendo l'univocità e la flessibilità
-    category = st.text_input("Categoria (ID)", value="", placeholder="Inserisci l'ID della categoria oppure lascia vuoto per non filtrare")
+    category = st.text_input("Categoria (ID)", value="", placeholder="Inserisci l'ID della categoria")
     st.markdown("---")
-    # Pulsante per avviare la ricerca
+    # Pulsante per avviare la ricerca (per ridurre chiamate automatiche e token consumati)
     search_trigger = st.button("Cerca")
 
 #############################
@@ -129,7 +130,7 @@ if api_key:
             st.error("Connessione con Keepa API fallita!")
 
 #############################
-# Funzione per recuperare dati (modalità demo o reale)
+# Funzione per recuperare dati reali da Keepa e unirli per ASIN
 #############################
 @st.cache_data(ttl=3600)
 def fetch_data(key, purchase_country, comparison_country, min_sales, price_range, category):
@@ -139,50 +140,50 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
         return pd.DataFrame()
     api_requests_count += 1
 
-    if key and test_connection(key):
-        try:
-            api = Keepa(key)
-            # Qui dovrai implementare le chiamate reali all'API di Keepa.
-            # Per questo esempio, simuliamo i dati reali:
-            data = {
-                "ASIN": ["B0001", "B0002", "B0003"],
-                "title": ["Prodotto 1", "Prodotto 2", "Prodotto 3"],
-                "salesLastMonth": [100, 200, 150],
-                "amazonCurrent": [19.99, 29.99, 9.99],
-                "buyBoxCurrent": [21.99, 27.99, 10.99]
-            }
-            df = pd.DataFrame(data)
-            if min_sales > 0 and "salesLastMonth" in df.columns:
-                df = df[df["salesLastMonth"] >= min_sales]
-            # Aggiungi il filtro della categoria solo se è stato inserito un ID
-            if category.strip() != "":
-                # Filtra il DataFrame sulla base della categoria se presente nel dato (dipende dai dati reali)
-                # Per esempio, se la colonna "category" esistesse:
-                # df = df[df["category"] == category]
-                pass  # Modifica qui in base ai dati reali
-            return df
-        except Exception as e:
-            st.error(f"Errore durante il fetch dei dati: {e}")
-            return pd.DataFrame()
-    else:
-        data = {
-            "ASIN": ["B0001", "B0002", "B0003"],
-            "title": ["Prodotto 1", "Prodotto 2", "Prodotto 3"],
-            "salesLastMonth": [100, 200, 150],
-            "amazonCurrent": [19.99, 29.99, 9.99],
-            "buyBoxCurrent": [21.99, 27.99, 10.99]
+    try:
+        api = Keepa(key)
+        # Parametri per il paese di acquisto:
+        params_purchase = {
+            "domain": {"IT": 1, "DE": 4, "ES": 3}.get(purchase_country, 1),
+            "category": category,  # l'ID inserito manualmente
+            "minPrice": price_range[0] * 100,  # Convertito in centesimi
+            "maxPrice": price_range[1] * 100
         }
-        df = pd.DataFrame(data)
-        if min_sales > 0:
-            df = df[df["salesLastMonth"] >= min_sales]
+        products_purchase = api.product_finder(params_purchase)
+        
+        # Parametri per il paese di confronto:
+        params_comparison = {
+            "domain": {"IT": 1, "DE": 4, "ES": 3}.get(comparison_country, 1),
+            "minSalesRank": min_sales
+        }
+        products_comparison = api.product_finder(params_comparison)
+        
+        # Converti le risposte in DataFrame
+        df_purchase = pd.DataFrame(products_purchase)
+        df_comparison = pd.DataFrame(products_comparison)
+        
+        # Debug: visualizza i primi record (puoi rimuovere in produzione)
+        st.write("Dati Paese di Acquisto:", df_purchase.head())
+        st.write("Dati Paese di Confronto:", df_comparison.head())
+        
+        # Unisci i dati basandoti su ASIN (assicurati che il campo ASIN esista in entrambe le risposte)
+        df = pd.merge(df_purchase, df_comparison, on="ASIN", suffixes=("_purchase", "_comparison"))
+        
+        # Applica il filtro delle vendite, se min_sales > 0, sul campo delle vendite del paese di confronto
+        if min_sales > 0 and "salesLastMonth_comparison" in df.columns:
+            df = df[df["salesLastMonth_comparison"] >= min_sales]
+        
         return df
+    except Exception as e:
+        st.error(f"Errore durante il fetch dei dati: {e}")
+        return pd.DataFrame()
 
 if search_trigger:
     df = fetch_data(api_key, purchase_country, comparison_country, min_sales, (price_min, price_max), category)
-    if not df.empty and "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
-        df["priceDiff"] = df["buyBoxCurrent"] - df["amazonCurrent"]
-        df["priceDiffPct"] = df.apply(lambda row: (row["priceDiff"] / row["amazonCurrent"]) * 100 
-                                      if row["amazonCurrent"] != 0 else None, axis=1)
+    if not df.empty and "amazonCurrent_purchase" in df.columns and "buyBoxCurrent_comparison" in df.columns:
+        df["priceDiff"] = df["buyBoxCurrent_comparison"] - df["amazonCurrent_purchase"]
+        df["priceDiffPct"] = df.apply(lambda row: (row["priceDiff"] / row["amazonCurrent_purchase"]) * 100 
+                                      if row["amazonCurrent_purchase"] != 0 else None, axis=1)
 else:
     df = pd.DataFrame()
 
@@ -192,8 +193,8 @@ else:
 st.header("Risultati")
 if not df.empty:
     st.dataframe(df, use_container_width=True)
-    if "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
-        fig = px.bar(df, x="ASIN", y=["amazonCurrent", "buyBoxCurrent"], 
+    if "amazonCurrent_purchase" in df.columns and "buyBoxCurrent_comparison" in df.columns:
+        fig = px.bar(df, x="ASIN", y=["amazonCurrent_purchase", "buyBoxCurrent_comparison"], 
                      title="Prezzi nei due paesi", barmode="group",
                      labels={"value": "Prezzo (€)", "variable": "Tipo"})
         st.plotly_chart(fig, use_container_width=True)
@@ -201,4 +202,4 @@ if not df.empty:
 else:
     st.info("Premi il pulsante 'Cerca' per visualizzare i risultati.")
 
-st.info("Nota: L'app è attualmente in modalità demo. Per ottenere dati reali, integra la logica di chiamata all'API Keepa consultando la documentazione ufficiale.")
+st.info("Nota: Se la struttura dei dati reali restituiti da Keepa differisce, adatta i nomi dei campi nel merge e nel calcolo delle differenze. Consulta la documentazione ufficiale di Keepa per i dettagli.")
