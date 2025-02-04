@@ -152,7 +152,7 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
 
     try:
         api = Keepa(key)
-        # Parametri per il paese di acquisto
+        # Parametri per il paese di acquisto:
         params_purchase = {
             "domain": {"IT": 1, "DE": 4, "ES": 3}.get(purchase_country, 1),
             "category": category,
@@ -161,7 +161,7 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
         }
         products_purchase = api.product_finder(params_purchase)
         
-        # Parametri per il paese di confronto
+        # Parametri per il paese di confronto:
         params_comparison = {
             "domain": {"IT": 1, "DE": 4, "ES": 3}.get(comparison_country, 1),
             "minSalesRank": min_sales
@@ -178,12 +178,19 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
         if "csv" in df_comparison.columns:
             df_comparison["buyBoxCurrent"] = df_comparison["csv"].apply(lambda x: parse_keepa_csv(x)["buyBoxPrice"] if isinstance(x, list) else None)
         
-        # Unisci i DataFrame basandoti sul campo "ASIN" (in maiuscolo, come restituito dall'API)
-        df = pd.merge(df_purchase, df_comparison, on="ASIN", suffixes=("_purchase", "_comparison"))
+        # Determina il campo chiave per il merge: controlla l'intersezione tra le colonne di df_purchase e df_comparison
+        common_keys = set(df_purchase.columns).intersection(set(df_comparison.columns))
+        if "ASIN" in common_keys:
+            key_field = "ASIN"
+        elif "asin" in common_keys:
+            key_field = "asin"
+        else:
+            raise KeyError("Nessun campo ASIN/asin comune trovato nei dati.")
         
-        # Applica il filtro delle vendite se min_sales > 0 (assumendo che il campo delle vendite si chiami "salesLastMonth" in df_comparison)
-        if min_sales > 0 and "salesLastMonth" in df.columns:
-            df = df[df["salesLastMonth"] >= min_sales]
+        df = pd.merge(df_purchase, df_comparison, on=key_field, suffixes=("_purchase", "_comparison"))
+        
+        if min_sales > 0 and "salesLastMonth_comparison" in df.columns:
+            df = df[df["salesLastMonth_comparison"] >= min_sales]
         
         return df
     except Exception as e:
@@ -206,7 +213,7 @@ st.header("Risultati")
 if not df.empty:
     st.dataframe(df, use_container_width=True)
     if "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
-        fig = px.bar(df, x="ASIN", y=["amazonCurrent", "buyBoxCurrent"], 
+        fig = px.bar(df, x="ASIN" if "ASIN" in df.columns else "asin", y=["amazonCurrent", "buyBoxCurrent"], 
                      title="Prezzi nei due paesi", barmode="group",
                      labels={"value": "Prezzo (€)", "variable": "Tipo"})
         st.plotly_chart(fig, use_container_width=True)
