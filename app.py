@@ -14,7 +14,7 @@ st.set_page_config(page_title="Amazon Market Analyzer", layout="wide")
 
 # Limite giornaliero delle API (esempio)
 API_LIMIT_DAILY = 250
-api_requests_count = 0  # Nota: questo contatore non viene persistito tra le sessioni
+api_requests_count = 0  # Nota: questo contatore non viene persistito tra sessioni
 
 #############################
 # Funzioni per la gestione dell'API Key (cifratura con Fernet)
@@ -39,7 +39,7 @@ def save_encrypted_api_key(api_key):
     with open("api_key.enc", "wb") as f:
         f.write(encrypted)
     st.success("API Key salvata in modo sicuro!")
-    
+
 def load_encrypted_api_key():
     if os.path.exists("api_key.enc"):
         fernet = get_fernet()
@@ -52,31 +52,45 @@ def load_encrypted_api_key():
             return None
     return None
 
-# Carica la API Key da st.secrets, .env o dal file cifrato.
-# Per test, se nessuna di queste è presente, viene utilizzata la chiave fornita.
-api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_encrypted_api_key() or "1nf5mcc4mb9li5hc2l9bnuo2oscq0io4f7h26vfeekb9fccr6e9q6hve5aqcbca4"
-
 #############################
-# (Opzionale) Funzione per ottenere le categorie da Keepa o usare una mappatura demo
+# (Opzionale) Funzione per ottenere le categorie da Keepa o usare mappatura demo
 #############################
 @st.cache_data(ttl=86400)  # Cache per 24 ore
 def get_categories(key):
     try:
         api = Keepa(key)
-        # Se Keepa supporta un metodo per ottenere le categorie, sostituisci qui:
-        categories = api.category_query()  # Modifica se il metodo ha un nome diverso
+        # Se la libreria supporta un metodo per ottenere le categorie, ad es.:
+        categories = api.category_query()  # Modifica questo metodo se necessario
         return categories
     except Exception as e:
         st.error(f"Errore nel recupero delle categorie: {e}")
-        # Mappatura demo se non si ottengono i dati reali
         return {"Elettronica": "12345", "Libri": "23456", "Moda": "34567", "Casa e Giardino": "45678"}
+
+#############################
+# Funzione per testare la connessione con Keepa API
+#############################
+def test_connection(key):
+    try:
+        api = Keepa(key)
+        params = {"domain": 1}
+        _ = api.product_finder(params)
+        return True
+    except Exception as e:
+        st.error(f"Errore di connessione: {e}")
+        return False
+
+#############################
+# Carica la API Key da st.secrets, .env o dal file cifrato.
+# Se non disponibile, utilizza la chiave fornita per test (in produzione NON includerla in chiaro).
+#############################
+api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_encrypted_api_key() or "1nf5mcc4mb9li5hc2l9bnuo2oscq0io4f7h26vfeekb9fccr6e9q6hve5aqcbca4"
 
 #############################
 # Sidebar: Configurazione e filtri
 #############################
 with st.sidebar:
     st.header("⚙️ Configurazione")
-    # Campo per inserire la API Key (in modalità password)
+    # Campo per inserire la API Key (tipo password)
     input_api = st.text_input("Inserisci API Key", value="" if api_key is None else api_key, type="password")
     if st.button("Salva API Key"):
         if input_api:
@@ -91,12 +105,13 @@ with st.sidebar:
     st.markdown("---")
     # Filtri di Ricerca
     st.markdown("### Filtri di Ricerca")
-    # Input numerico per le vendite minime (applicato al paese di confronto)
+    # Input numerico per le vendite minime (per il paese di confronto)
     min_sales = st.number_input("Vendite minime ultimi 30gg [Paese di Confronto]", min_value=0, max_value=10000, value=0, step=1)
     # Input manuale per l'intervallo di prezzo
     price_min = st.number_input("Prezzo minimo (€)", min_value=1, max_value=10000, value=10)
     price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
-    # Selezione della Categoria: usa get_categories se possibile, altrimenti una mappatura demo
+    st.markdown("---")
+    # Selezione della Categoria: usa get_categories se possibile, altrimenti mappatura demo
     st.markdown("### Seleziona Categoria")
     if api_key and test_connection(api_key):
         categories_dict = get_categories(api_key)
@@ -105,28 +120,8 @@ with st.sidebar:
     categoria_scelta = st.selectbox("Categoria", list(categories_dict.keys()))
     category = categories_dict[categoria_scelta]
     st.markdown("---")
-    # Pulsante per avviare la ricerca
+    # Pulsante per avviare la ricerca (evita chiamate automatiche)
     search_trigger = st.button("Cerca")
-
-#############################
-# Funzione per testare la connessione con Keepa API (base)
-#############################
-def test_connection(key):
-    try:
-        api = Keepa(key)
-        params = {"domain": 1}
-        _ = api.product_finder(params)
-        return True
-    except Exception as e:
-        st.error(f"Errore di connessione: {e}")
-        return False
-
-if api_key:
-    if st.button("Test Connection"):
-        if test_connection(api_key):
-            st.success("Connessione con Keepa API riuscita!")
-        else:
-            st.error("Connessione con Keepa API fallita!")
 
 #############################
 # Funzione per recuperare dati (modalità demo o reale)
@@ -142,12 +137,12 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
     if key and test_connection(key):
         try:
             api = Keepa(key)
-            # Qui, in una versione reale, imposterai i parametri per le chiamate all'API di Keepa.
-            # Per l'esempio, simuliamo la risposta con dati "reali":
+            # Qui dovrai impostare i parametri reali per chiamare l'API Keepa per ciascun paese.
+            # Per questo esempio, simuliamo i dati "reali":
             data = {
                 "ASIN": ["B0001", "B0002", "B0003"],
                 "title": ["Prodotto 1", "Prodotto 2", "Prodotto 3"],
-                # Vendite del mese scorso per il paese di confronto
+                # Vendite del mese scorso riferite al paese di confronto
                 "salesLastMonth": [100, 200, 150],
                 # Prezzo nel paese di acquisto (es. se purchase_country == "DE")
                 "amazonCurrent": [19.99, 29.99, 9.99],
