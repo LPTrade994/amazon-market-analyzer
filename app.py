@@ -54,20 +54,32 @@ def load_encrypted_api_key():
     return None
 
 #############################
-# FUNZIONE DI PARSING DEL CSV DI KEEPA
+# (Opzionale) Funzione per caricare le categorie da file JSON
+#############################
+@st.cache_data(ttl=86400)
+def load_categories_from_file():
+    try:
+        with open("categories.json", "r", encoding="utf-8") as f:
+            categories = json.load(f)
+        return categories
+    except Exception as e:
+        st.error(f"Errore nel caricamento del file categorie: {e}")
+        return {}
+
+#############################
+# FUNZIONE DI PARSING DEL CSV DI KEEPA (semplice esempio)
 #############################
 def parse_keepa_csv(csv_data):
     """
-    Funzione semplificata per estrarre il prezzo corrente dal campo "csv" restituito da Keepa.
+    Funzione semplificata per estrarre il prezzo corrente dal CSV.
     Si assume che:
       - csv_data[0] sia il timestamp
       - csv_data[1] sia il prezzo corrente (in centesimi)
-    Ritorna un dizionario con 'currentPrice' e 'buyBoxPrice' (uguali per questo esempio).
+    Ritorna un dizionario con 'currentPrice' e 'buyBoxPrice' (uguali in questo esempio).
     """
     current_price = None
     try:
         if isinstance(csv_data, list) and len(csv_data) > 1:
-            # Prendi il primo valore dopo il timestamp e verifica che sia valido (non -1)
             for val in csv_data[1:]:
                 if val != -1:
                     current_price = val / 100.0  # Converti centesimi in euro
@@ -92,7 +104,6 @@ def test_connection(key):
 #############################
 # CARICA LA API KEY
 #############################
-# Carica la API Key da st.secrets, .env o dal file cifrato; se non disponibile, usa la chiave fornita (per test)
 api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_encrypted_api_key() or "1nf5mcc4mb9li5hc2l9bnuo2oscq0io4f7h26vfeekb9fccr6e9q6hve5aqcbca4"
 
 #############################
@@ -108,7 +119,6 @@ with st.sidebar:
         else:
             st.error("Inserisci una API Key valida!")
     st.markdown("---")
-    # Selezione dei paesi: Amazon.it, Amazon.de, Amazon.es
     purchase_country = st.selectbox("Paese di Acquisto", ["IT", "DE", "ES"], key="purchase")
     comparison_country = st.selectbox("Paese di Confronto", ["IT", "DE", "ES"], index=0, key="compare")
     st.markdown("---")
@@ -118,7 +128,6 @@ with st.sidebar:
     price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
     st.markdown("---")
     st.markdown("### Inserisci ID Categoria")
-    # Qui l'utente inserisce direttamente l'ID della categoria
     category = st.text_input("Categoria (ID)", value="", placeholder="Inserisci l'ID della categoria")
     st.markdown("---")
     search_trigger = st.button("Cerca")
@@ -143,16 +152,16 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
 
     try:
         api = Keepa(key)
-        # Costruisci i parametri per il paese di acquisto
+        # Parametri per il paese di acquisto
         params_purchase = {
             "domain": {"IT": 1, "DE": 4, "ES": 3}.get(purchase_country, 1),
-            "category": category,  # L'ID inserito dall'utente
-            "minPrice": price_range[0] * 100,  # Convertito in centesimi
+            "category": category,
+            "minPrice": price_range[0] * 100,
             "maxPrice": price_range[1] * 100
         }
         products_purchase = api.product_finder(params_purchase)
         
-        # Parametri per il paese di confronto (vendita)
+        # Parametri per il paese di confronto
         params_comparison = {
             "domain": {"IT": 1, "DE": 4, "ES": 3}.get(comparison_country, 1),
             "minSalesRank": min_sales
@@ -165,14 +174,14 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
         # Parsing del CSV per estrarre il prezzo corrente dal paese di acquisto
         if "csv" in df_purchase.columns:
             df_purchase["amazonCurrent"] = df_purchase["csv"].apply(lambda x: parse_keepa_csv(x)["currentPrice"] if isinstance(x, list) else None)
-        # Parsing del CSV per estrarre il prezzo dalla buy box nel paese di confronto
+        # Parsing del CSV per estrarre il prezzo buy box dal paese di confronto
         if "csv" in df_comparison.columns:
             df_comparison["buyBoxCurrent"] = df_comparison["csv"].apply(lambda x: parse_keepa_csv(x)["buyBoxPrice"] if isinstance(x, list) else None)
         
-        # Unisci i DataFrame basandoti sul campo "asin" (assumendo che la chiave sia "asin")
-        df = pd.merge(df_purchase, df_comparison, on="asin", suffixes=("_purchase", "_comparison"))
+        # Unisci i DataFrame basandoti sul campo "ASIN" (in maiuscolo, come restituito dall'API)
+        df = pd.merge(df_purchase, df_comparison, on="ASIN", suffixes=("_purchase", "_comparison"))
         
-        # Se il campo delle vendite è presente, applica il filtro (es. "salesLastMonth" in df_comparison)
+        # Applica il filtro delle vendite se min_sales > 0 (assumendo che il campo delle vendite si chiami "salesLastMonth" in df_comparison)
         if min_sales > 0 and "salesLastMonth" in df.columns:
             df = df[df["salesLastMonth"] >= min_sales]
         
@@ -197,7 +206,7 @@ st.header("Risultati")
 if not df.empty:
     st.dataframe(df, use_container_width=True)
     if "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
-        fig = px.bar(df, x="asin", y=["amazonCurrent", "buyBoxCurrent"], 
+        fig = px.bar(df, x="ASIN", y=["amazonCurrent", "buyBoxCurrent"], 
                      title="Prezzi nei due paesi", barmode="group",
                      labels={"value": "Prezzo (€)", "variable": "Tipo"})
         st.plotly_chart(fig, use_container_width=True)
