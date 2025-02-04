@@ -1,3 +1,4 @@
+# app.py
 import os
 import re
 import json
@@ -5,275 +6,227 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from keepa import Keepa
+from datetime import datetime
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 
-# Carica le variabili d'ambiente dal file .env (se presente)
-load_dotenv()
-st.set_page_config(page_title="Amazon Market Analyzer", layout="wide")
+# Configurazione iniziale
+st.set_page_config(
+    page_title="Amazon Market Analyzer Pro",
+    layout="wide",
+    page_icon="📊"
+)
 
-# Limite giornaliero delle API (esempio)
+# Costanti
 API_LIMIT_DAILY = 250
-api_requests_count = 0  # Questo contatore non viene persistito tra sessioni
+CURRENCY_RATES = {
+    'IT': {'code': 'EUR', 'rate': 1.0},
+    'DE': {'code': 'EUR', 'rate': 1.0},
+    'ES': {'code': 'EUR', 'rate': 1.0}
+}
 
 #############################
-# FUNZIONI PER LA GESTIONE DELL'API KEY (CIFRATURA CON FERNET)
+# Gestione API Key (Sicurezza Enhanced)
 #############################
-def get_fernet():
-    key_file = "key.key"
-    if not os.path.exists(key_file):
+def initialize_fernet():
+    key_path = "fernet.key"
+    if not os.path.exists(key_path):
         key = Fernet.generate_key()
-        with open(key_file, "wb") as f:
-            f.write(key)
-    else:
-        with open(key_file, "rb") as f:
-            key = f.read()
-    return Fernet(key)
+        with open(key_path, "wb") as key_file:
+            key_file.write(key)
+    return Fernet(open(key_path, "rb").read())
 
-def save_encrypted_api_key(api_key):
-    if not re.match(r"^[A-Za-z0-9_-]+$", api_key):
-        st.error("Formato API Key non valido!")
-        return
-    fernet = get_fernet()
-    encrypted = fernet.encrypt(api_key.encode())
-    with open("api_key.enc", "wb") as f:
-        f.write(encrypted)
-    st.success("API Key salvata in modo sicuro!")
+def secure_api_key(api_key):
+    fernet = initialize_fernet()
+    encrypted_key = fernet.encrypt(api_key.encode())
+    with open("api_key.enc", "wb") as key_file:
+        key_file.write(encrypted_key)
+    st.success("🔑 API Key salvata in modo sicuro!")
 
-def load_encrypted_api_key():
-    if os.path.exists("api_key.enc"):
-        fernet = get_fernet()
-        with open("api_key.enc", "rb") as f:
-            encrypted = f.read()
-        try:
-            return fernet.decrypt(encrypted).decode()
-        except Exception as e:
-            st.error("Errore nella decrittazione della API Key!")
-            return None
-    return None
-
-#############################
-# (Opzionale) Funzione per caricare le categorie da file JSON
-#############################
-@st.cache_data(ttl=86400)
-def load_categories_from_file():
+def load_api_key():
     try:
-        with open("categories.json", "r", encoding="utf-8") as f:
-            categories = json.load(f)
-        return categories
+        if 'KEEPA_API_KEY' in st.secrets:
+            return st.secrets['KEEPA_API_KEY']
+        
+        if os.getenv("KEEPA_API_KEY"):
+            return os.getenv("KEEPA_API_KEY")
+        
+        if os.path.exists("api_key.enc"):
+            fernet = initialize_fernet()
+            with open("api_key.enc", "rb") as key_file:
+                return fernet.decrypt(key_file.read()).decode()
+        
+        return None
     except Exception as e:
-        st.error(f"Errore nel caricamento del file categorie: {e}")
-        return {}
+        st.error(f"Errore crittografia: {str(e)}")
+        return None
 
 #############################
-# FUNZIONE DI PARSING DEL CSV DI KEEPA (VERSIONE SEMPLIFICATA)
+# Gestione Limite API (Persistente)
 #############################
-def parse_keepa_csv(csv_data):
-    """
-    Estrae il prezzo corrente dal CSV.
-    Si assume che csv_data[0] sia il timestamp e csv_data[1] il prezzo corrente (in centesimi).
-    Ritorna un dizionario con 'currentPrice' e 'buyBoxPrice' (uguali in questo esempio).
-    """
-    current_price = None
+def update_api_counter(requests_made):
+    today = datetime.now().strftime("%Y-%m-%d")
+    counter_file = "api_counter.json"
+    
     try:
-        if isinstance(csv_data, list) and len(csv_data) > 1:
-            for val in csv_data[1:]:
-                if isinstance(val, (int, float)) and val != -1:
-                    current_price = val / 100.0  # Converti centesimi in euro
-                    break
-    except Exception as e:
-        st.error(f"Errore nel parsing del CSV: {e}")
-    return {"currentPrice": current_price, "buyBoxPrice": current_price}
-
-#############################
-# FUNZIONE PER TESTARE LA CONNESSIONE CON KEEPA API
-#############################
-def test_connection(key):
-    try:
-        api = Keepa(key)
-        params = {"domain": "US"}
-        _ = api.product_finder(params)
-        return True
-    except Exception as e:
-        st.error(f"Errore di connessione: {e}")
-        return False
-
-#############################
-# CARICA LA API KEY
-#############################
-api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_encrypted_api_key() or "1nf5mcc4mb9li5hc2l9bnuo2oscq0io4f7h26vfeekb9fccr6e9q6hve5aqcbca4"
-
-#############################
-# SIDEBAR: CONFIGURAZIONE E FILTRI
-#############################
-with st.sidebar:
-    st.header("⚙️ Configurazione")
-    input_api = st.text_input("Inserisci API Key", value=api_key, type="password")
-    if st.button("Salva API Key"):
-        if input_api:
-            save_encrypted_api_key(input_api)
-            api_key = input_api
+        if os.path.exists(counter_file):
+            with open(counter_file, "r") as f:
+                data = json.load(f)
+                if data.get('date') == today:
+                    data['count'] += requests_made
+                else:
+                    data = {'date': today, 'count': requests_made}
         else:
-            st.error("Inserisci una API Key valida!")
-    st.markdown("---")
-    purchase_country = st.selectbox("Paese di Acquisto", ["IT", "DE", "ES"], key="purchase")
-    comparison_country = st.selectbox("Paese di Confronto", ["IT", "DE", "ES"], index=0, key="compare")
-    st.markdown("---")
-    st.markdown("### Filtri di Ricerca")
-    min_sales = st.number_input("Vendite minime ultimi 30gg [Paese di Confronto]", min_value=0, max_value=10000, value=0, step=1)
-    price_min = st.number_input("Prezzo minimo (€)", min_value=1, max_value=10000, value=10)
-    price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
-    st.markdown("---")
-    st.markdown("### Ricerca prodotti")
-    use_manual_asin = st.checkbox("Inserisci manualmente ASIN?", value=False)
-    asin_input = ""
-    if use_manual_asin:
-        asin_input = st.text_input("ASIN (separati da virgola)", value="", placeholder="Es: B0088PUEPK, B01N5IB20Q")
-    st.markdown("---")
-    st.markdown("### Inserisci ID Categoria (facoltativo)")
-    category = st.text_input("Categoria (ID)", value="", placeholder="Inserisci l'ID della categoria, o lascia vuoto")
-    st.markdown("---")
-    search_trigger = st.button("Cerca")
+            data = {'date': today, 'count': requests_made}
+        
+        with open(counter_file, "w") as f:
+            json.dump(data, f)
+            
+        return data['count']
+    except Exception as e:
+        st.error(f"Errore contatore API: {str(e)}")
+        return 0
 
-if api_key:
-    if st.button("Test Connection"):
-        if test_connection(api_key):
-            st.success("Connessione con Keepa API riuscita!")
-        else:
-            st.error("Connessione con Keepa API fallita!")
+def get_api_usage():
+    counter_file = "api_counter.json"
+    if os.path.exists(counter_file):
+        with open(counter_file, "r") as f:
+            data = json.load(f)
+            if data.get('date') == datetime.now().strftime("%Y-%m-%d"):
+                return data['count']
+    return 0
 
 #############################
-# FUNZIONE PER RECUPERARE DATI LIVE DA KEEPA PER OGNI PRODOTTO (basata su ASIN)
+# Core Functions
 #############################
-@st.cache_data(ttl=3600)
-def fetch_data(key, purchase_country, comparison_country, min_sales, price_range, category, asin_input, use_manual_asin):
-    global api_requests_count
-    if api_requests_count >= API_LIMIT_DAILY:
-        st.error("Limite giornaliero API raggiunto!")
-        return pd.DataFrame()
-    
-    # Mapping dei domini come stringhe
-    domain_map = {"IT": "IT", "DE": "DE", "ES": "ES"}
-    domain_purchase = domain_map.get(purchase_country, "IT")
-    domain_comparison = domain_map.get(comparison_country, "IT")
-    
-    api = Keepa(key)
-    data_purchase = []
-    data_comparison = []
-    
-    if use_manual_asin and asin_input.strip() != "":
-        asin_list = [a.strip() for a in asin_input.split(",") if a.strip() != ""]
-    else:
-        # Se non inserisci manualmente, usa product_finder per ottenere un elenco di prodotti
-        params = {
-            "domain": domain_purchase,
-            "category": category,
-            "minPrice": price_range[0] * 100,
-            "maxPrice": price_range[1] * 100
+@st.cache_data(ttl=3600, show_spinner="Recupero dati da Keepa...")
+def fetch_keepa_data(_api, params, domain):
+    try:
+        return _api.product_finder(params, domain=domain)
+    except Exception as e:
+        st.error(f"Errore Keepa API: {str(e)}")
+        return None
+
+def parse_keepa_prices(csv_data):
+    """Parsing corretto secondo documentazione Keepa"""
+    try:
+        return {
+            'current': csv_data[3][-1] / 100 if csv_data[3] and csv_data[3][-1] > 0 else None,
+            'buybox': csv_data[18][-1] / 100 if csv_data[18] and csv_data[18][-1] > 0 else None
         }
-        products_data = api.product_finder(params)
-        if isinstance(products_data, dict) and "products" in products_data:
-            products_list = products_data["products"]
-        else:
-            products_list = products_data
-        asin_list = []
-        for prod in products_list:
-            # Prova a recuperare il campo asin (assumiamo sia in minuscolo)
-            a = None
-            if isinstance(prod, dict):
-                a = prod.get("asin") or prod.get("ASIN")
-            if a:
-                asin_list.append(a)
-    
-    if not asin_list:
-        st.error("Nessun ASIN trovato con i filtri specificati.")
-        return pd.DataFrame()
-    
-    # Per ogni ASIN, esegui la query per entrambi i domini
-    for asin in asin_list:
-        try:
-            prod_purchase = api.query(asin, domain=domain_purchase)
-            prod_comparison = api.query(asin, domain=domain_comparison)
-            # Se la risposta è una lista, usa il primo elemento
-            if isinstance(prod_purchase, list):
-                if prod_purchase and isinstance(prod_purchase[0], dict):
-                    data_purchase.append(prod_purchase[0])
-                elif prod_purchase and isinstance(prod_purchase[0], list):
-                    data_purchase.append(prod_purchase[0][0])
-            if isinstance(prod_comparison, list):
-                if prod_comparison and isinstance(prod_comparison[0], dict):
-                    data_comparison.append(prod_comparison[0])
-                elif prod_comparison and isinstance(prod_comparison[0], list):
-                    data_comparison.append(prod_comparison[0][0])
-        except Exception as e:
-            st.error(f"Errore per ASIN {asin}: {e}")
-    
-    if not data_purchase or not data_comparison:
-        st.error("Nessun dato recuperato per uno o più ASIN.")
-        return pd.DataFrame()
-    
-    df_purchase = pd.DataFrame(data_purchase)
-    df_comparison = pd.DataFrame(data_comparison)
-    
-    # Parsing del CSV per estrarre i prezzi
-    if "csv" in df_purchase.columns:
-        df_purchase["amazonCurrent"] = df_purchase["csv"].apply(lambda x: parse_keepa_csv(x)["currentPrice"] if isinstance(x, list) else None)
-    if "csv" in df_comparison.columns:
-        df_comparison["buyBoxCurrent"] = df_comparison["csv"].apply(lambda x: parse_keepa_csv(x)["buyBoxPrice"] if isinstance(x, list) else None)
-    
-    # Per le query, si assume che il campo identificativo sia "asin" (in minuscolo)
-    key_field = "asin"
-    if key_field not in df_purchase.columns or key_field not in df_comparison.columns:
-        st.write("df_purchase columns:", df_purchase.columns)
-        st.write("df_comparison columns:", df_comparison.columns)
-        raise KeyError("Nessun campo identificativo comune trovato (cercato: asin).")
-    
-    df = pd.merge(df_purchase, df_comparison, on=key_field, suffixes=("_purchase", "_comparison"))
-    
-    # Filtra per vendite minime se disponibile (assumendo che il campo si chiami "salesLastMonth" nel DataFrame risultante)
-    if min_sales > 0 and "salesLastMonth" in df.columns:
-        df = df[df["salesLastMonth"] >= min_sales]
-    
-    # Seleziona solo le colonne rilevanti per il confronto
-    desired_columns = [key_field]
-    # Usa il titolo dal lato di acquisto se disponibile
-    if "title" in df_purchase.columns:
-        desired_columns.append("title")
-    if "amazonCurrent" in df.columns:
-        desired_columns.append("amazonCurrent")
-    if "buyBoxCurrent" in df.columns:
-        desired_columns.append("buyBoxCurrent")
-    if "priceDiff" in df.columns:
-        desired_columns.append("priceDiff")
-    if "priceDiffPct" in df.columns:
-        desired_columns.append("priceDiffPct")
-    
-    df = df[desired_columns]
-    return df
+    except (IndexError, TypeError):
+        return {'current': None, 'buybox': None}
 
-if search_trigger:
-    df = fetch_data(api_key, purchase_country, comparison_country, min_sales, (price_min, price_max), category, asin_input, use_manual_asin)
-    if not df.empty and "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
-        df["priceDiff"] = df["buyBoxCurrent"] - df["amazonCurrent"]
-        df["priceDiffPct"] = df.apply(lambda row: (row["priceDiff"] / row["amazonCurrent"]) * 100 
-                                      if row["amazonCurrent"] and isinstance(row["amazonCurrent"], (int, float)) else None, axis=1)
-else:
-    df = pd.DataFrame()
+def convert_currency(price, from_country, to_country):
+    rate_from = CURRENCY_RATES[from_country]['rate']
+    rate_to = CURRENCY_RATES[to_country]['rate']
+    return (price / rate_from) * rate_to
 
 #############################
-# SEZIONE RISULTATI
+# UI Configuration
 #############################
-st.header("Risultati")
-if not df.empty:
-    st.dataframe(df, use_container_width=True)
-    key_col = "ASIN" if "ASIN" in df.columns else "asin"
-    if "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
-        fig = px.bar(df, x=key_col, y=["amazonCurrent", "buyBoxCurrent"],
-                     title="Prezzi nei due paesi", barmode="group",
-                     labels={"value": "Prezzo (€)", "variable": "Tipo"})
-        st.plotly_chart(fig, use_container_width=True)
-    st.markdown(f"**Token residui:** {API_LIMIT_DAILY - api_requests_count} / {API_LIMIT_DAILY}")
-else:
-    st.info("Premi il pulsante 'Cerca' per visualizzare i risultati.")
+def main():
+    st.title("🛍️ Amazon Market Analyzer Pro")
+    
+    # Sidebar Configuration
+    with st.sidebar:
+        st.header("⚙️ Configurazione")
+        api_key_input = st.text_input("Inserisci API Key Keepa", type="password")
+        
+        if api_key_input:
+            if st.button("Salva API Key"):
+                if re.match(r"^[A-Za-z0-9_-]{20,}$", api_key_input):
+                    secure_api_key(api_key_input)
+                else:
+                    st.error("Formato API Key non valido!")
+        
+        st.markdown("---")
+        purchase_country = st.selectbox("Paese Acquisto", ["IT", "DE", "ES"], index=0)
+        comparison_country = st.selectbox("Paese Confronto", ["IT", "DE", "ES"], index=1)
+        
+        st.markdown("---")
+        with st.expander("Filtri Avanzati"):
+            min_sales = st.number_input("Vendite minime (30gg)", min_value=0, value=10)
+            price_range = st.slider("Range Prezzo (€)", 1, 500, (20, 200))
+            category_id = st.text_input("ID Categoria Keepa", "")
+        
+        st.markdown("---")
+        if st.button("🔍 Avvia Analisi", type="primary"):
+            st.session_state.analysis_triggered = True
 
-st.info("Nota: Adatta il parser CSV e il mapping dei campi in base alla documentazione ufficiale di Keepa se necessario.")
+    # Main Content
+    api_key = load_api_key()
+    
+    if not api_key:
+        st.warning("⚠️ Inserisci una API Key valida nella sidebar")
+        st.stop()
+    
+    if get_api_usage() >= API_LIMIT_DAILY:
+        st.error("❌ Limite giornaliero API raggiunto!")
+        st.stop()
+    
+    if 'analysis_triggered' in st.session_state:
+        with st.spinner("Analisi in corso..."):
+            try:
+                keepa_api = Keepa(api_key)
+                
+                # Recupera dati paese acquisto
+                params = {
+                    "categories": [category_id] if category_id else [],
+                    "current_SALES_gte": min_sales,
+                    "current_AMAZON_gte": price_range[0] * 100,
+                    "current_AMAZON_lte": price_range[1] * 100
+                }
+                
+                purchase_data = fetch_keepa_data(keepa_api, params, purchase_country)
+                comparison_data = fetch_keepa_data(keepa_api, params, comparison_country)
+                
+                # Processa i dati
+                processed_data = []
+                for idx, product in enumerate(purchase_data.get('products', [])):
+                    prices = parse_keepa_prices(product.get('csv', []))
+                    
+                    converted_price = convert_currency(
+                        prices['current'], 
+                        purchase_country, 
+                        comparison_country
+                    ) if prices['current'] else None
+                    
+                    processed_data.append({
+                        'ASIN': product.get('asin'),
+                        'Titolo': product.get('title'),
+                        f'Prezzo {purchase_country}': prices['current'],
+                        f'Prezzo {comparison_country}': converted_price,
+                        'Buy Box': prices['buybox'],
+                        'Vendite Ultimo Mese': product.get('salesLast30')
+                    })
+                
+                update_api_counter(len(purchase_data.get('products', [])))
+                
+                # Visualizza risultati
+                df = pd.DataFrame(processed_data)
+                if not df.empty:
+                    st.success(f"🎯 {len(df)} prodotti trovati")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.dataframe(df, use_container_width=True)
+                    
+                    with col2:
+                        fig = px.bar(df, 
+                            x='Titolo', 
+                            y=[f'Prezzo {purchase_country}', f'Prezzo {comparison_country}'],
+                            title="Confronto Prezzi",
+                            labels={'value': 'Prezzo (€)', 'variable': 'Paese'},
+                            barmode='group')
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.metric("Token Rimasti", f"{API_LIMIT_DAILY - get_api_usage()}/{API_LIMIT_DAILY}")
+                else:
+                    st.warning("Nessun risultato trovato con i filtri selezionati")
+            
+            except Exception as e:
+                st.error(f"Errore durante l'analisi: {str(e)}")
+
+if __name__ == "__main__":
+    main()
