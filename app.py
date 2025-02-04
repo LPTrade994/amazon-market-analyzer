@@ -72,14 +72,17 @@ def load_categories_from_file():
 def parse_keepa_csv(csv_data):
     """
     Funzione semplificata per estrarre il prezzo corrente dal CSV.
-    Si assume che csv_data[0] sia il timestamp e csv_data[1] il prezzo corrente (in centesimi).
+    Si assume che:
+      - csv_data[0] sia il timestamp
+      - csv_data[1] sia il prezzo corrente (in centesimi)
     Ritorna un dizionario con 'currentPrice' e 'buyBoxPrice' (uguali in questo esempio).
     """
     current_price = None
     try:
         if isinstance(csv_data, list) and len(csv_data) > 1:
             for val in csv_data[1:]:
-                if val != -1:
+                # Assicurati che val sia un numero, non una lista
+                if isinstance(val, (int, float)) and val != -1:
                     current_price = val / 100.0  # Converti centesimi in euro
                     break
     except Exception as e:
@@ -92,7 +95,7 @@ def parse_keepa_csv(csv_data):
 def test_connection(key):
     try:
         api = Keepa(key)
-        params = {"domain": "US"}  # Usa un dominio valido, ad es. "US"
+        params = {"domain": "US"}  # Utilizza un dominio valido come stringa
         _ = api.product_finder(params)
         return True
     except Exception as e:
@@ -153,12 +156,11 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
 
     try:
         api = Keepa(key)
-        # Separare gli ASIN inseriti (rimuovendo spazi vuoti)
         asin_list = [a.strip() for a in asin_input.split(",") if a.strip() != ""]
         data_purchase = []
         data_comparison = []
         
-        # Usa il mapping dei domini come stringhe
+        # Mappatura dei domini come stringhe
         domain_map = {"IT": "IT", "DE": "DE", "ES": "ES"}
         domain_purchase = domain_map.get(purchase_country, "IT")
         domain_comparison = domain_map.get(comparison_country, "IT")
@@ -188,12 +190,11 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
         if "csv" in df_comparison.columns:
             df_comparison["buyBoxCurrent"] = df_comparison["csv"].apply(lambda x: parse_keepa_csv(x)["buyBoxPrice"] if isinstance(x, list) else None)
         
-        # Verifica il campo identificativo; solitamente Keepa restituisce "ASIN" (in maiuscolo)
-        key_field = None
+        # Proviamo a individuare il campo identificativo tra possibili candidate
         possible_keys = ["ASIN", "asin", "productId", "id"]
-        common_keys = set(df_purchase.columns).intersection(set(df_comparison.columns))
+        key_field = None
         for k in possible_keys:
-            if k in common_keys:
+            if k in df_purchase.columns and k in df_comparison.columns:
                 key_field = k
                 break
         if not key_field:
@@ -216,7 +217,7 @@ if search_trigger:
     if not df.empty and "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
         df["priceDiff"] = df["buyBoxCurrent"] - df["amazonCurrent"]
         df["priceDiffPct"] = df.apply(lambda row: (row["priceDiff"] / row["amazonCurrent"]) * 100 
-                                      if row["amazonCurrent"] != 0 else None, axis=1)
+                                      if row["amazonCurrent"] and isinstance(row["amazonCurrent"], (int, float)) else None, axis=1)
 else:
     df = pd.DataFrame()
 
