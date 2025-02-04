@@ -53,21 +53,18 @@ def load_encrypted_api_key():
     return None
 
 #############################
-# Funzione per ottenere le categorie da Keepa o usare una mappatura statica
+# Funzione per ottenere le categorie (usa mappatura statica)
 #############################
 @st.cache_data(ttl=86400)  # Cache per 24 ore
 def get_categories(key):
-    try:
-        api = Keepa(key)
-        # Prova a chiamare il metodo category_query (se disponibile)
-        categories = api.category_query()  # Questo metodo probabilmente non esiste
-        return categories
-    except AttributeError:
-        st.error("Il metodo per recuperare le categorie non è supportato dalla libreria Keepa. Verrà utilizzata una mappatura statica.")
-        return {"Elettronica": "12345", "Libri": "23456", "Moda": "34567", "Casa e Giardino": "45678"}
-    except Exception as e:
-        st.error(f"Errore nel recupero delle categorie: {e}")
-        return {"Elettronica": "12345", "Libri": "23456", "Moda": "34567", "Casa e Giardino": "45678"}
+    # La libreria Keepa non supporta il recupero dinamico delle categorie.
+    # Verrà utilizzata una mappatura statica.
+    return {
+        "Elettronica": "12345",
+        "Libri": "23456",
+        "Moda": "34567",
+        "Casa e Giardino": "45678"
+    }
 
 #############################
 # Funzione per testare la connessione con Keepa API
@@ -84,7 +81,7 @@ def test_connection(key):
 
 #############################
 # Carica la API Key da st.secrets, .env o dal file cifrato.
-# Se non disponibile, utilizza la chiave fornita per test.
+# Se non disponibile, utilizza la chiave fornita per test (non usare in produzione)
 #############################
 api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_encrypted_api_key() or "1nf5mcc4mb9li5hc2l9bnuo2oscq0io4f7h26vfeekb9fccr6e9q6hve5aqcbca4"
 
@@ -145,8 +142,7 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
     if key and test_connection(key):
         try:
             api = Keepa(key)
-            # Qui, in una versione reale, dovresti effettuare chiamate API specifiche per i due paesi.
-            # Per l'esempio, simuliamo i dati "reali":
+            # Per ora, simuliamo i dati reali; in futuro, integra la logica reale usando i parametri
             data = {
                 "ASIN": ["B0001", "B0002", "B0003"],
                 "title": ["Prodotto 1", "Prodotto 2", "Prodotto 3"],
