@@ -140,7 +140,7 @@ if api_key:
             st.error("Connessione con Keepa API fallita!")
 
 #############################
-# FUNZIONE PER RECUPERARE DATI LIVE DA KEEPA E UNIRE I RISULTATI PER ASIN
+# FUNZIONE PER RECUPERARE DATI LIVE DA KEEPA E UNIRE I RISULTATI
 #############################
 @st.cache_data(ttl=3600)
 def fetch_data(key, purchase_country, comparison_country, min_sales, price_range, category):
@@ -178,14 +178,18 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
         if "csv" in df_comparison.columns:
             df_comparison["buyBoxCurrent"] = df_comparison["csv"].apply(lambda x: parse_keepa_csv(x)["buyBoxPrice"] if isinstance(x, list) else None)
         
-        # Determina il campo chiave per il merge: controlla l'intersezione tra le colonne di df_purchase e df_comparison
+        # Determina il campo identificativo comune. Verifica le possibili chiavi:
         common_keys = set(df_purchase.columns).intersection(set(df_comparison.columns))
-        if "ASIN" in common_keys:
-            key_field = "ASIN"
-        elif "asin" in common_keys:
-            key_field = "asin"
-        else:
-            raise KeyError("Nessun campo ASIN/asin comune trovato nei dati.")
+        possible_keys = ["ASIN", "asin", "productId", "id"]
+        key_field = None
+        for k in possible_keys:
+            if k in common_keys:
+                key_field = k
+                break
+        if not key_field:
+            st.write("df_purchase columns:", df_purchase.columns)
+            st.write("df_comparison columns:", df_comparison.columns)
+            raise KeyError("Nessun campo identificativo comune trovato (cercati: ASIN, asin, productId, id).")
         
         df = pd.merge(df_purchase, df_comparison, on=key_field, suffixes=("_purchase", "_comparison"))
         
