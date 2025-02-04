@@ -14,7 +14,7 @@ st.set_page_config(page_title="Amazon Market Analyzer", layout="wide")
 
 # Limite giornaliero delle API (esempio)
 API_LIMIT_DAILY = 250
-api_requests_count = 0  # Questo contatore non è persistito tra sessioni
+api_requests_count = 0  # Questo contatore non viene persistito tra sessioni
 
 #############################
 # FUNZIONI PER LA GESTIONE DELL'API KEY (CIFRATURA CON FERNET)
@@ -71,8 +71,7 @@ def load_categories_from_file():
 def parse_keepa_csv(csv_data):
     """
     Estrae il prezzo corrente dal CSV.
-    - csv_data[0]: timestamp
-    - csv_data[1]: prezzo corrente (in centesimi)
+    Si assume che csv_data[0] sia il timestamp e csv_data[1] il prezzo corrente (in centesimi).
     Ritorna un dizionario con 'currentPrice' e 'buyBoxPrice' (uguali in questo esempio).
     """
     current_price = None
@@ -125,9 +124,7 @@ with st.sidebar:
     price_min = st.number_input("Prezzo minimo (€)", min_value=1, max_value=10000, value=10)
     price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
     st.markdown("---")
-    # Ora l'app effettuerà la ricerca in base ai filtri e all'elenco di prodotti ottenuto
     st.markdown("### Ricerca prodotti")
-    # Se non viene specificato un elenco di ASIN, l'app utilizzerà product_finder per ottenere l'elenco
     use_manual_asin = st.checkbox("Inserisci manualmente ASIN?", value=False)
     asin_input = ""
     if use_manual_asin:
@@ -146,7 +143,7 @@ if api_key:
             st.error("Connessione con Keepa API fallita!")
 
 #############################
-# FUNZIONE PER RECUPERARE DATI LIVE DA KEEPA
+# FUNZIONE PER RECUPERARE DATI LIVE DA KEEPA PER OGNI PRODOTTO (basata su ASIN)
 #############################
 @st.cache_data(ttl=3600)
 def fetch_data(key, purchase_country, comparison_country, min_sales, price_range, category, asin_input, use_manual_asin):
@@ -155,16 +152,19 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
         st.error("Limite giornaliero API raggiunto!")
         return pd.DataFrame()
     
-    api = Keepa(key)
+    # Mapping dei domini come stringhe
     domain_map = {"IT": "IT", "DE": "DE", "ES": "ES"}
     domain_purchase = domain_map.get(purchase_country, "IT")
     domain_comparison = domain_map.get(comparison_country, "IT")
     
-    # Se l'utente inserisce manualmente gli ASIN, usali; altrimenti, usa product_finder per ottenere prodotti
+    api = Keepa(key)
+    data_purchase = []
+    data_comparison = []
+    
     if use_manual_asin and asin_input.strip() != "":
         asin_list = [a.strip() for a in asin_input.split(",") if a.strip() != ""]
     else:
-        # Costruisci parametri per product_finder nel paese di acquisto
+        # Se non inserisci manualmente, usa product_finder per ottenere un elenco di prodotti
         params = {
             "domain": domain_purchase,
             "category": category,
@@ -178,7 +178,10 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
             products_list = products_data
         asin_list = []
         for prod in products_list:
-            a = prod.get("asin") or prod.get("ASIN")
+            # Prova a recuperare il campo asin (assumiamo sia in minuscolo)
+            a = None
+            if isinstance(prod, dict):
+                a = prod.get("asin") or prod.get("ASIN")
             if a:
                 asin_list.append(a)
     
@@ -186,24 +189,31 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
         st.error("Nessun ASIN trovato con i filtri specificati.")
         return pd.DataFrame()
     
-    # Prepara la stringa degli ASIN separati da virgola
-    asin_str = ",".join(asin_list)
+    # Per ogni ASIN, esegui la query per entrambi i domini
+    for asin in asin_list:
+        try:
+            prod_purchase = api.query(asin, domain=domain_purchase)
+            prod_comparison = api.query(asin, domain=domain_comparison)
+            # Se la risposta è una lista, usa il primo elemento
+            if isinstance(prod_purchase, list):
+                if prod_purchase and isinstance(prod_purchase[0], dict):
+                    data_purchase.append(prod_purchase[0])
+                elif prod_purchase and isinstance(prod_purchase[0], list):
+                    data_purchase.append(prod_purchase[0][0])
+            if isinstance(prod_comparison, list):
+                if prod_comparison and isinstance(prod_comparison[0], dict):
+                    data_comparison.append(prod_comparison[0])
+                elif prod_comparison and isinstance(prod_comparison[0], list):
+                    data_comparison.append(prod_comparison[0][0])
+        except Exception as e:
+            st.error(f"Errore per ASIN {asin}: {e}")
     
-    # Usa query per ottenere dati completi per entrambi i domini
-    purchase_data = api.query(asin_str, domain=domain_purchase)
-    comparison_data = api.query(asin_str, domain=domain_comparison)
-    
-    if purchase_data and isinstance(purchase_data, list):
-        df_purchase = pd.DataFrame(purchase_data)
-    else:
-        st.error("Nessun dato ottenuto per il paese di acquisto.")
+    if not data_purchase or not data_comparison:
+        st.error("Nessun dato recuperato per uno o più ASIN.")
         return pd.DataFrame()
     
-    if comparison_data and isinstance(comparison_data, list):
-        df_comparison = pd.DataFrame(comparison_data)
-    else:
-        st.error("Nessun dato ottenuto per il paese di confronto.")
-        return pd.DataFrame()
+    df_purchase = pd.DataFrame(data_purchase)
+    df_comparison = pd.DataFrame(data_comparison)
     
     # Parsing del CSV per estrarre i prezzi
     if "csv" in df_purchase.columns:
@@ -211,7 +221,7 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
     if "csv" in df_comparison.columns:
         df_comparison["buyBoxCurrent"] = df_comparison["csv"].apply(lambda x: parse_keepa_csv(x)["buyBoxPrice"] if isinstance(x, list) else None)
     
-    # Individua il campo identificativo; in questo esempio, usiamo "asin" (di solito restituito in minuscolo)
+    # Per le query, si assume che il campo identificativo sia "asin" (in minuscolo)
     key_field = "asin"
     if key_field not in df_purchase.columns or key_field not in df_comparison.columns:
         st.write("df_purchase columns:", df_purchase.columns)
@@ -220,25 +230,27 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
     
     df = pd.merge(df_purchase, df_comparison, on=key_field, suffixes=("_purchase", "_comparison"))
     
-    # Filtra per vendite minime se il campo è disponibile
+    # Filtra per vendite minime se disponibile (assumendo che il campo si chiami "salesLastMonth" nel DataFrame risultante)
     if min_sales > 0 and "salesLastMonth" in df.columns:
         df = df[df["salesLastMonth"] >= min_sales]
     
-    # Seleziona solo le colonne rilevanti
+    # Seleziona solo le colonne rilevanti per il confronto
     desired_columns = [key_field]
-    title_col = "title_purchase" if "title_purchase" in df.columns else ("title" if "title" in df_purchase.columns else None)
-    if title_col:
-        desired_columns.append(title_col)
+    # Usa il titolo dal lato di acquisto se disponibile
+    if "title" in df_purchase.columns:
+        desired_columns.append("title")
     if "amazonCurrent" in df.columns:
         desired_columns.append("amazonCurrent")
     if "buyBoxCurrent" in df.columns:
         desired_columns.append("buyBoxCurrent")
+    if "priceDiff" in df.columns:
+        desired_columns.append("priceDiff")
+    if "priceDiffPct" in df.columns:
+        desired_columns.append("priceDiffPct")
     
     df = df[desired_columns]
-    
     return df
 
-# Esegui la ricerca solo se viene premuto "Cerca"
 if search_trigger:
     df = fetch_data(api_key, purchase_country, comparison_country, min_sales, (price_min, price_max), category, asin_input, use_manual_asin)
     if not df.empty and "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
