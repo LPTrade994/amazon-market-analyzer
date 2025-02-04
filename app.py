@@ -39,36 +39,36 @@ if 'KEEPA_API_KEY' in os.environ:
 elif os.path.exists('.encrypted_key'):
     with open('.encrypted_key', 'r') as f:
         encrypted = f.read()
-        api_key = decrypt_key(encrypted)[:64]  # Forza lunghezza corretta
+        api_key = decrypt_key(encrypted)[:64]
 elif 'KEEPA_API_KEY' in st.secrets:
     api_key = st.secrets.KEEPA_API_KEY
 
-# Interfaccia utente
+# SIDEBAR - Configurazione e Filtri
 with st.sidebar:
     st.header("⚙️ Configurazione")
     
-    # Input API Key
+    # Sezione API Key
     if not api_key:
         api_input = st.text_input("Inserisci API Key Keepa", type="password")
         if api_input:
-            # Pulizia input
             cleaned_key = api_input.strip().replace('-', '').replace(' ', '')
-            
-            # Validazione corretta (64 caratteri alfanumerici)
             if re.match(r'^[A-Za-z0-9]{64}$', cleaned_key):
                 with open('.encrypted_key', 'w') as f:
                     f.write(encrypt_key(cleaned_key))
                 st.rerun()
             else:
-                st.error("Formato API Key non valido!")
-                st.error("Deve contenere esattamente 64 caratteri alfanumerici")
-                st.error("Esempio: 1nf5mcc4mb9li5hc2l9bnuo2oscq0io4f7h26vfeekb9fccr6e9q6hve5aqcbca4")
+                st.error("Formato API Key non valido (64 caratteri alfanumerici)")
 
-    # Selezione paesi
+    # Selezione Paesi
     target_country = st.selectbox("Paese Target", list(country_domain_map.keys()))
     compare_countries = st.multiselect("Paesi Confronto", list(country_domain_map.keys()), default=["DE", "FR"])
     
-    # Contatore richieste
+    st.header("🔍 Filtri Ricerca")
+    # Filtri Interattivi
+    min_rank = st.slider("Sales Rank Minimo", 0, 100000, 50000)
+    price_min, price_max = st.slider("Range Prezzo (€)", 0, 500, (0, 200))
+    
+    # Contatore Richieste
     try:
         with open('request_count.txt', 'r') as f:
             count, date = f.read().split(',')
@@ -76,6 +76,9 @@ with st.sidebar:
                 st.info(f"📊 Richieste oggi: {count}/250")
     except:
         pass
+
+# MAIN PAGE - Risultati
+st.title("Amazon Market Analyzer")
 
 # Modalità demo se manca API Key
 if not api_key:
@@ -96,10 +99,9 @@ if not api_key:
 def fetch_data(target_domain, compare_domains, filters):
     api = Keepa(api_key)
     
-    # Costruzione criteri
     criteria = {'domain': target_domain}
     if filters['min_rank']: criteria['current_SALES_RANK'] = [filters['min_rank'], 999999]
-    if filters['price_range']: criteria['current_NEW'] = [filters['price_range'][0], filters['price_range'][1]]
+    if filters['price_range']: criteria['current_NEW'] = [filters['price_range'][0]*100, filters['price_range'][1]*100]
     
     try:
         products = api.product_finder(criteria, product=True)
@@ -107,7 +109,6 @@ def fetch_data(target_domain, compare_domains, filters):
         st.error(f"Errore API: {str(e)}")
         return pd.DataFrame()
 
-    # Elaborazione risultati
     data = []
     for product in products:
         p_data = {
@@ -123,18 +124,12 @@ def fetch_data(target_domain, compare_domains, filters):
     
     return pd.DataFrame(data)
 
-# Filtri ricerca
-st.header("🔍 Filtri Ricerca")
-min_rank = st.slider("Sales Rank Minimo", 0, 100000, 50000)
-price_min = st.slider("Prezzo Minimo (€)", 0, 500, 0)
-price_max = st.slider("Prezzo Massimo (€)", 0, 500, 200)
-
 # Recupero dati
 target_domain = country_domain_map[target_country]
 compare_domains = [country_domain_map[c] for c in compare_countries]
 filters = {
     'min_rank': min_rank,
-    'price_range': [price_min * 100, price_max * 100]
+    'price_range': (price_min, price_max)
 }
 
 df = fetch_data(target_domain, compare_domains, filters)
@@ -145,16 +140,13 @@ if not df.empty:
     df = df.sort_values('SalesRank')
     st.dataframe(df.style.highlight_max(axis=0, color='lightgreen'))
     
-    # Preparazione dati per grafico
     plot_data = df.melt(id_vars=['ASIN', 'Titolo'], 
                         value_vars=[f'Prezzo_{d}' for d in [target_domain] + compare_domains],
                         var_name='Paese', value_name='Prezzo')
     
-    # Mappatura domini a paesi
     domain_to_country = {v: k for k, v in country_domain_map.items()}
     plot_data['Paese'] = plot_data['Paese'].str.split('_').str[1].map(domain_to_country)
     
-    # Creazione grafico
     fig = px.bar(plot_data, x='ASIN', y='Prezzo', color='Paese', barmode='group')
     st.plotly_chart(fig)
 else:
