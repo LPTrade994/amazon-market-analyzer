@@ -128,6 +128,7 @@ with st.sidebar:
     price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
     st.markdown("---")
     st.markdown("### Inserisci ID Categoria")
+    # Inserisci direttamente l'ID della categoria tramite UI (campo di testo)
     category = st.text_input("Categoria (ID)", value="", placeholder="Inserisci l'ID della categoria")
     st.markdown("---")
     search_trigger = st.button("Cerca")
@@ -140,7 +141,7 @@ if api_key:
             st.error("Connessione con Keepa API fallita!")
 
 #############################
-# FUNZIONE PER RECUPERARE DATI LIVE DA KEEPA E UNIRE I RISULTATI
+# FUNZIONE PER RECUPERARE DATI LIVE DA KEEPA E UNIRE I RISULTATI PER PRODOTTO
 #############################
 @st.cache_data(ttl=3600)
 def fetch_data(key, purchase_country, comparison_country, min_sales, price_range, category):
@@ -152,7 +153,8 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
 
     try:
         api = Keepa(key)
-        # Parametri per il paese di acquisto:
+        
+        # Parametri per il paese di acquisto
         params_purchase = {
             "domain": {"IT": 1, "DE": 4, "ES": 3}.get(purchase_country, 1),
             "category": category,
@@ -160,13 +162,17 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
             "maxPrice": price_range[1] * 100
         }
         products_purchase = api.product_finder(params_purchase)
+        if isinstance(products_purchase, dict) and "products" in products_purchase:
+            products_purchase = products_purchase["products"]
         
-        # Parametri per il paese di confronto:
+        # Parametri per il paese di confronto
         params_comparison = {
             "domain": {"IT": 1, "DE": 4, "ES": 3}.get(comparison_country, 1),
             "minSalesRank": min_sales
         }
         products_comparison = api.product_finder(params_comparison)
+        if isinstance(products_comparison, dict) and "products" in products_comparison:
+            products_comparison = products_comparison["products"]
         
         df_purchase = pd.DataFrame(products_purchase)
         df_comparison = pd.DataFrame(products_comparison)
@@ -178,7 +184,7 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
         if "csv" in df_comparison.columns:
             df_comparison["buyBoxCurrent"] = df_comparison["csv"].apply(lambda x: parse_keepa_csv(x)["buyBoxPrice"] if isinstance(x, list) else None)
         
-        # Determina il campo identificativo comune. Verifica le possibili chiavi:
+        # Determina il campo identificativo comune cercando tra possibili candidate
         common_keys = set(df_purchase.columns).intersection(set(df_comparison.columns))
         possible_keys = ["ASIN", "asin", "productId", "id"]
         key_field = None
@@ -216,8 +222,9 @@ else:
 st.header("Risultati")
 if not df.empty:
     st.dataframe(df, use_container_width=True)
+    key_col = "ASIN" if "ASIN" in df.columns else "asin"
     if "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
-        fig = px.bar(df, x="ASIN" if "ASIN" in df.columns else "asin", y=["amazonCurrent", "buyBoxCurrent"], 
+        fig = px.bar(df, x=key_col, y=["amazonCurrent", "buyBoxCurrent"], 
                      title="Prezzi nei due paesi", barmode="group",
                      labels={"value": "Prezzo (€)", "variable": "Tipo"})
         st.plotly_chart(fig, use_container_width=True)
