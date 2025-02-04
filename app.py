@@ -75,14 +75,14 @@ with st.sidebar:
     st.markdown("---")
     # Filtri di ricerca
     st.markdown("### Filtri di Ricerca")
-    # Filtro vendite minime: da 0 (possibilità di disattivarlo) a 500; questo filtro si applica al paese di confronto
-    min_sales = st.slider("Vendite minime (ultimi 30gg) [Paese di Confronto]", 0, 500, 0)
+    # Filtro per vendite minime (input numerico), che può essere impostato a 0 (disattivato)
+    min_sales = st.number_input("Vendite minime ultimi 30gg [Paese di Confronto]", min_value=0, max_value=10000, value=0, step=1)
     # Input manuale per intervallo di prezzo
     price_min = st.number_input("Prezzo minimo (€)", min_value=1, max_value=10000, value=10)
     price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
     category = st.text_input("Categoria (ID o nome)")
     st.markdown("---")
-    # Pulsante per avviare la ricerca (così non si sprecano token ad ogni modifica)
+    # Pulsante per avviare la ricerca
     search_trigger = st.button("Cerca")
 
 #############################
@@ -119,20 +119,21 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
     if key and test_connection(key):
         try:
             api = Keepa(key)
-            # In una versione reale, qui si potrebbe chiamare l'API con parametri specifici per ciascun paese.
-            # Per questo esempio, simuliamo i dati.
+            # Qui dovresti passare i parametri reali per la chiamata all'API,
+            # inclusi eventuali parametri specifici per il paese di acquisto e di confronto.
+            # Per questo esempio, simuliamo i dati reali:
             data = {
                 "ASIN": ["B0001", "B0002", "B0003"],
                 "title": ["Prodotto 1", "Prodotto 2", "Prodotto 3"],
-                # Vendite nel mese scorso riferite al paese di confronto
+                # Vendite del mese scorso riferite al paese di confronto
                 "salesLastMonth": [100, 200, 150],
-                # Prezzo nel paese di acquisto (ad es. Amazon.es se purchase_country=="ES")
+                # Prezzo nel paese di acquisto (ad esempio, se purchase_country == "ES")
                 "amazonCurrent": [19.99, 29.99, 9.99],
-                # Prezzo nel paese di confronto (ad es. Amazon.it se comparison_country=="IT")
+                # Prezzo nel paese di confronto (ad esempio, se comparison_country == "IT")
                 "buyBoxCurrent": [21.99, 27.99, 10.99]
             }
             df = pd.DataFrame(data)
-            # Applica il filtro sulle vendite se min_sales è > 0
+            # Applica il filtro delle vendite se il valore è maggiore di 0
             if min_sales > 0 and "salesLastMonth" in df.columns:
                 df = df[df["salesLastMonth"] >= min_sales]
             return df
@@ -140,7 +141,7 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
             st.error(f"Errore durante il fetch dei dati: {e}")
             return pd.DataFrame()
     else:
-        # Modalità demo: dati di esempio con filtro vendite applicato
+        # Modalità demo: dati di esempio
         data = {
             "ASIN": ["B0001", "B0002", "B0003"],
             "title": ["Prodotto 1", "Prodotto 2", "Prodotto 3"],
@@ -156,13 +157,10 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
 # Esegui la ricerca solo se viene premuto il pulsante "Cerca"
 if search_trigger:
     df = fetch_data(api_key, purchase_country, comparison_country, min_sales, (price_min, price_max), category)
-    # Calcola le differenze di prezzo se le colonne esistono
     if not df.empty and "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
         df["priceDiff"] = df["buyBoxCurrent"] - df["amazonCurrent"]
-        # Evita divisioni per 0
         df["priceDiffPct"] = df.apply(lambda row: (row["priceDiff"] / row["amazonCurrent"]) * 100 if row["amazonCurrent"] != 0 else None, axis=1)
 else:
-    # Se il pulsante non è premuto, usa un DataFrame vuoto per evitare errori
     df = pd.DataFrame()
 
 #############################
@@ -179,6 +177,6 @@ if not df.empty:
     st.markdown(f"**Token residui:** {API_LIMIT_DAILY - api_requests_count} / {API_LIMIT_DAILY}")
 else:
     st.info("Premi il pulsante 'Cerca' per visualizzare i risultati.")
-    
+
 # Messaggio per il testing:
-st.info("Nota: I dati mostrati sono in modalità demo. Per testare con dati reali, inserisci una API Key valida e parametri coerenti.")
+st.info("Nota: Attualmente i dati sono in modalità demo. Per ottenere dati reali, assicurati di utilizzare una API Key valida e implementa la logica di fetch dalla API di Keepa.")
