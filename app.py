@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -53,18 +54,18 @@ def load_encrypted_api_key():
     return None
 
 #############################
-# Funzione per ottenere le categorie (usa mappatura statica)
+# Funzione per caricare le categorie dal file JSON
 #############################
-@st.cache_data(ttl=86400)  # Cache per 24 ore
-def get_categories(key):
-    # La libreria Keepa non supporta il recupero dinamico delle categorie.
-    # Verrà utilizzata una mappatura statica.
-    return {
-        "Elettronica": "12345",
-        "Libri": "23456",
-        "Moda": "34567",
-        "Casa e Giardino": "45678"
-    }
+@st.cache_data(ttl=86400)
+def load_categories_from_file():
+    try:
+        with open("categories.json", "r", encoding="utf-8") as f:
+            categories = json.load(f)
+        return categories
+    except Exception as e:
+        st.error(f"Errore nel caricamento del file categorie: {e}")
+        # Ritorna una mappatura demo in caso di errore
+        return {"Elettronica": "12345", "Libri": "23456", "Moda": "34567", "Casa e Giardino": "45678"}
 
 #############################
 # Funzione per testare la connessione con Keepa API
@@ -81,7 +82,7 @@ def test_connection(key):
 
 #############################
 # Carica la API Key da st.secrets, .env o dal file cifrato.
-# Se non disponibile, utilizza la chiave fornita per test (non usare in produzione)
+# Se non disponibile, usa la chiave fornita per test (non usarla in produzione)
 #############################
 api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_encrypted_api_key() or "1nf5mcc4mb9li5hc2l9bnuo2oscq0io4f7h26vfeekb9fccr6e9q6hve5aqcbca4"
 
@@ -109,10 +110,8 @@ with st.sidebar:
     price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
     st.markdown("---")
     st.markdown("### Seleziona Categoria")
-    if api_key and test_connection(api_key):
-        categories_dict = get_categories(api_key)
-    else:
-        categories_dict = {"Elettronica": "12345", "Libri": "23456", "Moda": "34567", "Casa e Giardino": "45678"}
+    # Carica le categorie dal file JSON per avere un elenco più completo
+    categories_dict = load_categories_from_file()
     categoria_scelta = st.selectbox("Categoria", list(categories_dict.keys()))
     category = categories_dict[categoria_scelta]
     st.markdown("---")
@@ -142,7 +141,8 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
     if key and test_connection(key):
         try:
             api = Keepa(key)
-            # Per ora, simuliamo i dati reali; in futuro, integra la logica reale usando i parametri
+            # Qui dovrai implementare le chiamate reali all'API di Keepa per ottenere i dati in base ai paesi.
+            # Per questo esempio, simuliamo i dati "reali":
             data = {
                 "ASIN": ["B0001", "B0002", "B0003"],
                 "title": ["Prodotto 1", "Prodotto 2", "Prodotto 3"],
