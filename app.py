@@ -54,21 +54,30 @@ def load_encrypted_api_key():
     return None
 
 #############################
-# (Opzionale) Funzione per caricare le categorie da file JSON
-# Se preferisci inserire manualmente l'ID della categoria, questa parte non è utilizzata.
+# FUNZIONE DI PARSING DEL CSV DI KEEPA
 #############################
-@st.cache_data(ttl=86400)
-def load_categories_from_file():
+def parse_keepa_csv(csv_data):
+    """
+    Funzione semplificata per estrarre il prezzo corrente dal campo "csv" restituito da Keepa.
+    Si assume che:
+      - csv_data[0] sia il timestamp
+      - csv_data[1] sia il prezzo corrente (in centesimi)
+    Ritorna un dizionario con 'currentPrice' e 'buyBoxPrice' (uguali per questo esempio).
+    """
+    current_price = None
     try:
-        with open("categories.json", "r", encoding="utf-8") as f:
-            categories = json.load(f)
-        return categories
+        if isinstance(csv_data, list) and len(csv_data) > 1:
+            # Prendi il primo valore dopo il timestamp e verifica che sia valido (non -1)
+            for val in csv_data[1:]:
+                if val != -1:
+                    current_price = val / 100.0  # Converti centesimi in euro
+                    break
     except Exception as e:
-        st.error(f"Errore nel caricamento del file categorie: {e}")
-        return {}
+        st.error(f"Errore nel parsing del CSV: {e}")
+    return {"currentPrice": current_price, "buyBoxPrice": current_price}
 
 #############################
-# Funzione per testare la connessione con Keepa API
+# FUNZIONE PER TESTARE LA CONNESSIONE CON KEEPA API
 #############################
 def test_connection(key):
     try:
@@ -81,17 +90,16 @@ def test_connection(key):
         return False
 
 #############################
-# Carica la API Key da st.secrets, .env o dal file cifrato.
-# Se non disponibile, usa la chiave fornita (non usarla in produzione).
+# CARICA LA API KEY
 #############################
+# Carica la API Key da st.secrets, .env o dal file cifrato; se non disponibile, usa la chiave fornita (per test)
 api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_encrypted_api_key() or "1nf5mcc4mb9li5hc2l9bnuo2oscq0io4f7h26vfeekb9fccr6e9q6hve5aqcbca4"
 
 #############################
-# Sidebar: Configurazione e filtri
+# SIDEBAR: CONFIGURAZIONE E FILTRI
 #############################
 with st.sidebar:
     st.header("⚙️ Configurazione")
-    # Campo per inserire la API Key (password)
     input_api = st.text_input("Inserisci API Key", value="" if api_key is None else api_key, type="password")
     if st.button("Salva API Key"):
         if input_api:
@@ -104,24 +112,17 @@ with st.sidebar:
     purchase_country = st.selectbox("Paese di Acquisto", ["IT", "DE", "ES"], key="purchase")
     comparison_country = st.selectbox("Paese di Confronto", ["IT", "DE", "ES"], index=0, key="compare")
     st.markdown("---")
-    # Filtri di Ricerca
     st.markdown("### Filtri di Ricerca")
-    # Input numerico per le vendite minime (per il paese di confronto)
     min_sales = st.number_input("Vendite minime ultimi 30gg [Paese di Confronto]", min_value=0, max_value=10000, value=0, step=1)
-    # Input manuale per l'intervallo di prezzo
     price_min = st.number_input("Prezzo minimo (€)", min_value=1, max_value=10000, value=10)
     price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
     st.markdown("---")
-    # Campo per inserire manualmente l'ID della Categoria
     st.markdown("### Inserisci ID Categoria")
+    # Qui l'utente inserisce direttamente l'ID della categoria
     category = st.text_input("Categoria (ID)", value="", placeholder="Inserisci l'ID della categoria")
     st.markdown("---")
-    # Pulsante per avviare la ricerca (per ridurre chiamate automatiche e token consumati)
     search_trigger = st.button("Cerca")
 
-#############################
-# Test della connessione (opzionale)
-#############################
 if api_key:
     if st.button("Test Connection"):
         if test_connection(api_key):
@@ -130,7 +131,7 @@ if api_key:
             st.error("Connessione con Keepa API fallita!")
 
 #############################
-# Funzione per recuperare dati reali da Keepa e unirli per ASIN
+# FUNZIONE PER RECUPERARE DATI LIVE DA KEEPA E UNIRE I RISULTATI PER ASIN
 #############################
 @st.cache_data(ttl=3600)
 def fetch_data(key, purchase_country, comparison_country, min_sales, price_range, category):
@@ -142,36 +143,38 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
 
     try:
         api = Keepa(key)
-        # Parametri per il paese di acquisto:
+        # Costruisci i parametri per il paese di acquisto
         params_purchase = {
             "domain": {"IT": 1, "DE": 4, "ES": 3}.get(purchase_country, 1),
-            "category": category,  # l'ID inserito manualmente
+            "category": category,  # L'ID inserito dall'utente
             "minPrice": price_range[0] * 100,  # Convertito in centesimi
             "maxPrice": price_range[1] * 100
         }
         products_purchase = api.product_finder(params_purchase)
         
-        # Parametri per il paese di confronto:
+        # Parametri per il paese di confronto (vendita)
         params_comparison = {
             "domain": {"IT": 1, "DE": 4, "ES": 3}.get(comparison_country, 1),
             "minSalesRank": min_sales
         }
         products_comparison = api.product_finder(params_comparison)
         
-        # Converti le risposte in DataFrame
         df_purchase = pd.DataFrame(products_purchase)
         df_comparison = pd.DataFrame(products_comparison)
         
-        # Debug: visualizza i primi record (puoi rimuovere in produzione)
-        st.write("Dati Paese di Acquisto:", df_purchase.head())
-        st.write("Dati Paese di Confronto:", df_comparison.head())
+        # Parsing del CSV per estrarre il prezzo corrente dal paese di acquisto
+        if "csv" in df_purchase.columns:
+            df_purchase["amazonCurrent"] = df_purchase["csv"].apply(lambda x: parse_keepa_csv(x)["currentPrice"] if isinstance(x, list) else None)
+        # Parsing del CSV per estrarre il prezzo dalla buy box nel paese di confronto
+        if "csv" in df_comparison.columns:
+            df_comparison["buyBoxCurrent"] = df_comparison["csv"].apply(lambda x: parse_keepa_csv(x)["buyBoxPrice"] if isinstance(x, list) else None)
         
-        # Unisci i dati basandoti su ASIN (assicurati che il campo ASIN esista in entrambe le risposte)
-        df = pd.merge(df_purchase, df_comparison, on="ASIN", suffixes=("_purchase", "_comparison"))
+        # Unisci i DataFrame basandoti sul campo "asin" (assumendo che la chiave sia "asin")
+        df = pd.merge(df_purchase, df_comparison, on="asin", suffixes=("_purchase", "_comparison"))
         
-        # Applica il filtro delle vendite, se min_sales > 0, sul campo delle vendite del paese di confronto
-        if min_sales > 0 and "salesLastMonth_comparison" in df.columns:
-            df = df[df["salesLastMonth_comparison"] >= min_sales]
+        # Se il campo delle vendite è presente, applica il filtro (es. "salesLastMonth" in df_comparison)
+        if min_sales > 0 and "salesLastMonth" in df.columns:
+            df = df[df["salesLastMonth"] >= min_sales]
         
         return df
     except Exception as e:
@@ -180,21 +183,21 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
 
 if search_trigger:
     df = fetch_data(api_key, purchase_country, comparison_country, min_sales, (price_min, price_max), category)
-    if not df.empty and "amazonCurrent_purchase" in df.columns and "buyBoxCurrent_comparison" in df.columns:
-        df["priceDiff"] = df["buyBoxCurrent_comparison"] - df["amazonCurrent_purchase"]
-        df["priceDiffPct"] = df.apply(lambda row: (row["priceDiff"] / row["amazonCurrent_purchase"]) * 100 
-                                      if row["amazonCurrent_purchase"] != 0 else None, axis=1)
+    if not df.empty and "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
+        df["priceDiff"] = df["buyBoxCurrent"] - df["amazonCurrent"]
+        df["priceDiffPct"] = df.apply(lambda row: (row["priceDiff"] / row["amazonCurrent"]) * 100 
+                                      if row["amazonCurrent"] != 0 else None, axis=1)
 else:
     df = pd.DataFrame()
 
 #############################
-# Sezione Risultati
+# SEZIONE RISULTATI
 #############################
 st.header("Risultati")
 if not df.empty:
     st.dataframe(df, use_container_width=True)
-    if "amazonCurrent_purchase" in df.columns and "buyBoxCurrent_comparison" in df.columns:
-        fig = px.bar(df, x="ASIN", y=["amazonCurrent_purchase", "buyBoxCurrent_comparison"], 
+    if "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
+        fig = px.bar(df, x="asin", y=["amazonCurrent", "buyBoxCurrent"], 
                      title="Prezzi nei due paesi", barmode="group",
                      labels={"value": "Prezzo (€)", "variable": "Tipo"})
         st.plotly_chart(fig, use_container_width=True)
@@ -202,4 +205,4 @@ if not df.empty:
 else:
     st.info("Premi il pulsante 'Cerca' per visualizzare i risultati.")
 
-st.info("Nota: Se la struttura dei dati reali restituiti da Keepa differisce, adatta i nomi dei campi nel merge e nel calcolo delle differenze. Consulta la documentazione ufficiale di Keepa per i dettagli.")
+st.info("Nota: Se la struttura dei dati reali differisce, adatta il parsing e il merge in base alla documentazione ufficiale di Keepa.")
