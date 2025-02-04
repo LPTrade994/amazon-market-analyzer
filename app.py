@@ -8,14 +8,14 @@ from keepa import Keepa
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 
-# Carica le variabili d'ambiente dal file .env, se presente
+# Carica le variabili d'ambiente dal file .env (se presente)
 load_dotenv()
 
 st.set_page_config(page_title="Amazon Market Analyzer", layout="wide")
 
 # Limite giornaliero delle API (esempio)
 API_LIMIT_DAILY = 250
-api_requests_count = 0  # Non persistito tra sessioni
+api_requests_count = 0  # Nota: questo contatore non viene persistito tra sessioni
 
 #############################
 # FUNZIONI PER LA GESTIONE DELL'API KEY (CIFRATURA CON FERNET)
@@ -54,11 +54,24 @@ def load_encrypted_api_key():
     return None
 
 #############################
+# (Opzionale) Funzione per caricare le categorie da file JSON
+#############################
+@st.cache_data(ttl=86400)
+def load_categories_from_file():
+    try:
+        with open("categories.json", "r", encoding="utf-8") as f:
+            categories = json.load(f)
+        return categories
+    except Exception as e:
+        st.error(f"Errore nel caricamento del file categorie: {e}")
+        return {}
+
+#############################
 # FUNZIONE DI PARSING DEL CSV DI KEEPA (VERSIONE SEMPLIFICATA)
 #############################
 def parse_keepa_csv(csv_data):
     """
-    Estrae il prezzo corrente dal CSV.
+    Funzione semplificata per estrarre il prezzo corrente dal CSV.
     Si assume che csv_data[0] sia il timestamp e csv_data[1] il prezzo corrente (in centesimi).
     Ritorna un dizionario con 'currentPrice' e 'buyBoxPrice' (uguali in questo esempio).
     """
@@ -79,7 +92,7 @@ def parse_keepa_csv(csv_data):
 def test_connection(key):
     try:
         api = Keepa(key)
-        params = {"domain": 1}
+        params = {"domain": "US"}  # Usa un dominio valido, ad es. "US"
         _ = api.product_finder(params)
         return True
     except Exception as e:
@@ -136,57 +149,67 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
     if api_requests_count >= API_LIMIT_DAILY:
         st.error("Limite giornaliero API raggiunto!")
         return pd.DataFrame()
-    api = Keepa(key)
-    asin_list = [a.strip() for a in asin_input.split(",") if a.strip() != ""]
-    data_purchase = []
-    data_comparison = []
-    
-    # Codice di dominio: utilizza la mappatura per ciascun paese
-    domain_map = {"IT": 1, "DE": 4, "ES": 3}
-    domain_purchase = domain_map.get(purchase_country, 1)
-    domain_comparison = domain_map.get(comparison_country, 1)
-    
-    for asin in asin_list:
-        try:
-            # Per ciascun ASIN, effettua due query: una per il paese di acquisto e una per il paese di confronto.
-            prod_purchase = api.query(asin, domain=domain_purchase)
-            prod_comparison = api.query(asin, domain=domain_comparison)
-            # Se la risposta è valida e contiene almeno un prodotto, aggiungila
-            if prod_purchase and isinstance(prod_purchase, list):
-                data_purchase.append(prod_purchase[0])
-            if prod_comparison and isinstance(prod_comparison, list):
-                data_comparison.append(prod_comparison[0])
-        except Exception as e:
-            st.error(f"Errore per ASIN {asin}: {e}")
-    
-    if not data_purchase or not data_comparison:
-        st.error("Nessun dato recuperato per uno o più ASIN.")
+    api_requests_count += 1
+
+    try:
+        api = Keepa(key)
+        # Separare gli ASIN inseriti (rimuovendo spazi vuoti)
+        asin_list = [a.strip() for a in asin_input.split(",") if a.strip() != ""]
+        data_purchase = []
+        data_comparison = []
+        
+        # Usa il mapping dei domini come stringhe
+        domain_map = {"IT": "IT", "DE": "DE", "ES": "ES"}
+        domain_purchase = domain_map.get(purchase_country, "IT")
+        domain_comparison = domain_map.get(comparison_country, "IT")
+        
+        for asin in asin_list:
+            try:
+                prod_purchase = api.query(asin, domain=domain_purchase)
+                prod_comparison = api.query(asin, domain=domain_comparison)
+                if prod_purchase and isinstance(prod_purchase, list):
+                    data_purchase.append(prod_purchase[0])
+                if prod_comparison and isinstance(prod_comparison, list):
+                    data_comparison.append(prod_comparison[0])
+            except Exception as e:
+                st.error(f"Errore per ASIN {asin}: {e}")
+        
+        if not data_purchase or not data_comparison:
+            st.error("Nessun dato recuperato per uno o più ASIN.")
+            return pd.DataFrame()
+        
+        df_purchase = pd.DataFrame(data_purchase)
+        df_comparison = pd.DataFrame(data_comparison)
+        
+        # Parsing del CSV per estrarre il prezzo corrente dal paese di acquisto
+        if "csv" in df_purchase.columns:
+            df_purchase["amazonCurrent"] = df_purchase["csv"].apply(lambda x: parse_keepa_csv(x)["currentPrice"] if isinstance(x, list) else None)
+        # Parsing del CSV per estrarre il prezzo buy box dal paese di confronto
+        if "csv" in df_comparison.columns:
+            df_comparison["buyBoxCurrent"] = df_comparison["csv"].apply(lambda x: parse_keepa_csv(x)["buyBoxPrice"] if isinstance(x, list) else None)
+        
+        # Verifica il campo identificativo; solitamente Keepa restituisce "ASIN" (in maiuscolo)
+        key_field = None
+        possible_keys = ["ASIN", "asin", "productId", "id"]
+        common_keys = set(df_purchase.columns).intersection(set(df_comparison.columns))
+        for k in possible_keys:
+            if k in common_keys:
+                key_field = k
+                break
+        if not key_field:
+            st.write("df_purchase columns:", df_purchase.columns)
+            st.write("df_comparison columns:", df_comparison.columns)
+            raise KeyError("Nessun campo identificativo comune trovato (cercati: ASIN, asin, productId, id).")
+        
+        df = pd.merge(df_purchase, df_comparison, on=key_field, suffixes=("_purchase", "_comparison"))
+        
+        if min_sales > 0 and "salesLastMonth" in df.columns:
+            df = df[df["salesLastMonth"] >= min_sales]
+        
+        return df
+    except Exception as e:
+        st.error(f"Errore durante il fetch dei dati: {e}")
         return pd.DataFrame()
-    
-    df_purchase = pd.DataFrame(data_purchase)
-    df_comparison = pd.DataFrame(data_comparison)
-    
-    # Parsing del CSV per estrarre il prezzo corrente (paese di acquisto)
-    if "csv" in df_purchase.columns:
-        df_purchase["amazonCurrent"] = df_purchase["csv"].apply(lambda x: parse_keepa_csv(x)["currentPrice"] if isinstance(x, list) else None)
-    # Parsing del CSV per estrarre il prezzo buy box (paese di confronto)
-    if "csv" in df_comparison.columns:
-        df_comparison["buyBoxCurrent"] = df_comparison["csv"].apply(lambda x: parse_keepa_csv(x)["buyBoxPrice"] if isinstance(x, list) else None)
-    
-    # Verifica il campo identificativo: si assume che la query restituisca "asin" in minuscolo
-    key_field = "asin"
-    if key_field not in df_purchase.columns or key_field not in df_comparison.columns:
-        st.write("df_purchase columns:", df_purchase.columns)
-        st.write("df_comparison columns:", df_comparison.columns)
-        raise KeyError("Nessun campo identificativo comune trovato per ASIN.")
-    
-    df = pd.merge(df_purchase, df_comparison, on=key_field, suffixes=("_purchase", "_comparison"))
-    
-    # Applica filtri opzionali: ad esempio, filtrare per vendite minime (se presente)
-    if min_sales > 0 and "salesLastMonth" in df.columns:
-        df = df[df["salesLastMonth"] >= min_sales]
-    
-    return df
 
 if search_trigger:
     df = fetch_data(api_key, purchase_country, comparison_country, min_sales, (price_min, price_max), category, asin_input)
@@ -213,4 +236,4 @@ if not df.empty:
 else:
     st.info("Premi il pulsante 'Cerca' per visualizzare i risultati.")
 
-st.info("Nota: Se la struttura dei dati reali differisce, adatta il parsing in base alla documentazione ufficiale di Keepa.")
+st.info("Nota: Se la struttura dei dati reali differisce, adatta il parsing e il merge in base alla documentazione ufficiale di Keepa.")
