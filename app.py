@@ -181,16 +181,32 @@ def main():
                 purchase_data = fetch_keepa_data(keepa_api, params, purchase_country)
                 comparison_data = fetch_keepa_data(keepa_api, params, comparison_country)
                 
-                # Processa i dati
+                # CORREZIONE CRUCIALE: Gestione struttura dati corretta
+                def process_api_response(data):
+                    if isinstance(data, dict):
+                        return data.get('products', [])
+                    elif isinstance(data, list):
+                        return data
+                    return []
+                
+                purchase_products = process_api_response(purchase_data)
+                comparison_products = process_api_response(comparison_data)
+                
                 processed_data = []
-                for idx, product in enumerate(purchase_data.get('products', [])):
+                for product in purchase_products:
+                    if not isinstance(product, dict):
+                        continue
+                    
                     prices = parse_keepa_prices(product.get('csv', []))
                     
-                    converted_price = convert_currency(
-                        prices['current'], 
-                        purchase_country, 
-                        comparison_country
-                    ) if prices['current'] else None
+                    # Conversione valuta
+                    converted_price = None
+                    if prices['current'] is not None:
+                        converted_price = convert_currency(
+                            prices['current'],
+                            purchase_country,
+                            comparison_country
+                        )
                     
                     processed_data.append({
                         'ASIN': product.get('asin'),
@@ -201,7 +217,7 @@ def main():
                         'Vendite Ultimo Mese': product.get('salesLast30')
                     })
                 
-                update_api_counter(len(purchase_data.get('products', [])))
+                update_api_counter(len(purchase_products))
                 
                 # Visualizza risultati
                 df = pd.DataFrame(processed_data)
