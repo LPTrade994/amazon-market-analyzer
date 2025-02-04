@@ -147,10 +147,17 @@ df = fetch_data(api_key, country, min_sales, (price_min, price_max), category)
 #############################
 st.header("Risultati")
 if not df.empty:
-    st.dataframe(df.sort_values("SalesRank"), use_container_width=True)
+    # Controlla se la colonna "SalesRank" esiste prima di ordinare
+    if "SalesRank" in df.columns:
+        df_sorted = df.sort_values("SalesRank")
+    else:
+        df_sorted = df
+    st.dataframe(df_sorted, use_container_width=True)
+    
     if "Prezzo" in df.columns:
         fig = px.bar(df, x="ASIN", y="Prezzo", title="Differenze Prezzi per Prodotto")
         st.plotly_chart(fig, use_container_width=True)
+    
     st.markdown(f"**Token residui:** {API_LIMIT_DAILY - api_requests_count} / {API_LIMIT_DAILY}")
 else:
     st.info("Nessun dato disponibile da mostrare.")
