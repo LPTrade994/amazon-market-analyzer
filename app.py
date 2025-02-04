@@ -7,17 +7,17 @@ from keepa import Keepa
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 
-# Carica le variabili d'ambiente dal file .env se presente
+# Carica le variabili d'ambiente dal file .env (se presente)
 load_dotenv()
 
 st.set_page_config(page_title="Amazon Market Analyzer", layout="wide")
 
 # Limite giornaliero delle API (esempio)
 API_LIMIT_DAILY = 250
-api_requests_count = 0  # (Per semplicità, questo contatore non viene persistito)
+api_requests_count = 0  # Nota: questo contatore non viene persistito
 
 #############################
-# Funzioni per gestione API Key (cifratura con Fernet)
+# Funzioni per la gestione dell'API Key (cifratura con Fernet)
 #############################
 def get_fernet():
     key_file = "key.key"
@@ -52,6 +52,18 @@ def load_encrypted_api_key():
             return None
     return None
 
+# Funzione per ottenere le categorie da Keepa (se supportato) o usare una mappatura demo
+@st.cache_data(ttl=86400)
+def get_categories(key):
+    try:
+        api = Keepa(key)
+        # Se la libreria supporta un metodo per ottenere le categorie:
+        categories = api.category_query()  # Sostituisci con il metodo corretto se disponibile
+        return categories
+    except Exception as e:
+        st.error(f"Errore nel recupero delle categorie: {e}")
+        return {"Elettronica": "12345", "Libri": "23456", "Moda": "34567", "Casa e Giardino": "45678"}
+
 # Carica la API Key da st.secrets, .env o dal file cifrato
 api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_encrypted_api_key()
 
@@ -60,7 +72,6 @@ api_key = st.secrets.get("KEEPA_API_KEY") or os.getenv("KEEPA_API_KEY") or load_
 #############################
 with st.sidebar:
     st.header("⚙️ Configurazione")
-    # Campo per inserire la API Key (in modalità password)
     input_api = st.text_input("Inserisci API Key", value="" if api_key is None else api_key, type="password")
     if st.button("Salva API Key"):
         if input_api:
@@ -73,20 +84,27 @@ with st.sidebar:
     purchase_country = st.selectbox("Paese di Acquisto", ["IT", "DE", "ES"], key="purchase")
     comparison_country = st.selectbox("Paese di Confronto", ["IT", "DE", "ES"], index=0, key="compare")
     st.markdown("---")
-    # Filtri di ricerca
+    # Filtri di Ricerca
     st.markdown("### Filtri di Ricerca")
-    # Filtro per vendite minime (input numerico), che può essere impostato a 0 (disattivato)
+    # Input numerico per le vendite minime (applicato al paese di confronto)
     min_sales = st.number_input("Vendite minime ultimi 30gg [Paese di Confronto]", min_value=0, max_value=10000, value=0, step=1)
-    # Input manuale per intervallo di prezzo
+    # Input manuale per l'intervallo di prezzo
     price_min = st.number_input("Prezzo minimo (€)", min_value=1, max_value=10000, value=10)
     price_max = st.number_input("Prezzo massimo (€)", min_value=1, max_value=10000, value=100)
-    category = st.text_input("Categoria (ID o nome)")
+    # Selezione della Categoria: usa get_categories se possibile, altrimenti mappatura demo
+    st.markdown("### Seleziona Categoria")
+    if api_key and test_connection(api_key):
+        categories_dict = get_categories(api_key)
+    else:
+        categories_dict = {"Elettronica": "12345", "Libri": "23456", "Moda": "34567", "Casa e Giardino": "45678"}
+    categoria_scelta = st.selectbox("Categoria", list(categories_dict.keys()))
+    category = categories_dict[categoria_scelta]
     st.markdown("---")
     # Pulsante per avviare la ricerca
     search_trigger = st.button("Cerca")
 
 #############################
-# Funzione per testare la connessione con Keepa API (di base)
+# Funzione per testare la connessione con Keepa API (base)
 #############################
 def test_connection(key):
     try:
@@ -119,21 +137,16 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
     if key and test_connection(key):
         try:
             api = Keepa(key)
-            # Qui dovresti passare i parametri reali per la chiamata all'API,
-            # inclusi eventuali parametri specifici per il paese di acquisto e di confronto.
-            # Per questo esempio, simuliamo i dati reali:
+            # Qui dovrai impostare i parametri reali per chiamare l'API Keepa.
+            # Per l'esempio, simuliamo i dati reali:
             data = {
                 "ASIN": ["B0001", "B0002", "B0003"],
                 "title": ["Prodotto 1", "Prodotto 2", "Prodotto 3"],
-                # Vendite del mese scorso riferite al paese di confronto
-                "salesLastMonth": [100, 200, 150],
-                # Prezzo nel paese di acquisto (ad esempio, se purchase_country == "ES")
-                "amazonCurrent": [19.99, 29.99, 9.99],
-                # Prezzo nel paese di confronto (ad esempio, se comparison_country == "IT")
-                "buyBoxCurrent": [21.99, 27.99, 10.99]
+                "salesLastMonth": [100, 200, 150],  # vendite dal paese di confronto
+                "amazonCurrent": [19.99, 29.99, 9.99],   # prezzo nel paese di acquisto
+                "buyBoxCurrent": [21.99, 27.99, 10.99]     # prezzo nel paese di confronto
             }
             df = pd.DataFrame(data)
-            # Applica il filtro delle vendite se il valore è maggiore di 0
             if min_sales > 0 and "salesLastMonth" in df.columns:
                 df = df[df["salesLastMonth"] >= min_sales]
             return df
@@ -141,7 +154,6 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
             st.error(f"Errore durante il fetch dei dati: {e}")
             return pd.DataFrame()
     else:
-        # Modalità demo: dati di esempio
         data = {
             "ASIN": ["B0001", "B0002", "B0003"],
             "title": ["Prodotto 1", "Prodotto 2", "Prodotto 3"],
@@ -154,12 +166,13 @@ def fetch_data(key, purchase_country, comparison_country, min_sales, price_range
             df = df[df["salesLastMonth"] >= min_sales]
         return df
 
-# Esegui la ricerca solo se viene premuto il pulsante "Cerca"
+# Se il pulsante "Cerca" viene premuto, esegue la ricerca e calcola le differenze
 if search_trigger:
     df = fetch_data(api_key, purchase_country, comparison_country, min_sales, (price_min, price_max), category)
     if not df.empty and "amazonCurrent" in df.columns and "buyBoxCurrent" in df.columns:
         df["priceDiff"] = df["buyBoxCurrent"] - df["amazonCurrent"]
-        df["priceDiffPct"] = df.apply(lambda row: (row["priceDiff"] / row["amazonCurrent"]) * 100 if row["amazonCurrent"] != 0 else None, axis=1)
+        df["priceDiffPct"] = df.apply(lambda row: (row["priceDiff"] / row["amazonCurrent"]) * 100 
+                                      if row["amazonCurrent"] != 0 else None, axis=1)
 else:
     df = pd.DataFrame()
 
@@ -178,5 +191,4 @@ if not df.empty:
 else:
     st.info("Premi il pulsante 'Cerca' per visualizzare i risultati.")
 
-# Messaggio per il testing:
-st.info("Nota: Attualmente i dati sono in modalità demo. Per ottenere dati reali, assicurati di utilizzare una API Key valida e implementa la logica di fetch dalla API di Keepa.")
+st.info("Nota: Attualmente l'app utilizza dati demo. Per ottenere dati reali, integra la logica di chiamata all'API Keepa consultando la documentazione ufficiale.")
