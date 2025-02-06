@@ -1,185 +1,105 @@
-# app.py
 import streamlit as st
-from keepa import Keepa
 import pandas as pd
-import plotly.express as px
-from cryptography.fernet import Fernet
-import os
-import re
-import csv
-from datetime import datetime
 
-# Configurazione iniziale
-st.set_page_config(page_title="Amazon Market Analyzer", layout="wide")
-
-# Gestione sicura API Key
-def setup_encryption():
-    if not os.path.exists('.fernet_key'):
-        key = Fernet.generate_key()
-        with open('.fernet_key', 'wb') as f:
-            f.write(key)
-    with open('.fernet_key', 'rb') as f:
-        return Fernet(f.read())
-
-fernet = setup_encryption()
-
-# Funzioni di gestione API Key
-def save_api_key(key):
-    encrypted = fernet.encrypt(key.encode()).decode()
-    with open('.encrypted_key', 'w') as f:
-        f.write(encrypted)
-
-def load_api_key():
-    if os.path.exists('.encrypted_key'):
-        with open('.encrypted_key', 'r') as f:
-            return fernet.decrypt(f.read().encode()).decode()
-    return None
-
-# Cache locale
-CACHE_FILE = "market_cache.csv"
-def save_cache(data):
-    data.to_csv(CACHE_FILE, index=False)
-
-def load_cache():
-    if os.path.exists(CACHE_FILE):
-        return pd.read_csv(CACHE_FILE)
-    return None
-
-# Configurazione Paesi
-COUNTRIES = {
-    "IT": 10, "ES": 8, "DE": 3, "FR": 4,
-    "US": 1, "UK": 2, "JP": 6, "CA": 7
-}
-
-# UI - Sidebar
-with st.sidebar:
-    st.header("⚙️ Configurazione")
-    
-    # Sezione API Key
-    api_key = load_api_key() or os.getenv("KEEPA_API_KEY")
-    if not api_key:
-        api_input = st.text_input("Inserisci API Key Keepa", type="password")
-        if st.button("Salva API Key"):
-            if re.match(r'^[A-Za-z0-9]{64}$', api_input.strip()):
-                save_api_key(api_input)
-                st.rerun()
-            else:
-                st.error("Formato API Key non valido (64 caratteri alfanumerici)")
-    
-    # Selezione Paesi
-    target_country = st.selectbox("Paese Target", list(COUNTRIES.keys()))
-    compare_countries = st.multiselect("Paesi Confronto", list(COUNTRIES.keys()))
-    
-    st.header("🔍 Filtri Ricerca")
-    min_rank = st.slider("Sales Rank Minimo", 0, 100000, 50000)
-    price_range = st.slider("Range Prezzo (€)", 0, 500, (0, 200))
-    category = st.text_input("Categoria Prodotto")
-    
-    # Contatore Richieste
+########################################
+# Funzione di pulizia prezzo
+########################################
+def pulisci_prezzo(prezzo_raw):
+    """
+    Rimuove simboli di euro, spazi e converte virgole in punti.
+    Restituisce un float o None se la conversione fallisce.
+    """
+    if not isinstance(prezzo_raw, str):
+        return None
+    # Rimuovi simboli euro e spazi
+    prezzo = prezzo_raw.replace("€", "").replace(" ", "")
+    # Sostituisci eventuali virgole con punti
+    prezzo = prezzo.replace(",", ".")
+    # Converti a float
     try:
-        with open('request_count.txt', 'r') as f:
-            count, date = f.read().split(',')
-            if datetime.now().strftime('%Y-%m-%d') == date:
-                st.info(f"📊 Richieste rimaste: {250 - int(count)}/250")
-    except:
-        pass
+        return float(prezzo)
+    except ValueError:
+        return None
 
-# Main UI
-st.title("Amazon Market Analyzer 📊")
+########################################
+# Titolo dell'app
+########################################
+st.title("Amazon Market Analyzer")
 
-# Modalità Demo
-if not api_key:
-    st.warning("Modalità demo - Dati mock")
-    df = pd.DataFrame({
-        'ASIN': ['B08N5K5C2K', 'B07PGL8ZYS'],
-        'Prodotto': ['Prodotto Demo 1', 'Prodotto Demo 2'],
-        'SalesRank': [150, 300],
-        'Prezzo': [49.99, 89.99],
-        'Categoria': ['Elettronica', 'Libri']
-    })
-    st.dataframe(df.sort_values('SalesRank'))
-    st.plotly_chart(px.bar(df, x='Prodotto', y='Prezzo', color='Categoria'))
-    st.stop()
+st.write("""
+Carica i due file CSV:
+- **Mercato Italiano** (con colonne `ASIN`, `Title`, `Buy Box: Current`).
+- **Mercato Estero** (con colonne `ASIN`, `Amazon: Current`).
 
-# Logica Principale
-@st.cache_data(ttl=3600)
-def fetch_data():
-    cached = load_cache()
-    if cached is not None:
-        return cached
-    
-    try:
-        api = Keepa(api_key)
-        criteria = {
-            'domain': COUNTRIES[target_country],
-            'current_SALES_RANK': [min_rank, 999999],
-            'current_NEW': [price_range[0]*100, price_range[1]*100]
-        }
-        if category:
-            criteria['category'] = category
-            
-        products = api.product_finder(criteria, product=True)
-        data = []
+Il tool confronterà i prezzi e mostrerà (in ordine decrescente di convenienza) 
+i prodotti in cui il prezzo **estero** risulta inferiore al prezzo **italiano**.
+""")
+
+########################################
+# Caricamento file
+########################################
+file_ita = st.file_uploader("Carica CSV - Mercato Italiano", type=["csv"])
+file_est = st.file_uploader("Carica CSV - Mercato Estero", type=["csv"])
+
+if file_ita and file_est:
+    # Bottone per avviare l'analisi
+    if st.button("Confronta Prezzi"):
+        # Leggi i CSV con pandas
+        try:
+            df_ita = pd.read_csv(file_ita, sep=";", dtype=str)
+        except:
+            file_ita.seek(0)
+            df_ita = pd.read_csv(file_ita, sep=",", dtype=str)
         
-        for p in products:
-            prices = {}
-            for country in [target_country] + compare_countries:
-                domain = COUNTRIES[country]
-                prices[f'Prezzo_{country}'] = p['data'].get(domain, {}).get('New', 0)/100
-            
-            data.append({
-                'ASIN': p['asin'],
-                'Prodotto': p.get('title', 'N/A'),
-                'SalesRank': p['data'][COUNTRIES[target_country]].get('SalesRank', 0),
-                'Categoria': p.get('category', 'N/A'),
-                **prices
-            })
-            
-        df = pd.DataFrame(data)
-        save_cache(df)
-        return df
-        
-    except Exception as e:
-        st.error(f"Errore API: {str(e)}")
-        return pd.DataFrame()
+        try:
+            df_est = pd.read_csv(file_est, sep=";", dtype=str)
+        except:
+            file_est.seek(0)
+            df_est = pd.read_csv(file_est, sep=",", dtype=str)
 
-# Esecuzione e Visualizzazione
-if st.sidebar.button("Test Connessione"):
-    try:
-        Keepa(api_key).status()
-        st.success("Connessione API riuscita!")
-    except Exception as e:
-        st.error(f"Errore connessione: {str(e)}")
+        # Colonne attese (adatta se i tuoi file usano nomi diversi)
+        col_asin = "ASIN"
+        col_title_it = "Title"
+        col_price_it = "Buy Box: Current"
+        col_price_est = "Amazon: Current"
 
-df = fetch_data()
+        # Selezione colonne
+        df_ita = df_ita[[col_asin, col_title_it, col_price_it]]
+        df_est = df_est[[col_asin, col_price_est]]
 
-if not df.empty:
-    st.header("Risultati")
-    st.dataframe(df.sort_values('SalesRank'))
-    
-    # Preparazione dati grafico
-    price_cols = [c for c in df.columns if c.startswith('Prezzo_')]
-    plot_df = df.melt(id_vars=['ASIN', 'Prodotto'], 
-                     value_vars=price_cols,
-                     var_name='Paese', value_name='Prezzo')
-    
-    st.plotly_chart(px.bar(plot_df, x='Prodotto', y='Prezzo', 
-                          color='Paese', barmode='group',
-                          hover_data=['ASIN', 'Categoria']))
+        # Pulizia prezzi
+        df_ita["Prezzo_IT"] = df_ita[col_price_it].apply(pulisci_prezzo)
+        df_est["Prezzo_Est"] = df_est[col_price_est].apply(pulisci_prezzo)
+
+        # Merge su ASIN
+        df_merged = pd.merge(df_ita, df_est, on=col_asin, how="inner")
+
+        # Calcolo risparmio %
+        df_merged["Risparmio_%"] = (
+            (df_merged["Prezzo_IT"] - df_merged["Prezzo_Est"]) / df_merged["Prezzo_IT"] * 100
+        )
+
+        # Filtra i casi in cui Prezzo Est < Prezzo IT
+        df_filtered = df_merged[df_merged["Prezzo_Est"] < df_merged["Prezzo_IT"]]
+
+        # Ordina in ordine decrescente di risparmio
+        df_filtered = df_filtered.sort_values("Risparmio_%", ascending=False)
+
+        # Seleziona le colonne finali
+        df_finale = df_filtered[[col_asin, col_title_it, "Prezzo_IT", "Prezzo_Est", "Risparmio_%"]]
+
+        # Mostra i risultati
+        st.write("**Prodotti più convenienti sul mercato estero**:")
+        st.dataframe(df_finale)
+
+        # Opzione per scaricare la tabella
+        csv_risultato = df_finale.to_csv(index=False, sep=";").encode("utf-8")
+        st.download_button(
+            label="Scarica risultati come CSV",
+            data=csv_risultato,
+            file_name="risultato_convenienza.csv",
+            mime="text/csv"
+        )
+
 else:
-    st.warning("Nessun risultato trovato con i filtri selezionati")
-
-# Aggiornamento contatore richieste
-try:
-    with open('request_count.txt', 'r') as f:
-        count, date = f.read().split(',')
-        count = int(count) + 1
-except:
-    count = 1
-    date = datetime.now().strftime('%Y-%m-%d')
-
-if count <= 250:
-    with open('request_count.txt', 'w') as f:
-        f.write(f"{count},{date}")
-else:
-    st.error("Limite giornaliero richieste API raggiunto!")
+    st.info("Carica entrambi i file CSV per procedere al confronto.")
