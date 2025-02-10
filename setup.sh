@@ -1,5 +1,3 @@
-# setup.sh
-#!binbash
-python3 -m venv venv
-source venvbinactivate
+#!/bin/bash
 pip install -r requirements.txt
+echo "Setup completato! Eseguire con: streamlit run app.py"
