@@ -15,7 +15,7 @@ st.title("Amazon Market Analyzer - Multi-Mercato + Vendite (Bought in past month
 with st.sidebar:
     st.subheader("Caricamento file")
     files_base = st.file_uploader(
-        "Lista di partenza (es. Germania) - multipli (CSV/XLSX)",
+        "Lista di partenza (dove vuoi comprare, es. Germania) - multipli (CSV/XLSX)",
         type=["csv", "xlsx"],
         accept_multiple_files=True
     )
@@ -49,7 +49,6 @@ def load_data(uploaded_file):
         df = pd.read_excel(uploaded_file, dtype=str)
         return df
     else:
-        # CSV: prima si prova con il separatore ';', altrimenti ','
         try:
             df = pd.read_csv(uploaded_file, sep=";", dtype=str)
             return df
@@ -92,7 +91,6 @@ if files_base:
 # 2) Confronto prezzi per ciascun file di confronto
 #################################
 if avvia_confronto:
-    # Verifica che i file siano stati caricati
     if not files_base:
         st.warning("Devi prima caricare la lista di partenza.")
         st.stop()
@@ -103,7 +101,7 @@ if avvia_confronto:
         st.error("La lista di partenza sembra vuota o non caricata correttamente.")
         st.stop()
         
-    # Controlla la presenza delle colonne necessarie nella lista di partenza
+    # Verifica colonne necessarie per la lista di partenza
     base_required_cols = ["ASIN", "Title"]
     if base_price_option not in df_base.columns:
         st.error(f"Nella lista di partenza manca la colonna '{base_price_option}'.")
@@ -113,20 +111,18 @@ if avvia_confronto:
             st.error(f"Nella lista di partenza manca la colonna '{col}'.")
             st.stop()
             
-    # Pulizia del prezzo di riferimento per la lista di partenza
+    # Calcola il prezzo della lista di partenza
     df_base["Prezzo_base"] = df_base[base_price_option].apply(pulisci_prezzo)
     df_base = df_base[["ASIN", "Title", "Prezzo_base"]]
     
-    #################################
     # Elaborazione per ogni file di confronto
-    #################################
     for comp_file in comparison_files:
         df_comp = load_data(comp_file)
         if df_comp is None or df_comp.empty:
             st.error(f"Il file di confronto {comp_file.name} è vuoto o non caricato correttamente.")
             continue
         
-        # Verifica che il file di confronto contenga le colonne necessarie:
+        # Verifica colonne necessarie per il file di confronto
         comp_required_cols = ["ASIN", "Bought in past month", "Locale"]
         if comparison_price_option not in df_comp.columns:
             st.error(f"Nel file di confronto {comp_file.name} manca la colonna '{comparison_price_option}'.")
@@ -136,25 +132,36 @@ if avvia_confronto:
             st.error(f"Nel file di confronto {comp_file.name} mancano le colonne: {', '.join(missing_cols)}.")
             continue
         
-        # Pulizia del prezzo nel file di confronto
+        # Calcola il prezzo nel file di confronto
         df_comp["Prezzo_comp"] = df_comp[comparison_price_option].apply(pulisci_prezzo)
         df_comp = df_comp[["ASIN", "Locale", "Bought in past month", "Prezzo_comp"]]
         
-        # Merge fra lista di partenza e file di confronto sull'ASIN
+        # Merge tra la lista di partenza e il file di confronto
         df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner")
         
-        # Calcolo della differenza percentuale
+        # Calcola la differenza percentuale: (Prezzo_base - Prezzo_comp) / Prezzo_base * 100
         df_merged["Risparmio_%"] = ((df_merged["Prezzo_base"] - df_merged["Prezzo_comp"]) / df_merged["Prezzo_base"]) * 100
         
-        # Filtra solo i casi in cui il prezzo del confronto è minore di quello di partenza
+        # Filtra solo i casi in cui il prezzo di confronto è inferiore a quello della lista di partenza
         df_filtered = df_merged[df_merged["Prezzo_comp"] < df_merged["Prezzo_base"]]
         df_filtered = df_filtered.sort_values("Risparmio_%", ascending=False)
         
-        # Seleziona le colonne finali includendo il riferimento Locale
-        df_finale = df_filtered[["Locale", "ASIN", "Title", "Bought in past month", "Prezzo_base", "Prezzo_comp", "Risparmio_%"]]
+        # Rinomina le colonne di prezzo per chiarezza
+        df_filtered = df_filtered.rename(columns={
+            "Prezzo_base": f"Prezzo ({base_price_option})",
+            "Prezzo_comp": f"Prezzo ({comparison_price_option})"
+        })
         
-        # Visualizzazione dei risultati per il mercato in questione (utilizzo il nome del file come identificativo)
-        st.subheader(f"Risultati di confronto per {comp_file.name} - Paese: {df_finale['Locale'].iloc[0] if not df_finale.empty else 'N/D'}")
+        # Seleziona le colonne finali
+        df_finale = df_filtered[[
+            "Locale", "ASIN", "Title", "Bought in past month",
+            f"Prezzo ({base_price_option})", f"Prezzo ({comparison_price_option})", "Risparmio_%"
+        ]]
+        
+        # Determina il riferimento Locale (si assume che tutti i record del file di confronto abbiano lo stesso Locale)
+        locale_val = df_finale["Locale"].unique()[0] if not df_finale.empty else "N/D"
+        
+        st.subheader(f"Risultati di confronto per {comp_file.name} - Paese di confronto: {locale_val}")
         st.dataframe(df_finale, height=600)
         
         # Pulsante per il download del CSV
