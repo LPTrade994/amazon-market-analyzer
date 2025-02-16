@@ -49,7 +49,7 @@ def load_data(uploaded_file):
         df = pd.read_excel(uploaded_file, dtype=str)
         return df
     else:
-        # CSV: prima si prova con il separatore ';', altrimenti ','
+        # CSV: si prova prima con il separatore ';', altrimenti ','
         try:
             df = pd.read_csv(uploaded_file, sep=";", dtype=str)
             return df
@@ -120,7 +120,14 @@ if avvia_confronto:
     #################################
     # Elaborazione per ogni file di confronto
     #################################
-    for comp_file in comparison_files:
+    for idx, comp_file in enumerate(comparison_files):
+        # Chiedi all'utente di inserire il nome del paese per il file di confronto
+        country = st.text_input(
+            f"Inserisci il nome del paese per il file {comp_file.name}:",
+            value=comp_file.name.split('.')[0],
+            key=f"country_{idx}"
+        )
+        
         df_comp = load_data(comp_file)
         if df_comp is None or df_comp.empty:
             st.error(f"Il file di confronto {comp_file.name} è vuoto o non caricato correttamente.")
@@ -150,15 +157,15 @@ if avvia_confronto:
         df_filtered = df_merged[df_merged["Prezzo_comp"] < df_merged["Prezzo_base"]]
         df_filtered = df_filtered.sort_values("Risparmio_%", ascending=False)
         
-        # Visualizzazione dei risultati per il mercato in questione (utilizzo il nome del file come identificativo)
-        st.subheader(f"Risultati di confronto per {comp_file.name}")
+        # Visualizzazione dei risultati per il mercato in questione
+        st.subheader(f"Risultati di confronto per {country} (file: {comp_file.name})")
         st.dataframe(df_filtered, height=600)
         
         # Pulsante per il download del CSV
         csv_data = df_filtered.to_csv(index=False, sep=";").encode("utf-8")
         st.download_button(
-            label=f"Scarica CSV per {comp_file.name}",
+            label=f"Scarica CSV per {country}",
             data=csv_data,
-            file_name=f"risultato_convenienza_{comp_file.name}.csv",
+            file_name=f"risultato_convenienza_{country}.csv",
             mime="text/csv"
         )
