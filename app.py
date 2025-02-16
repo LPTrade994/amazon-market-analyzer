@@ -1,36 +1,87 @@
 import streamlit as st
 import pandas as pd
+from typing import Dict
 
+########################################
+# Configurazione base Streamlit
+########################################
 st.set_page_config(
-    page_title="Amazon Market Analyzer - Multi IT + 'Bought in past month'",
+    page_title="Amazon Market Analyzer - Multi Paesi & Vendite",
     page_icon="🔎",
     layout="wide"
 )
 
-st.title("Amazon Market Analyzer - Multi IT + Vendite (Bought in past month)")
+########################################
+# (Facoltativo) un po' di CSS
+########################################
+st.markdown("""
+<style>
+.block-container {
+    padding: 1rem 2rem;
+}
+/* Bottone rosso */
+.stButton button {
+    background-color: #FF4B4B !important;
+    color: #ffffff !important;
+    border-radius: 0.3rem;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# Altre parti di layout, CSS, etc. come preferisci
+########################################
+# Titolo & istruzioni
+########################################
+st.title("Amazon Market Analyzer - Multi Paesi con Dettagli Prodotti")
+st.write("""
+Caricamento:
+1. **Mercato IT** (più file): Colonne minime: `ASIN`, `Title`, `Bought in past month`, `Buy Box: Current`.
+2. **Paesi Esteri**: per ognuno, fornisci una sigla (ES, DE, FR...) e carica il file (colonne: `ASIN`, `Amazon: Current`, `Delivery date`, ...).
 
-#################################
-# Caricamento multiplo IT e singolo EST
-#################################
+Poi clicca "**Unisci & Mostra**" per ottenere la tabella finale con i prezzi di tutti i paesi.
+""")
+
+########################################
+# Sidebar: file IT + definizione paesi
+########################################
 with st.sidebar:
-    st.subheader("Caricamento file")
-    files_ita = st.file_uploader(
+    st.subheader("Caricamento Mercato IT")
+    files_it = st.file_uploader(
         "Mercato IT (CSV/XLSX) - multipli",
         type=["csv","xlsx"],
         accept_multiple_files=True
     )
-    file_est = st.file_uploader(
-        "Mercato EST (CSV/XLSX) - singolo",
-        type=["csv","xlsx"]
+    
+    st.subheader("Configura Paesi Esteri")
+    num_countries = st.number_input(
+        "Quanti paesi esteri?",
+        min_value=0, max_value=10, value=2, step=1
     )
-    avvia_confronto = st.button("Confronta Prezzi")
+    
+    # Dizionario: { "ES": <file>, "DE": <file>, ... }
+    country_files: Dict[str, st.uploaded_file_manager.UploadedFile] = {}
+    
+    for i in range(num_countries):
+        st.write(f"**Paese #{i+1}**")
+        country_code = st.text_input(
+            f"Codice Paese (es: ES, DE, FR) n.{i+1}",
+            value=f"ES{i}" if i>0 else "ES",
+            key=f"country_code_{i}"
+        )
+        file_est = st.file_uploader(
+            f"File Estero {country_code}",
+            type=["csv","xlsx"],
+            key=f"file_est_{i}"
+        )
+        if file_est and country_code.strip():
+            country_files[country_code.strip()] = file_est
+    
+    unify_button = st.button("Unisci & Mostra")
 
-#################################
-# Funzioni di caricamento / pulizia
-#################################
+########################################
+# Funzioni di caricamento e pulizia
+########################################
 def load_data(uploaded_file):
+    """Carica un CSV/XLSX in un DataFrame con tutte le colonne come string."""
     if not uploaded_file:
         return None
     fname = uploaded_file.name.lower()
@@ -38,7 +89,7 @@ def load_data(uploaded_file):
         df = pd.read_excel(uploaded_file, dtype=str)
         return df
     else:
-        # csv
+        # CSV
         try:
             df = pd.read_csv(uploaded_file, sep=";", dtype=str)
             return df
@@ -48,107 +99,102 @@ def load_data(uploaded_file):
             return df
 
 def pulisci_prezzo(prezzo_raw):
+    """Rimuove simboli €, spazi, virgole e converte in float."""
     if not isinstance(prezzo_raw, str):
         return None
-    prezzo = prezzo_raw.replace("€","").replace(" ","").replace(",",".")
+    prezzo = prezzo_raw.replace("€", "").replace(" ", "").replace(",", ".")
     try:
         return float(prezzo)
     except:
         return None
 
-#################################
-# 1) Unione multipli file IT e visualizzazione ASIN
-#################################
-df_ita = None
-if files_ita:
-    df_ita_list = []
-    for f in files_ita:
-        dftemp = load_data(f)
-        if dftemp is not None:
-            df_ita_list.append(dftemp)
-    if df_ita_list:
-        df_ita = pd.concat(df_ita_list, ignore_index=True)
-        
-        if "ASIN" in df_ita.columns:
-            asins = df_ita["ASIN"].dropna().unique()
-            asins_text = "\n".join(asins)
-            st.info("**Lista di ASIN (IT) unificati:**")
-            st.text_area("Copia qui:", asins_text, height=200)
-        else:
-            st.warning("Nei file IT non è presente la colonna 'ASIN'. Impossibile mostrare la lista.")
-
-#################################
-# 2) Confronto prezzi al click
-#################################
-if avvia_confronto:
-    if not files_ita:
-        st.warning("Devi prima caricare i file IT.")
+########################################
+# Se clic su Unisci & Mostra
+########################################
+if unify_button:
+    # 1) Carichiamo e uniamo i file IT
+    if not files_it:
+        st.error("Devi caricare almeno un file per il Mercato IT.")
         st.stop()
-    if not file_est:
-        st.warning("Devi caricare il file EST.")
+    
+    df_list_it = []
+    for f in files_it:
+        dft = load_data(f)
+        if dft is not None and not dft.empty:
+            df_list_it.append(dft)
+    
+    if not df_list_it:
+        st.error("Nessuno dei file IT è stato caricato correttamente.")
         st.stop()
-    if df_ita is None or df_ita.empty:
-        st.error("L'elenco IT sembra vuoto o non caricato correttamente.")
-        st.stop()
-
-    df_est = load_data(file_est)
-    if df_est is None or df_est.empty:
-        st.error("Il file EST è vuoto o non caricato correttamente.")
-        st.stop()
-
-    # Definizione colonne
-    col_asin = "ASIN"
-    col_title_it = "Title"
-    col_price_it = "Buy Box: Current"
-    col_bought_it = "Bought in past month"  # <--- nuova colonna per vendite
-    col_price_est = "Amazon: Current"
-
-    # Verifica che esistano
-    for c in [col_asin, col_title_it, col_price_it, col_bought_it]:
-        if c not in df_ita.columns:
-            st.error(f"Nel Mercato IT manca la colonna '{c}'.")
+    
+    df_it = pd.concat(df_list_it, ignore_index=True)
+    
+    # Controllo colonne base
+    it_cols_needed = ["ASIN", "Title", "Bought in past month", "Buy Box: Current"]
+    for c in it_cols_needed:
+        if c not in df_it.columns:
+            st.error(f"Nei file IT manca la colonna '{c}'.")
             st.stop()
-    if col_asin not in df_est.columns or col_price_est not in df_est.columns:
-        st.error(f"Nel Mercato EST manca '{col_asin}' o '{col_price_est}'.")
-        st.stop()
+    
+    # Pulizia prezzo IT
+    df_it["Price_IT"] = df_it["Buy Box: Current"].apply(pulisci_prezzo)
+    
+    # Riduciamo df_it
+    df_it = df_it[["ASIN", "Title", "Bought in past month", "Price_IT"]]
 
-    # Pulizia prezzi
-    df_ita["Prezzo_IT"] = df_ita[col_price_it].apply(pulisci_prezzo)
-    df_est["Prezzo_Est"] = df_est[col_price_est].apply(pulisci_prezzo)
+    # 2) Creiamo il df_master partendo da df_it
+    df_master = df_it.copy()
 
-    # Seleziona le colonne IT: includiamo "Bought in past month"
-    df_ita = df_ita[[col_asin, col_title_it, col_bought_it, "Prezzo_IT"]]
-
-    # Seleziona le colonne EST
-    df_est = df_est[[col_asin, "Prezzo_Est"]]
-
-    # Merge
-    df_merged = pd.merge(df_ita, df_est, on=col_asin, how="inner")
-
-    # Calcolo differenza
-    df_merged["Risparmio_%"] = (
-        (df_merged["Prezzo_IT"] - df_merged["Prezzo_Est"]) / df_merged["Prezzo_IT"] * 100
-    )
-
-    # Filtra con prezzo est < IT
-    df_filtered = df_merged[df_merged["Prezzo_Est"] < df_merged["Prezzo_IT"]]
-
-    # Ordina decrescente
-    df_filtered = df_filtered.sort_values("Risparmio_%", ascending=False)
-
-    # Seleziona le colonne finali: includiamo "Bought in past month"
-    df_finale = df_filtered[
-        [col_asin, col_title_it, col_bought_it, "Prezzo_IT", "Prezzo_Est", "Risparmio_%"]
-    ]
-
-    st.subheader("Risultati di Confronto")
-    st.dataframe(df_finale, height=600)
-
-    # Scarica CSV
-    csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
+    # 3) Per ogni paese estero, uniamo
+    for code, f_est in country_files.items():
+        df_est = load_data(f_est)
+        if df_est is None or df_est.empty:
+            st.warning(f"Il file del paese {code} risulta vuoto o non caricato correttamente.")
+            continue
+        
+        # Servono almeno "ASIN" e "Amazon: Current"
+        if "ASIN" not in df_est.columns or "Amazon: Current" not in df_est.columns:
+            st.warning(f"Nel file del paese {code} manca 'ASIN' o 'Amazon: Current'.")
+            continue
+        
+        # Pulizia prezzo
+        df_est[f"Price_{code}"] = df_est["Amazon: Current"].apply(pulisci_prezzo)
+        
+        # Se c'è "Delivery date", la rinominiamo
+        if "Delivery date" in df_est.columns:
+            df_est.rename(columns={"Delivery date": f"Delivery_{code}"}, inplace=True)
+        
+        # Teniamo le colonne significative
+        keep_cols = ["ASIN", f"Price_{code}"]
+        if f"Delivery_{code}" in df_est.columns:
+            keep_cols.append(f"Delivery_{code}")
+        
+        df_est = df_est[keep_cols]
+        
+        # Merge sul df_master
+        df_master = pd.merge(df_master, df_est, on="ASIN", how="left")
+    
+    # 4) Mostriamo la tabella unificata
+    st.subheader("Tabella Unificata - Confronto Multi-Paesi")
+    st.dataframe(df_master, height=600)
+    
+    # 5) Seleziona un prodotto per evidenziare i dettagli
+    st.subheader("Dettagli Prodotto Selezionato")
+    asins_all = df_master["ASIN"].dropna().unique()
+    selected_asin = st.selectbox("Scegli un ASIN da visualizzare", asins_all)
+    if selected_asin:
+        detail_df = df_master[df_master["ASIN"] == selected_asin]
+        if not detail_df.empty:
+            with st.expander("Dettagli del Prodotto", expanded=True):
+                st.table(detail_df.T)  # trasposto per visualizzare attributi in righe
+        else:
+            st.info("Nessun dettaglio per l'ASIN selezionato.")
+    
+    # 6) Download CSV
+    csv_data = df_master.to_csv(index=False, sep=";").encode("utf-8")
     st.download_button(
-        label="Scarica CSV",
+        label="Scarica Tabella (CSV)",
         data=csv_data,
-        file_name="risultato_convenienza.csv",
+        file_name="confronto_multipaesi.csv",
         mime="text/csv"
     )
