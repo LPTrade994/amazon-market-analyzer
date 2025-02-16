@@ -31,13 +31,16 @@ st.markdown("""
 ########################################
 # Titolo & istruzioni
 ########################################
-st.title("Amazon Market Analyzer - Multi Paesi con Dettagli Prodotti")
+st.title("Amazon Market Analyzer - Multi Paesi con Dettagli Prodotti e ASIN IT unificati")
 st.write("""
 Caricamento:
 1. **Mercato IT** (più file): Colonne minime: `ASIN`, `Title`, `Bought in past month`, `Buy Box: Current`.
-2. **Paesi Esteri**: per ognuno, fornisci una sigla (ES, DE, FR, …) e carica il file (colonne: `ASIN`, `Amazon: Current`, `Delivery date`, ecc.).
+2. **Paesi Esteri** (quanti vuoi): per ognuno, fornisci una sigla (ES, DE, FR, …) e carica il file (colonne: `ASIN`, `Amazon: Current`, `Delivery date`, ecc.).
 
-Poi clicca "**Unisci & Mostra**" per ottenere la tabella finale con i prezzi di tutti i paesi e i dati sulle vendite.
+Poi clicca "**Unisci & Mostra**" per ottenere:
+- Tabella finale con i prezzi di tutti i paesi
+- Dettagli di un singolo prodotto
+- Elenco di ASIN dal mercato IT.
 """)
 
 ########################################
@@ -58,7 +61,7 @@ with st.sidebar:
     )
     
     # Dizionario: { "ES": <file>, "DE": <file>, ... }
-    # RIMOSSA l'annotazione con st.uploaded_file_manager
+    # NIENTE annotazione st.uploaded_file_manager (evita errori)
     country_files = {}
     
     for i in range(num_countries):
@@ -143,10 +146,23 @@ if unify_button:
     # Riduciamo df_it
     df_it = df_it[["ASIN", "Title", "Bought in past month", "Price_IT"]]
 
-    # 2) Creiamo il df_master partendo da df_it
+    ########################################
+    # 2) Mostriamo subitola LISTA di ASIN unificati (IT)
+    ########################################
+    if "ASIN" in df_it.columns:
+        asins = df_it["ASIN"].dropna().unique()
+        asins_text = "\n".join(asins)
+        st.info("**Lista di ASIN (IT) unificati:**")
+        st.text_area("Copia qui:", asins_text, height=150)
+    else:
+        st.warning("Nei file IT non è presente la colonna 'ASIN'. Impossibile mostrare la lista.")
+    
+    ########################################
+    # 3) Creiamo il df_master partendo da df_it
+    ########################################
     df_master = df_it.copy()
 
-    # 3) Per ogni paese estero, uniamo
+    # 4) Per ogni paese estero, uniamo
     for code, f_est in country_files.items():
         df_est = load_data(f_est)
         if df_est is None or df_est.empty:
@@ -175,11 +191,11 @@ if unify_button:
         # Merge sul df_master
         df_master = pd.merge(df_master, df_est, on="ASIN", how="left")
     
-    # 4) Mostriamo la tabella unificata
+    # 5) Mostriamo la tabella unificata
     st.subheader("Tabella Unificata - Confronto Multi-Paesi")
     st.dataframe(df_master, height=600)
     
-    # 5) Seleziona un prodotto per evidenziare i dettagli
+    # 6) Seleziona un prodotto per evidenziare i dettagli
     st.subheader("Dettagli Prodotto Selezionato")
     asins_all = df_master["ASIN"].dropna().unique()
     if len(asins_all) == 0:
@@ -194,7 +210,7 @@ if unify_button:
             else:
                 st.info("Nessun dettaglio per l'ASIN selezionato.")
     
-    # 6) Download CSV
+    # 7) Download CSV
     csv_data = df_master.to_csv(index=False, sep=";").encode("utf-8")
     st.download_button(
         label="Scarica Tabella (CSV)",
