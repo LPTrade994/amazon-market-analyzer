@@ -2,30 +2,35 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(
-    page_title="Amazon Market Analyzer - Multi Paesi",
+    page_title="Amazon Market Analyzer - Multi IT + 'Bought in past month'",
     page_icon="🔎",
     layout="wide"
 )
 
-st.title("Amazon Market Analyzer - Multi Paesi")
+st.title("Amazon Market Analyzer - Multi IT + Vendite (Bought in past month)")
+
+# Altre parti di layout, CSS, etc. come preferisci
 
 #################################
-# Sidebar: Caricamento multiplo di file
+# Caricamento multiplo IT e singolo EST
 #################################
-st.sidebar.subheader("Caricamento file (IT + altri Paesi)")
-uploaded_files = st.sidebar.file_uploader(
-    "Carica i file CSV/XLSX di tutti i Paesi (incluso IT)",
-    type=["csv", "xlsx"],
-    accept_multiple_files=True
-)
-
-avvia_confronto = st.sidebar.button("Confronta Prezzi")
+with st.sidebar:
+    st.subheader("Caricamento file")
+    files_ita = st.file_uploader(
+        "Mercato IT (CSV/XLSX) - multipli",
+        type=["csv","xlsx"],
+        accept_multiple_files=True
+    )
+    file_est = st.file_uploader(
+        "Mercato EST (CSV/XLSX) - singolo",
+        type=["csv","xlsx"]
+    )
+    avvia_confronto = st.button("Confronta Prezzi")
 
 #################################
 # Funzioni di caricamento / pulizia
 #################################
 def load_data(uploaded_file):
-    """Carica dati da CSV o XLSX in un DataFrame."""
     if not uploaded_file:
         return None
     fname = uploaded_file.name.lower()
@@ -43,142 +48,107 @@ def load_data(uploaded_file):
             return df
 
 def pulisci_prezzo(prezzo_raw):
-    """Converte una stringa contenente un prezzo in float."""
     if not isinstance(prezzo_raw, str):
         return None
-    prezzo = prezzo_raw.replace("€", "").replace(" ", "").replace(",", ".")
+    prezzo = prezzo_raw.replace("€","").replace(" ","").replace(",",".")
     try:
         return float(prezzo)
     except:
         return None
 
 #################################
-# Riconoscimento del Paese
+# 1) Unione multipli file IT e visualizzazione ASIN
 #################################
-def get_locale_from_data(df, fallback_filename):
-    """
-    Ritorna il codice del Paese:
-      - Se c'è la colonna 'Locale' e contiene un unico valore, usa quello.
-      - Altrimenti prova a estrarlo dal nome del file.
-    """
-    if "Locale" in df.columns:
-        valori_locale = df["Locale"].dropna().unique()
-        if len(valori_locale) == 1:
-            return valori_locale[0]
-
-    # Se non troviamo un valore univoco nella colonna "Locale",
-    # proviamo dal nome file (esempio: "report_DE.csv" -> "DE")
-    nome = fallback_filename.upper()
-    for possibile_locale in ["IT", "DE", "FR", "ES", "UK", "US", "NL", "SE"]:
-        if f"_{possibile_locale}." in nome:
-            return possibile_locale
-
-    # Se non riconosciamo nulla, mettiamo un fallback generico
-    return "UNKNOWN"
+df_ita = None
+if files_ita:
+    df_ita_list = []
+    for f in files_ita:
+        dftemp = load_data(f)
+        if dftemp is not None:
+            df_ita_list.append(dftemp)
+    if df_ita_list:
+        df_ita = pd.concat(df_ita_list, ignore_index=True)
+        
+        if "ASIN" in df_ita.columns:
+            asins = df_ita["ASIN"].dropna().unique()
+            asins_text = "\n".join(asins)
+            st.info("**Lista di ASIN (IT) unificati:**")
+            st.text_area("Copia qui:", asins_text, height=200)
+        else:
+            st.warning("Nei file IT non è presente la colonna 'ASIN'. Impossibile mostrare la lista.")
 
 #################################
-# Elaborazione e Confronto
+# 2) Confronto prezzi al click
 #################################
 if avvia_confronto:
-    if not uploaded_files:
-        st.warning("Devi caricare almeno un file (incluso quello IT).")
+    if not files_ita:
+        st.warning("Devi prima caricare i file IT.")
+        st.stop()
+    if not file_est:
+        st.warning("Devi caricare il file EST.")
+        st.stop()
+    if df_ita is None or df_ita.empty:
+        st.error("L'elenco IT sembra vuoto o non caricato correttamente.")
         st.stop()
 
-    # Dizionari per salvare i DataFrame
-    df_it = None
-    dict_mercati = {}  # { "DE": df_de, "FR": df_fr, ... }
-
-    # Carichiamo tutti i file
-    for f in uploaded_files:
-        df_temp = load_data(f)
-        if df_temp is None or df_temp.empty:
-            st.warning(f"Il file {f.name} sembra vuoto o non valido.")
-            continue
-
-        # Identifichiamo il locale
-        locale = get_locale_from_data(df_temp, f.name)
-
-        # Salviamo in base al Paese
-        if locale.lower() == "it":
-            df_it = df_temp.copy()
-        else:
-            dict_mercati[locale] = df_temp.copy()
-
-    # Controlli
-    if df_it is None or df_it.empty:
-        st.error("Non è stato trovato un file con Locale == 'IT'. Impossibile procedere.")
+    df_est = load_data(file_est)
+    if df_est is None or df_est.empty:
+        st.error("Il file EST è vuoto o non caricato correttamente.")
         st.stop()
 
-    # Verifichiamo che le colonne essenziali esistano in IT
+    # Definizione colonne
     col_asin = "ASIN"
+    col_title_it = "Title"
     col_price_it = "Buy Box: Current"
-    col_bought_it = "Bought in past month"
+    col_bought_it = "Bought in past month"  # <--- nuova colonna per vendite
+    col_price_est = "Amazon: Current"
 
-    for c in [col_asin, col_price_it, col_bought_it]:
-        if c not in df_it.columns:
-            st.error(f"Nel file IT manca la colonna '{c}'.")
+    # Verifica che esistano
+    for c in [col_asin, col_title_it, col_price_it, col_bought_it]:
+        if c not in df_ita.columns:
+            st.error(f"Nel Mercato IT manca la colonna '{c}'.")
             st.stop()
+    if col_asin not in df_est.columns or col_price_est not in df_est.columns:
+        st.error(f"Nel Mercato EST manca '{col_asin}' o '{col_price_est}'.")
+        st.stop()
 
-    # Puliamo i prezzi per IT
-    df_it["Prezzo_IT"] = df_it[col_price_it].apply(pulisci_prezzo)
+    # Pulizia prezzi
+    df_ita["Prezzo_IT"] = df_ita[col_price_it].apply(pulisci_prezzo)
+    df_est["Prezzo_Est"] = df_est[col_price_est].apply(pulisci_prezzo)
 
-    # Prepariamo un DataFrame finale dove aggiungeremo le info di IT
-    df_it = df_it[[col_asin, "Title", col_bought_it, "Prezzo_IT"]].drop_duplicates(subset=[col_asin])
+    # Seleziona le colonne IT: includiamo "Bought in past month"
+    df_ita = df_ita[[col_asin, col_title_it, col_bought_it, "Prezzo_IT"]]
 
-    risultati_finali = []
+    # Seleziona le colonne EST
+    df_est = df_est[[col_asin, "Prezzo_Est"]]
 
-    # Confrontiamo ogni Paese con IT
-    for locale, df_mercato in dict_mercati.items():
-        if col_asin not in df_mercato.columns:
-            st.warning(f"Nel file di {locale} manca la colonna 'ASIN'. Saltato.")
-            continue
+    # Merge
+    df_merged = pd.merge(df_ita, df_est, on=col_asin, how="inner")
 
-        # Colonna prezzo per i Paesi esteri
-        col_price_est = "Amazon: Current"
-        if col_price_est not in df_mercato.columns:
-            st.warning(f"Nel file di {locale} manca la colonna '{col_price_est}'. Saltato.")
-            continue
+    # Calcolo differenza
+    df_merged["Risparmio_%"] = (
+        (df_merged["Prezzo_IT"] - df_merged["Prezzo_Est"]) / df_merged["Prezzo_IT"] * 100
+    )
 
-        # Pulizia prezzi
-        df_mercato["Prezzo_"+locale] = df_mercato[col_price_est].apply(pulisci_prezzo)
+    # Filtra con prezzo est < IT
+    df_filtered = df_merged[df_merged["Prezzo_Est"] < df_merged["Prezzo_IT"]]
 
-        # Teniamo solo le colonne utili
-        df_mercato = df_mercato[[col_asin, "Prezzo_"+locale]]
+    # Ordina decrescente
+    df_filtered = df_filtered.sort_values("Risparmio_%", ascending=False)
 
-        # Merge con IT (inner join su ASIN)
-        df_merge = pd.merge(df_it, df_mercato, on=col_asin, how="inner")
+    # Seleziona le colonne finali: includiamo "Bought in past month"
+    df_finale = df_filtered[
+        [col_asin, col_title_it, col_bought_it, "Prezzo_IT", "Prezzo_Est", "Risparmio_%"]
+    ]
 
-        # Calcolo risparmio rispetto a IT
-        df_merge["Risparmio_%_"+locale] = (
-            (df_merge["Prezzo_IT"] - df_merge["Prezzo_"+locale]) / df_merge["Prezzo_IT"] * 100
-        )
+    st.subheader("Risultati di Confronto")
+    st.dataframe(df_finale, height=600)
 
-        # Filtriamo solo i casi dove il prezzo di questo locale è < IT
-        df_filter = df_merge[df_merge["Prezzo_"+locale] < df_merge["Prezzo_IT"]].copy()
-
-        # Ordiniamo in base al risparmio
-        df_filter.sort_values(by="Risparmio_%_"+locale, ascending=False, inplace=True)
-
-        # Aggiungiamo una colonna con l'informazione del Paese
-        df_filter["Locale"] = locale
-
-        # Salviamo per unione finale
-        risultati_finali.append(df_filter)
-
-    if risultati_finali:
-        # Uniamo tutti i risultati
-        df_risultati = pd.concat(risultati_finali, ignore_index=True)
-
-        st.subheader("Confronto con IT - Risparmio trovati")
-        st.dataframe(df_risultati, height=600)
-
-        # Scarica CSV
-        csv_data = df_risultati.to_csv(index=False, sep=";").encode("utf-8")
-        st.download_button(
-            label="Scarica CSV Confronto",
-            data=csv_data,
-            file_name="risultato_multi_paesi.csv",
-            mime="text/csv"
-        )
-    else:
-        st.info("Nessun confronto disponibile o nessun risparmio trovato.")
+    # Scarica CSV
+    csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
+    st.download_button(
+        label="Scarica CSV",
+        data=csv_data,
+        file_name="risultato_convenienza.csv",
+        mime="text/csv"
+    )
