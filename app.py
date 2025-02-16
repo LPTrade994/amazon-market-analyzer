@@ -15,8 +15,9 @@ st.title("Amazon Market Analyzer - Multi-Mercato + Vendite (Bought in past month
 with st.sidebar:
     st.subheader("Caricamento file")
     
+    # File di partenza (dove vuoi comprare)
     files_base = st.file_uploader(
-        "Lista di partenza (dove vuoi comprare, es. Germania) - multipli (CSV/XLSX)",
+        "Lista di partenza (es. Germania) - multipli (CSV/XLSX)",
         type=["csv", "xlsx"],
         accept_multiple_files=True
     )
@@ -26,8 +27,10 @@ with st.sidebar:
     )
     
     st.markdown("---")
+    
+    # File di confronto
     comparison_files = st.file_uploader(
-        "Liste di confronto - multipli (CSV/XLSX)",
+        "Liste di confronto (es. Italia) - multipli (CSV/XLSX)",
         type=["csv", "xlsx"],
         accept_multiple_files=True
     )
@@ -54,15 +57,15 @@ def load_data(uploaded_file):
         try:
             df = pd.read_csv(uploaded_file, sep=";", dtype=str)
             return df
-        except Exception as e:
+        except Exception:
             uploaded_file.seek(0)
             df = pd.read_csv(uploaded_file, sep=",", dtype=str)
             return df
 
 def pulisci_prezzo(prezzo_raw):
+    """Rimuove simboli e converte la stringa in float."""
     if not isinstance(prezzo_raw, str):
         return None
-    # Rimuove simboli, spazi e converte la virgola in punto
     prezzo = prezzo_raw.replace("€", "").replace(" ", "").replace(",", ".")
     try:
         return float(prezzo)
@@ -79,6 +82,7 @@ if files_base:
         dftemp = load_data(f)
         if dftemp is not None:
             df_base_list.append(dftemp)
+    
     if df_base_list:
         df_base = pd.concat(df_base_list, ignore_index=True)
         
@@ -95,7 +99,7 @@ if files_base:
 # 2) Confronto prezzi per ciascun file di confronto
 #################################
 if avvia_confronto:
-    # Verifica che siano stati caricati i file necessari
+    # Controlli preliminari
     if not files_base:
         st.warning("Devi prima caricare la lista di partenza.")
         st.stop()
@@ -137,42 +141,52 @@ if avvia_confronto:
         df_comp["Prezzo_comp"] = df_comp[comparison_price_option].apply(pulisci_prezzo)
         df_comp = df_comp[["ASIN", "Locale", "Bought in past month", "Prezzo_comp"]]
         
-        # Esegue il merge tra la lista di partenza e il file di confronto sulla colonna ASIN
+        # Merge tra la lista di partenza e il file di confronto
         df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner")
         if df_merged.empty:
             st.warning(f"Nessuna corrispondenza trovata tra la lista di partenza e il file {comp_file.name}.")
             continue
         
-        # Calcola la differenza percentuale
-        df_merged["Risparmio_%"] = ((df_merged["Prezzo_base"] - df_merged["Prezzo_comp"]) / df_merged["Prezzo_base"]) * 100
+        # Filtro: mostro solo i prodotti in cui il prezzo di partenza è minore di quello di confronto
+        df_merged = df_merged[df_merged["Prezzo_base"] < df_merged["Prezzo_comp"]]
         
-        # Considera solo i casi in cui il prezzo del confronto è inferiore a quello di partenza
-        df_filtered = df_merged[df_merged["Prezzo_comp"] < df_merged["Prezzo_base"]].copy()
-        df_filtered = df_filtered.sort_values("Risparmio_%", ascending=False)
+        # Calcolo della differenza percentuale
+        # (Prezzo_comp - Prezzo_base) / Prezzo_base * 100
+        df_merged["Risparmio_%"] = (
+            (df_merged["Prezzo_comp"] - df_merged["Prezzo_base"]) / df_merged["Prezzo_base"]
+        ) * 100
+        
+        # Ordina i risultati in ordine decrescente di risparmio
+        df_merged = df_merged.sort_values("Risparmio_%", ascending=False)
         
         # Rinomina le colonne di prezzo per chiarezza
-        df_filtered = df_filtered.rename(columns={
-            "Prezzo_base": f"Prezzo ({base_price_option})",
-            "Prezzo_comp": f"Prezzo ({comparison_price_option})"
+        df_merged = df_merged.rename(columns={
+            "Prezzo_base": f"Prezzo base ({base_price_option})",
+            "Prezzo_comp": f"Prezzo confronto ({comparison_price_option})"
         })
         
         # Seleziona le colonne finali
-        df_finale = df_filtered[[
+        df_finale = df_merged[[
             "Locale", "ASIN", "Title", "Bought in past month",
-            f"Prezzo ({base_price_option})", f"Prezzo ({comparison_price_option})", "Risparmio_%"
+            f"Prezzo base ({base_price_option})", f"Prezzo confronto ({comparison_price_option})", "Risparmio_%"
         ]]
         
-        # Estrae il riferimento Locale dal file di confronto (si assume che sia unico per file)
+        # Ricava il "Locale" di confronto (si assume che sia unico per file)
         locale_val = df_finale["Locale"].iloc[0] if not df_finale.empty else "N/D"
         
+        # Mostra la tabella
         st.subheader(f"Risultati di confronto per {comp_file.name} - Paese di confronto: {locale_val}")
-        st.dataframe(df_finale, height=600)
         
-        # Pulsante per il download dei risultati in CSV
-        csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
-        st.download_button(
-            label=f"Scarica CSV per {comp_file.name}",
-            data=csv_data,
-            file_name=f"risultato_convenienza_{comp_file.name}",
-            mime="text/csv"
-        )
+        if df_finale.empty:
+            st.info("Nessun prodotto più economico nella lista di partenza rispetto a questo confronto.")
+        else:
+            st.dataframe(df_finale, height=600)
+            
+            # Pulsante per il download dei risultati in CSV
+            csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
+            st.download_button(
+                label=f"Scarica CSV per {comp_file.name}",
+                data=csv_data,
+                file_name=f"risultato_convenienza_{comp_file.name}",
+                mime="text/csv"
+            )
