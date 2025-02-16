@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 
 st.set_page_config(
     page_title="Amazon Market Analyzer - Multi-Mercato + Vendite (Bought in past month)",
@@ -10,7 +11,7 @@ st.set_page_config(
 st.title("Amazon Market Analyzer - Multi-Mercato + Vendite (Bought in past month)")
 
 #################################
-# Sidebar: Caricamento file e impostazioni
+# Sidebar: Caricamento file e impostazioni di confronto
 #################################
 with st.sidebar:
     st.subheader("Caricamento file")
@@ -48,7 +49,7 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    # Opzione per visualizzare anche la tabella aggregata
+    # Opzione per mostrare la tabella aggregata
     show_aggregated = st.checkbox("Mostra tabella aggregata (prodotti convenienti su più mercati)")
     # Filtro: minimo numero di mercati in cui il prodotto deve risultare conveniente
     min_markets_convenient = st.number_input(
@@ -56,6 +57,13 @@ with st.sidebar:
         min_value=1,
         value=1
     )
+    
+    st.markdown("---")
+    # Nuove impostazioni per il Composite Score
+    st.subheader("Impostazioni Composite Score")
+    peso_margine = st.slider("Peso Margine (mercato di riferimento)", 0.0, 10.0, 1.0, step=0.1)
+    peso_volume = st.slider("Peso Volume (mercato di riferimento)", 0.0, 10.0, 1.0, step=0.1)
+    peso_markets = st.slider("Peso Numero Mercati Convenienti", 0.0, 10.0, 1.0, step=0.1)
     
     st.markdown("---")
     avvia_confronto = st.button("Confronta Prezzi")
@@ -80,6 +88,7 @@ def load_data(uploaded_file):
             return df
 
 def pulisci_prezzo(prezzo_raw):
+    """Rimuove simboli e converte la stringa in float."""
     if not isinstance(prezzo_raw, str):
         return None
     prezzo = prezzo_raw.replace("€", "").replace(" ", "").replace(",", ".")
@@ -114,6 +123,8 @@ if files_base:
 #################################
 # 2) Confronto individuale per ciascun file di confronto
 #################################
+agg_list = []  # Per raccogliere dati per l'aggregazione multi-mercato
+
 if avvia_confronto:
     if not files_base:
         st.warning("Devi prima caricare la lista di partenza.")
@@ -135,9 +146,6 @@ if avvia_confronto:
     # Calcola il prezzo di riferimento per la lista di partenza
     df_base["Prezzo_base"] = df_base[base_price_option].apply(pulisci_prezzo)
     df_base = df_base[["ASIN", "Title", "Prezzo_base"]]
-    
-    # Lista per raccogliere i dati elaborati per l'aggregazione
-    agg_list = []
     
     st.markdown("## Risultati per singolo mercato di confronto")
     for comp_file in comparison_files:
@@ -166,7 +174,7 @@ if avvia_confronto:
         # Filtra: mostra solo i prodotti in cui il prezzo base è minore di quello di confronto
         df_merged = df_merged[df_merged["Prezzo_base"] < df_merged["Prezzo_comp"]]
         
-        # Calcolo della differenza percentuale
+        # Calcola la differenza percentuale
         df_merged["Risparmio_%"] = ((df_merged["Prezzo_comp"] - df_merged["Prezzo_base"]) / df_merged["Prezzo_base"]) * 100
         
         # Filtro sul "Bought in past month"
@@ -186,15 +194,13 @@ if avvia_confronto:
             "Prezzo_comp": f"Prezzo confronto ({comparison_price_option})"
         })
         
-        # Seleziona le colonne finali
+        # Seleziona le colonne finali per questo confronto
         df_finale = df_merged[[
             "Locale", "ASIN", "Title", "Bought in past month",
             f"Prezzo base ({base_price_option})", f"Prezzo confronto ({comparison_price_option})", "Risparmio_%"
         ]]
         
-        # Ottieni il valore di Locale (si assume che sia unico nel file)
         locale_val = df_finale["Locale"].iloc[0] if not df_finale.empty else "N/D"
-        
         st.subheader(f"Risultati di confronto per {comp_file.name} - Paese di confronto: {locale_val}")
         st.dataframe(df_finale, height=600)
         
@@ -206,51 +212,48 @@ if avvia_confronto:
             mime="text/csv"
         )
         
-        # Prepara i dati per l'aggregazione:
-        # Prendiamo per ogni file: ASIN, Prezzo_comp, Bought in past month e Locale.
-        # Useremo il valore unico di Locale come identificatore del mercato.
+        # Prepara i dati per l'aggregazione multi-mercato:
+        # Per ciascun file, manteniamo ASIN, Prezzo_comp, Bought in past month e Locale.
         market = df_comp["Locale"].dropna().unique()[0]  # si assume che in ciascun file sia unico
-        df_temp = df_comp.copy()
-        # Manteniamo solo una riga per ASIN (in caso di duplicati, prendiamo la prima)
-        df_temp = df_temp.drop_duplicates(subset="ASIN")
+        df_temp = df_comp.drop_duplicates(subset="ASIN")
         df_temp = df_temp[["ASIN", "Prezzo_comp", "Bought in past month"]]
-        # Rinominiamo le colonne per questo mercato
         df_temp = df_temp.rename(columns={
             "Prezzo_comp": f"Prezzo_{market}",
             "Bought in past month": f"Bought_{market}"
         })
-        # Aggiungiamo una colonna per il mercato (utile in aggregazione)
-        df_temp["Market"] = market
-        
-        # Salviamo il dataframe per la fase aggregata
+        df_temp["Market"] = market  # utile per identificare il mercato
         agg_list.append(df_temp)
     
     #################################
-    # 3) Tabella aggregata (prodotti convenienti su più mercati)
+    # 3) Tabella Aggregata (prodotti convenienti su più mercati)
     #################################
     if show_aggregated:
         st.markdown("## Risultati Aggregati (prodotti convenienti su più mercati)")
         if df_base is None or df_base.empty:
             st.error("La lista di partenza non è disponibile per l'aggregazione.")
         else:
-            # Partiamo dalla lista di partenza con ASIN, Title e Prezzo_base
-            df_agg = df_base.copy()
-            # Per ogni mercato elaborato, facciamo un merge left su ASIN
+            df_agg = df_base.copy()  # partiamo dalla lista di partenza
+            
+            # Uniamo (merge left) per ogni mercato elaborato
             for df_temp in agg_list:
                 market = df_temp["Market"].iloc[0]
                 df_agg = pd.merge(df_agg, df_temp.drop(columns="Market"), on="ASIN", how="left")
             
-            # Calcoliamo, per ciascun mercato, la differenza percentuale se il prezzo base è inferiore
+            # Convertiamo le colonne Bought_{market} in numerico
+            for col in df_agg.columns:
+                if col.startswith("Bought_"):
+                    df_agg[col] = pd.to_numeric(df_agg[col], errors='coerce').fillna(0)
+            
+            # Per ogni mercato (colonne che iniziano per "Prezzo_"), calcoliamo il risparmio percentuale se conveniente
             market_columns = [col for col in df_agg.columns if col.startswith("Prezzo_") and col != "Prezzo_base"]
             for col in market_columns:
                 market = col.split("_", 1)[1]  # estrae il nome del mercato
-                # Creiamo la colonna di risparmio per quel mercato
                 df_agg[f"Risparmio_{market}"] = df_agg.apply(
                     lambda row: ((row[col] - row["Prezzo_base"]) / row["Prezzo_base"] * 100)
-                    if pd.notnull(row[col]) and row["Prezzo_base"] < row[col] else None, axis=1
+                    if pd.notnull(row[col]) and row["Prezzo_base"] < row[col] else np.nan, axis=1
                 )
             
-            # Calcoliamo il numero di mercati in cui il prodotto è conveniente
+            # Calcola il numero di mercati in cui il prodotto è conveniente e la lista dei mercati
             def count_convenient(row):
                 count = 0
                 markets_list = []
@@ -271,7 +274,6 @@ if avvia_confronto:
             if df_agg_filtered.empty:
                 st.info(f"Nessun prodotto risulta conveniente in almeno {min_markets_convenient} mercato/i.")
             else:
-                # Ordiniamo in base al numero di mercati convenienti e poi per uno dei risparmi medi (opzionale)
                 df_agg_filtered = df_agg_filtered.sort_values("Num_mercati_convenienti", ascending=False)
                 st.dataframe(df_agg_filtered, height=600)
                 
@@ -282,3 +284,49 @@ if avvia_confronto:
                     file_name="risultato_aggregato.csv",
                     mime="text/csv"
                 )
+            
+            #################################
+            # 4) Composite Score & Dashboard Convenienza
+            #################################
+            # Se sono stati aggregati dei mercati, chiediamo all'utente di scegliere il mercato di riferimento per il Composite Score.
+            if agg_list:
+                markets_available = list(set([df_temp["Market"].iloc[0] for df_temp in agg_list]))
+                market_ref = st.sidebar.selectbox("Mercato di riferimento per Composite Score", options=markets_available, index=0)
+                
+                # Verifica che per il mercato scelto esistano le colonne Risparmio e Bought
+                risparmio_col = f"Risparmio_{market_ref}"
+                bought_col = f"Bought_{market_ref}"
+                if risparmio_col in df_agg.columns and bought_col in df_agg.columns:
+                    # Calcolo del Composite Score:
+                    # Composite_Score = (Risparmio_{market_ref} * peso_margine) + (log(1 + Bought_{market_ref}) * peso_volume) + (Num_mercati_convenienti * peso_markets)
+                    df_agg["Composite_Score"] = df_agg.apply(
+                        lambda row: (row[risparmio_col] if pd.notnull(row[risparmio_col]) else 0) * peso_margine \
+                                    + np.log1p(row[bought_col]) * peso_volume \
+                                    + row["Num_mercati_convenienti"] * peso_markets,
+                        axis=1
+                    )
+                    # Ordina per Composite Score decrescente
+                    df_composite = df_agg.sort_values("Composite_Score", ascending=False)
+                    
+                    st.markdown("## Dashboard Convenienza (Composite Score)")
+                    
+                    # Mostriamo alcune metriche chiave
+                    col1, col2, col3 = st.columns(3)
+                    top_score = df_composite["Composite_Score"].max() if not df_composite.empty else 0
+                    media_score = df_composite["Composite_Score"].mean() if not df_composite.empty else 0
+                    num_prodotti = df_composite.shape[0]
+                    col1.metric("Miglior Composite Score", f"{top_score:.2f}")
+                    col2.metric("Composite Score Medio", f"{media_score:.2f}")
+                    col3.metric("Numero Prodotti", f"{num_prodotti}")
+                    
+                    st.dataframe(df_composite, height=600)
+                    
+                    csv_data_composite = df_composite.to_csv(index=False, sep=";").encode("utf-8")
+                    st.download_button(
+                        label="Scarica CSV Dashboard Composite Score",
+                        data=csv_data_composite,
+                        file_name="dashboard_composite_score.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.warning(f"Per il mercato di riferimento '{market_ref}' non sono disponibili i dati necessari per il Composite Score.")
