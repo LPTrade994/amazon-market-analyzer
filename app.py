@@ -40,6 +40,14 @@ with st.sidebar:
     )
     
     st.markdown("---")
+    # Filtro per "Bought in past month"
+    threshold = st.number_input(
+        "Filtra i risultati con 'Bought in past month' >= ",
+        min_value=0,  # imposta un minimo di 0
+        value=0       # valore di default (nessun filtro effettivo)
+    )
+    
+    st.markdown("---")
     avvia_confronto = st.button("Confronta Prezzi")
 
 #################################
@@ -147,7 +155,8 @@ if avvia_confronto:
             st.warning(f"Nessuna corrispondenza trovata tra la lista di partenza e il file {comp_file.name}.")
             continue
         
-        # Filtro: mostro solo i prodotti in cui il prezzo di partenza è minore di quello di confronto
+        # Filtra i prodotti in cui il prezzo base è minore del prezzo di confronto
+        # (significa che conviene comprare nella lista di partenza)
         df_merged = df_merged[df_merged["Prezzo_base"] < df_merged["Prezzo_comp"]]
         
         # Calcolo della differenza percentuale
@@ -155,6 +164,21 @@ if avvia_confronto:
         df_merged["Risparmio_%"] = (
             (df_merged["Prezzo_comp"] - df_merged["Prezzo_base"]) / df_merged["Prezzo_base"]
         ) * 100
+        
+        # ---- Nuovo filtro su "Bought in past month" ----
+        # Convertiamo "Bought in past month" in numero (se non lo è, diventa NaN)
+        df_merged["Bought_in_past_month_num"] = pd.to_numeric(df_merged["Bought in past month"], errors='coerce')
+        # Sostituiamo gli eventuali NaN con 0 (per evitare errori nel confronto)
+        df_merged["Bought_in_past_month_num"] = df_merged["Bought_in_past_month_num"].fillna(0)
+        
+        # Applichiamo il filtro solo dopo aver fatto il confronto prezzi
+        df_merged = df_merged[df_merged["Bought_in_past_month_num"] >= threshold]
+        # ---- Fine nuovo filtro ----
+        
+        # Se dopo il filtro non c'è nulla, avvisiamo
+        if df_merged.empty:
+            st.info(f"Nessun prodotto soddisfa il filtro 'Bought in past month' >= {threshold} per {comp_file.name}.")
+            continue
         
         # Ordina i risultati in ordine decrescente di risparmio
         df_merged = df_merged.sort_values("Risparmio_%", ascending=False)
@@ -165,7 +189,7 @@ if avvia_confronto:
             "Prezzo_comp": f"Prezzo confronto ({comparison_price_option})"
         })
         
-        # Seleziona le colonne finali
+        # Seleziona le colonne finali (manteniamo la colonna originale "Bought in past month")
         df_finale = df_merged[[
             "Locale", "ASIN", "Title", "Bought in past month",
             f"Prezzo base ({base_price_option})", f"Prezzo confronto ({comparison_price_option})", "Risparmio_%"
@@ -174,19 +198,15 @@ if avvia_confronto:
         # Ricava il "Locale" di confronto (si assume che sia unico per file)
         locale_val = df_finale["Locale"].iloc[0] if not df_finale.empty else "N/D"
         
-        # Mostra la tabella
         st.subheader(f"Risultati di confronto per {comp_file.name} - Paese di confronto: {locale_val}")
         
-        if df_finale.empty:
-            st.info("Nessun prodotto più economico nella lista di partenza rispetto a questo confronto.")
-        else:
-            st.dataframe(df_finale, height=600)
+        st.dataframe(df_finale, height=600)
             
-            # Pulsante per il download dei risultati in CSV
-            csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
-            st.download_button(
-                label=f"Scarica CSV per {comp_file.name}",
-                data=csv_data,
-                file_name=f"risultato_convenienza_{comp_file.name}",
-                mime="text/csv"
-            )
+        # Pulsante per il download dei risultati in CSV
+        csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
+        st.download_button(
+            label=f"Scarica CSV per {comp_file.name}",
+            data=csv_data,
+            file_name=f"risultato_convenienza_{comp_file.name}",
+            mime="text/csv"
+        )
