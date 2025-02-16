@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 ########################################
-# (Facoltativo) un po' di CSS
+# (Opzionale) un po' di CSS
 ########################################
 st.markdown("""
 <style>
@@ -35,9 +35,9 @@ st.title("Amazon Market Analyzer - Multi Paesi con Dettagli Prodotti")
 st.write("""
 Caricamento:
 1. **Mercato IT** (più file): Colonne minime: `ASIN`, `Title`, `Bought in past month`, `Buy Box: Current`.
-2. **Paesi Esteri**: per ognuno, fornisci una sigla (ES, DE, FR...) e carica il file (colonne: `ASIN`, `Amazon: Current`, `Delivery date`, ...).
+2. **Paesi Esteri**: per ognuno, fornisci una sigla (ES, DE, FR, …) e carica il file (colonne: `ASIN`, `Amazon: Current`, `Delivery date`, ecc.).
 
-Poi clicca "**Unisci & Mostra**" per ottenere la tabella finale con i prezzi di tutti i paesi.
+Poi clicca "**Unisci & Mostra**" per ottenere la tabella finale con i prezzi di tutti i paesi e i dati sulle vendite.
 """)
 
 ########################################
@@ -58,7 +58,8 @@ with st.sidebar:
     )
     
     # Dizionario: { "ES": <file>, "DE": <file>, ... }
-    country_files: Dict[str, st.uploaded_file_manager.UploadedFile] = {}
+    # RIMOSSA l'annotazione con st.uploaded_file_manager
+    country_files = {}
     
     for i in range(num_countries):
         st.write(f"**Paese #{i+1}**")
@@ -129,7 +130,7 @@ if unify_button:
     
     df_it = pd.concat(df_list_it, ignore_index=True)
     
-    # Controllo colonne base
+    # Colonne richieste in IT
     it_cols_needed = ["ASIN", "Title", "Bought in past month", "Buy Box: Current"]
     for c in it_cols_needed:
         if c not in df_it.columns:
@@ -181,14 +182,17 @@ if unify_button:
     # 5) Seleziona un prodotto per evidenziare i dettagli
     st.subheader("Dettagli Prodotto Selezionato")
     asins_all = df_master["ASIN"].dropna().unique()
-    selected_asin = st.selectbox("Scegli un ASIN da visualizzare", asins_all)
-    if selected_asin:
-        detail_df = df_master[df_master["ASIN"] == selected_asin]
-        if not detail_df.empty:
-            with st.expander("Dettagli del Prodotto", expanded=True):
-                st.table(detail_df.T)  # trasposto per visualizzare attributi in righe
-        else:
-            st.info("Nessun dettaglio per l'ASIN selezionato.")
+    if len(asins_all) == 0:
+        st.warning("Nessun ASIN trovato nel DF master.")
+    else:
+        selected_asin = st.selectbox("Scegli un ASIN da visualizzare", asins_all)
+        if selected_asin:
+            detail_df = df_master[df_master["ASIN"] == selected_asin]
+            if not detail_df.empty:
+                with st.expander("Dettagli del Prodotto", expanded=True):
+                    st.table(detail_df.T)  # trasposto per visualizzare attributi in righe
+            else:
+                st.info("Nessun dettaglio per l'ASIN selezionato.")
     
     # 6) Download CSV
     csv_data = df_master.to_csv(index=False, sep=";").encode("utf-8")
