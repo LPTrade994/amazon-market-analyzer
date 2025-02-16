@@ -49,7 +49,7 @@ def load_data(uploaded_file):
         df = pd.read_excel(uploaded_file, dtype=str)
         return df
     else:
-        # CSV: si prova prima con il separatore ';', altrimenti ','
+        # CSV: prima si prova con il separatore ';', altrimenti ','
         try:
             df = pd.read_csv(uploaded_file, sep=";", dtype=str)
             return df
@@ -120,32 +120,25 @@ if avvia_confronto:
     #################################
     # Elaborazione per ogni file di confronto
     #################################
-    for idx, comp_file in enumerate(comparison_files):
-        # Chiedi all'utente di inserire il nome del paese per il file di confronto
-        country = st.text_input(
-            f"Inserisci il nome del paese per il file {comp_file.name}:",
-            value=comp_file.name.split('.')[0],
-            key=f"country_{idx}"
-        )
-        
+    for comp_file in comparison_files:
         df_comp = load_data(comp_file)
         if df_comp is None or df_comp.empty:
             st.error(f"Il file di confronto {comp_file.name} è vuoto o non caricato correttamente.")
             continue
         
         # Verifica che il file di confronto contenga le colonne necessarie:
-        comp_required_cols = ["ASIN", "Bought in past month"]
+        comp_required_cols = ["ASIN", "Bought in past month", "Locale"]
         if comparison_price_option not in df_comp.columns:
             st.error(f"Nel file di confronto {comp_file.name} manca la colonna '{comparison_price_option}'.")
             continue
-        for col in comp_required_cols:
-            if col not in df_comp.columns:
-                st.error(f"Nel file di confronto {comp_file.name} manca la colonna '{col}'.")
-                continue
+        missing_cols = [col for col in comp_required_cols if col not in df_comp.columns]
+        if missing_cols:
+            st.error(f"Nel file di confronto {comp_file.name} mancano le colonne: {', '.join(missing_cols)}.")
+            continue
         
         # Pulizia del prezzo nel file di confronto
         df_comp["Prezzo_comp"] = df_comp[comparison_price_option].apply(pulisci_prezzo)
-        df_comp = df_comp[["ASIN", "Bought in past month", "Prezzo_comp"]]
+        df_comp = df_comp[["ASIN", "Locale", "Bought in past month", "Prezzo_comp"]]
         
         # Merge fra lista di partenza e file di confronto sull'ASIN
         df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner")
@@ -157,15 +150,18 @@ if avvia_confronto:
         df_filtered = df_merged[df_merged["Prezzo_comp"] < df_merged["Prezzo_base"]]
         df_filtered = df_filtered.sort_values("Risparmio_%", ascending=False)
         
-        # Visualizzazione dei risultati per il mercato in questione
-        st.subheader(f"Risultati di confronto per {country} (file: {comp_file.name})")
-        st.dataframe(df_filtered, height=600)
+        # Seleziona le colonne finali includendo il riferimento Locale
+        df_finale = df_filtered[["Locale", "ASIN", "Title", "Bought in past month", "Prezzo_base", "Prezzo_comp", "Risparmio_%"]]
+        
+        # Visualizzazione dei risultati per il mercato in questione (utilizzo il nome del file come identificativo)
+        st.subheader(f"Risultati di confronto per {comp_file.name} - Paese: {df_finale['Locale'].iloc[0] if not df_finale.empty else 'N/D'}")
+        st.dataframe(df_finale, height=600)
         
         # Pulsante per il download del CSV
-        csv_data = df_filtered.to_csv(index=False, sep=";").encode("utf-8")
+        csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
         st.download_button(
-            label=f"Scarica CSV per {country}",
+            label=f"Scarica CSV per {comp_file.name}",
             data=csv_data,
-            file_name=f"risultato_convenienza_{country}.csv",
+            file_name=f"risultato_convenienza_{comp_file.name}.csv",
             mime="text/csv"
         )
