@@ -11,67 +11,46 @@ st.set_page_config(
 st.title("Amazon Market Analyzer - Multi-Mercato + Vendite (Bought in past month)")
 
 #################################
-# Sidebar: Caricamento file e impostazioni di confronto
+# Sidebar: Caricamento file e impostazioni
 #################################
 with st.sidebar:
     st.subheader("Caricamento file")
-    
-    # Lista di partenza (es. Germania)
-    files_base = st.file_uploader(
-        "Lista di partenza (es. Germania) - multipli (CSV/XLSX)",
-        type=["csv", "xlsx"],
-        accept_multiple_files=True
-    )
-    base_price_option = st.selectbox(
-        "Scegli il prezzo di riferimento per la lista di partenza",
-        options=["Buy Box: Current", "Amazon: Current"]
-    )
-    
-    st.markdown("---")
-    
-    # Liste di confronto (es. Italia, Francia, etc.)
+
+    # Liste di confronto (può essere un unico file con più righe o più file)
     comparison_files = st.file_uploader(
-        "Liste di confronto - multipli (CSV/XLSX)",
+        "Carica file CSV/XLSX con le nuove colonne (Sales Rank, Prezzi, ecc.)",
         type=["csv", "xlsx"],
         accept_multiple_files=True
     )
-    comparison_price_option = st.selectbox(
-        "Scegli il prezzo di riferimento per le liste di confronto",
-        options=["Buy Box: Current", "Amazon: Current"]
-    )
-    
+
     st.markdown("---")
-    # Filtro per "Bought in past month" (applicato sui confronti individuali)
-    threshold_bought = st.number_input(
-        "Filtra i risultati (per ogni mercato) con 'Bought in past month' >= ",
-        min_value=0,
-        value=0
-    )
-    
+
+    # Slider per i pesi dell'Opportunity Score
+    st.subheader("Impostazioni Opportunity Score")
+    alpha = st.slider("Peso per Sales Rank (valore negativo su rank alto)", 0.0, 5.0, 1.0, step=0.1)
+    beta = st.slider("Peso per Bought in past month", 0.0, 5.0, 1.0, step=0.1)
+    gamma = st.slider("Peso per Reviews Rating", 0.0, 5.0, 1.0, step=0.1)
+    delta = st.slider("Peso penalizzante su Offer Count", 0.0, 5.0, 1.0, step=0.1)
+
     st.markdown("---")
-    # Opzione per mostrare la tabella aggregata
-    show_aggregated = st.checkbox("Mostra tabella aggregata (prodotti convenienti su più mercati)")
-    # Filtro: minimo numero di mercati in cui il prodotto deve risultare conveniente
-    min_markets_convenient = st.number_input(
-        "Mostra solo prodotti convenienti in almeno n mercati:",
-        min_value=1,
-        value=1
-    )
-    
+
+    # Filtri Avanzati
+    st.subheader("Filtri Avanzati")
+    max_sales_rank = st.number_input("Filtro Sales Rank massimo", min_value=1, value=999999)
+    min_reviews_rating = st.number_input("Filtro Recensioni minime (Rating)", min_value=0.0, max_value=5.0, value=0.0, step=0.1)
+    max_offer_count = st.number_input("Filtro Offer Count massimo", min_value=1, value=999999)
+    # Esempio: filtro prezzo Buy Box (opzionale)
+    min_buybox_price = st.number_input("Prezzo Buy Box minimo", min_value=0.0, value=0.0)
+    max_buybox_price = st.number_input("Prezzo Buy Box massimo", min_value=0.0, value=999999.0)
+
     st.markdown("---")
-    # Nuove impostazioni per il Composite Score
-    st.subheader("Impostazioni Composite Score")
-    peso_margine = st.slider("Peso Margine (mercato di riferimento)", 0.0, 10.0, 1.0, step=0.1)
-    peso_volume = st.slider("Peso Volume (mercato di riferimento)", 0.0, 10.0, 1.0, step=0.1)
-    peso_markets = st.slider("Peso Numero Mercati Convenienti", 0.0, 10.0, 1.0, step=0.1)
-    
-    st.markdown("---")
-    avvia_confronto = st.button("Confronta Prezzi")
+    avvia_confronto = st.button("Carica e Calcola")
 
 #################################
-# Funzioni di caricamento e pulizia
+# Funzioni di caricamento / pulizia
 #################################
 def load_data(uploaded_file):
+    """Carica dati da CSV o XLSX in un DataFrame."""
     if not uploaded_file:
         return None
     fname = uploaded_file.name.lower()
@@ -82,250 +61,147 @@ def load_data(uploaded_file):
         try:
             df = pd.read_csv(uploaded_file, sep=";", dtype=str)
             return df
-        except Exception:
+        except:
             uploaded_file.seek(0)
             df = pd.read_csv(uploaded_file, sep=",", dtype=str)
             return df
 
-def pulisci_prezzo(prezzo_raw):
-    """Rimuove simboli e converte la stringa in float."""
-    if not isinstance(prezzo_raw, str):
-        return None
-    prezzo = prezzo_raw.replace("€", "").replace(" ", "").replace(",", ".")
+def parse_float(x):
+    """Converte stringhe in float, ignorando errori."""
+    if not isinstance(x, str):
+        return np.nan
+    x_clean = x.replace("€", "").replace(",", ".").strip()
     try:
-        return float(prezzo)
+        return float(x_clean)
     except:
-        return None
+        return np.nan
+
+def parse_int(x):
+    """Converte stringhe in int, ignorando errori."""
+    if not isinstance(x, str):
+        return np.nan
+    try:
+        return int(x.strip())
+    except:
+        return np.nan
 
 #################################
-# 1) Caricamento e unificazione della lista di partenza
+# Elaborazione
 #################################
-df_base = None
-if files_base:
-    df_base_list = []
-    for f in files_base:
-        dftemp = load_data(f)
-        if dftemp is not None:
-            df_base_list.append(dftemp)
-    
-    if df_base_list:
-        df_base = pd.concat(df_base_list, ignore_index=True)
-        
-        # Mostra la lista unificata degli ASIN se presente
-        if "ASIN" in df_base.columns:
-            asins = df_base["ASIN"].dropna().unique()
-            asins_text = "\n".join(asins)
-            st.info("**Lista unificata di ASIN dalla lista di partenza:**")
-            st.text_area("Copia qui:", asins_text, height=200)
-        else:
-            st.warning("Nei file di partenza non è presente la colonna 'ASIN'. Impossibile mostrare la lista.")
-
-#################################
-# 2) Confronto individuale per ciascun file di confronto
-#################################
-agg_list = []  # Per raccogliere dati per l'aggregazione multi-mercato
-
 if avvia_confronto:
-    if not files_base:
-        st.warning("Devi prima caricare la lista di partenza.")
-        st.stop()
     if not comparison_files:
-        st.warning("Devi caricare almeno un file di confronto.")
+        st.warning("Devi caricare almeno un file con le colonne aggiornate.")
         st.stop()
-    if df_base is None or df_base.empty:
-        st.error("La lista di partenza sembra vuota o non caricata correttamente.")
-        st.stop()
-        
-    # Verifica colonne necessarie nella lista di partenza (includendo Sales Rank)
-    base_required_cols = ["ASIN", "Title", base_price_option, "Sales Rank: Current", "Sales Rank: 30 days avg."]
-    missing_base = [col for col in base_required_cols if col not in df_base.columns]
-    if missing_base:
-        st.error(f"Nella lista di partenza mancano le colonne: {', '.join(missing_base)}.")
-        st.stop()
-    
-    # Calcola il prezzo di riferimento per la lista di partenza
-    df_base["Prezzo_base"] = df_base[base_price_option].apply(pulisci_prezzo)
-    # Includiamo anche le colonne Sales Rank
-    df_base = df_base[["ASIN", "Title", "Prezzo_base", "Sales Rank: Current", "Sales Rank: 30 days avg."]]
-    
-    st.markdown("## Risultati per singolo mercato di confronto")
-    for comp_file in comparison_files:
-        df_comp = load_data(comp_file)
-        if df_comp is None or df_comp.empty:
-            st.error(f"Il file di confronto {comp_file.name} è vuoto o non caricato correttamente.")
-            continue
-        
-        # Verifica colonne necessarie nel file di confronto (includendo Sales Rank)
-        comp_required_cols = ["ASIN", "Bought in past month", "Locale", comparison_price_option, "Sales Rank: Current", "Sales Rank: 30 days avg."]
-        missing_comp = [col for col in comp_required_cols if col not in df_comp.columns]
-        if missing_comp:
-            st.error(f"Nel file di confronto {comp_file.name} mancano le colonne: {', '.join(missing_comp)}.")
-            continue
-        
-        # Calcola il prezzo di riferimento per il file di confronto
-        df_comp["Prezzo_comp"] = df_comp[comparison_price_option].apply(pulisci_prezzo)
-        # Includi anche le colonne Sales Rank dal file di confronto
-        df_comp = df_comp[["ASIN", "Locale", "Bought in past month", "Prezzo_comp", "Sales Rank: Current", "Sales Rank: 30 days avg."]]
-        
-        # Merge tra la lista di partenza e il file di confronto (usa suffixes per le colonne duplicate)
-        df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner", suffixes=(" (base)", " (comp)"))
-        if df_merged.empty:
-            st.warning(f"Nessuna corrispondenza trovata tra la lista di partenza e il file {comp_file.name}.")
-            continue
-        
-        # Filtra: mostra solo i prodotti in cui il prezzo base è minore di quello di confronto
-        df_merged = df_merged[df_merged["Prezzo_base"] < df_merged["Prezzo_comp"]]
-        
-        # Calcola la differenza percentuale
-        df_merged["Risparmio_%"] = ((df_merged["Prezzo_comp"] - df_merged["Prezzo_base"]) / df_merged["Prezzo_base"]) * 100
-        
-        # Filtro sul "Bought in past month"
-        df_merged["Bought_in_past_month_num"] = pd.to_numeric(df_merged["Bought in past month"], errors='coerce').fillna(0)
-        df_merged = df_merged[df_merged["Bought_in_past_month_num"] >= threshold_bought]
-        
-        if df_merged.empty:
-            st.info(f"Nessun prodotto soddisfa il filtro 'Bought in past month' >= {threshold_bought} per {comp_file.name}.")
-            continue
-        
-        # Ordina per risparmio decrescente
-        df_merged = df_merged.sort_values("Risparmio_%", ascending=False)
-        
-        # Rinomina le colonne di prezzo per chiarezza
-        df_merged = df_merged.rename(columns={
-            "Prezzo_base": f"Prezzo base ({base_price_option})",
-            "Prezzo_comp": f"Prezzo confronto ({comparison_price_option})"
-        })
-        
-        # Seleziona le colonne finali (includendo le colonne Sales Rank da base e confronto)
-        df_finale = df_merged[[
-            "Locale", "ASIN", "Title", "Bought in past month",
-            f"Prezzo base ({base_price_option})", f"Prezzo confronto ({comparison_price_option})", "Risparmio_%",
-            "Sales Rank: Current (base)", "Sales Rank: 30 days avg. (base)",
-            "Sales Rank: Current (comp)", "Sales Rank: 30 days avg. (comp)"
-        ]]
-        
-        locale_val = df_finale["Locale"].iloc[0] if not df_finale.empty else "N/D"
-        st.subheader(f"Risultati di confronto per {comp_file.name} - Paese di confronto: {locale_val}")
-        st.dataframe(df_finale, height=600)
-        
-        csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
-        st.download_button(
-            label=f"Scarica CSV per {comp_file.name}",
-            data=csv_data,
-            file_name=f"risultato_convenienza_{comp_file.name}",
-            mime="text/csv"
-        )
-        
-        # Prepara i dati per l'aggregazione multi-mercato:
-        # Per ciascun file, manteniamo ASIN, Prezzo_comp, Bought in past month e Sales Rank dal confronto.
-        market = df_comp["Locale"].dropna().unique()[0]  # si assume che in ciascun file il valore di Locale sia unico
-        df_temp = df_comp.drop_duplicates(subset="ASIN")
-        df_temp = df_temp[["ASIN", "Prezzo_comp", "Bought in past month", "Sales Rank: Current", "Sales Rank: 30 days avg."]]
-        df_temp = df_temp.rename(columns={
-            "Prezzo_comp": f"Prezzo_{market}",
-            "Bought in past month": f"Bought_{market}",
-            "Sales Rank: Current": f"Sales Rank: Current_{market}",
-            "Sales Rank: 30 days avg.": f"Sales Rank: 30 days avg._{market}"
-        })
-        df_temp["Market"] = market  # utile per identificare il mercato
-        agg_list.append(df_temp)
-    
-    #################################
-    # 3) Tabella Aggregata (prodotti convenienti su più mercati)
-    #################################
-    if show_aggregated:
-        st.markdown("## Risultati Aggregati (prodotti convenienti su più mercati)")
-        if df_base is None or df_base.empty:
-            st.error("La lista di partenza non è disponibile per l'aggregazione.")
+
+    # Concatenazione di tutti i file
+    df_list = []
+    for f in comparison_files:
+        dftemp = load_data(f)
+        if dftemp is not None and not dftemp.empty:
+            df_list.append(dftemp)
         else:
-            df_agg = df_base.copy()  # partiamo dalla lista di partenza
-            for df_temp in agg_list:
-                market = df_temp["Market"].iloc[0]
-                df_agg = pd.merge(df_agg, df_temp.drop(columns="Market"), on="ASIN", how="left")
-            
-            # Convertiamo le colonne Bought_{market} in numerico
-            for col in df_agg.columns:
-                if col.startswith("Bought_"):
-                    df_agg[col] = pd.to_numeric(df_agg[col], errors='coerce').fillna(0)
-            
-            # Per ogni mercato (colonne che iniziano per "Prezzo_"), calcoliamo il risparmio percentuale se conveniente
-            market_columns = [col for col in df_agg.columns if col.startswith("Prezzo_") and col != "Prezzo_base"]
-            for col in market_columns:
-                market = col.split("_", 1)[1]  # estrae il nome del mercato
-                df_agg[f"Risparmio_{market}"] = df_agg.apply(
-                    lambda row: ((row[col] - row["Prezzo_base"]) / row["Prezzo_base"] * 100)
-                    if pd.notnull(row[col]) and row["Prezzo_base"] < row[col] else np.nan, axis=1
-                )
-            
-            # Calcola il numero di mercati in cui il prodotto è conveniente e la lista dei mercati
-            def count_convenient(row):
-                count = 0
-                markets_list = []
-                for col in df_agg.columns:
-                    if col.startswith("Risparmio_"):
-                        if pd.notnull(row[col]):
-                            count += 1
-                            market_name = col.split("_", 1)[1]
-                            markets_list.append(market_name)
-                return pd.Series({"Num_mercati_convenienti": count, "Mercati_convenienti": ", ".join(markets_list)})
-            
-            convenienza = df_agg.apply(count_convenient, axis=1)
-            df_agg = pd.concat([df_agg, convenienza], axis=1)
-            
-            # Filtro: mostra solo i prodotti convenienti in almeno 'min_markets_convenient' mercati
-            df_agg_filtered = df_agg[df_agg["Num_mercati_convenienti"] >= min_markets_convenient]
-            
-            if df_agg_filtered.empty:
-                st.info(f"Nessun prodotto risulta conveniente in almeno {min_markets_convenient} mercato/i.")
-            else:
-                df_agg_filtered = df_agg_filtered.sort_values("Num_mercati_convenienti", ascending=False)
-                st.dataframe(df_agg_filtered, height=600)
-                
-                csv_data_agg = df_agg_filtered.to_csv(index=False, sep=";").encode("utf-8")
-                st.download_button(
-                    label="Scarica CSV Risultati Aggregati",
-                    data=csv_data_agg,
-                    file_name="risultato_aggregato.csv",
-                    mime="text/csv"
-                )
-            
-            #################################
-            # 4) Composite Score & Dashboard Convenienza
-            #################################
-            if agg_list:
-                markets_available = list(set([df_temp["Market"].iloc[0] for df_temp in agg_list]))
-                market_ref = st.sidebar.selectbox("Mercato di riferimento per Composite Score", options=markets_available, index=0)
-                
-                # Verifica che per il mercato scelto esistano le colonne Risparmio e Bought
-                risparmio_col = f"Risparmio_{market_ref}"
-                bought_col = f"Bought_{market_ref}"
-                if risparmio_col in df_agg.columns and bought_col in df_agg.columns:
-                    df_agg["Composite_Score"] = df_agg.apply(
-                        lambda row: (row[risparmio_col] if pd.notnull(row[risparmio_col]) else 0) * peso_margine \
-                                    + np.log1p(row[bought_col]) * peso_volume \
-                                    + row["Num_mercati_convenienti"] * peso_markets,
-                        axis=1
-                    )
-                    df_composite = df_agg.sort_values("Composite_Score", ascending=False)
-                    
-                    st.markdown("## Dashboard Convenienza (Composite Score)")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    top_score = df_composite["Composite_Score"].max() if not df_composite.empty else 0
-                    media_score = df_composite["Composite_Score"].mean() if not df_composite.empty else 0
-                    num_prodotti = df_composite.shape[0]
-                    col1.metric("Miglior Composite Score", f"{top_score:.2f}")
-                    col2.metric("Composite Score Medio", f"{media_score:.2f}")
-                    col3.metric("Numero Prodotti", f"{num_prodotti}")
-                    
-                    st.dataframe(df_composite, height=600)
-                    
-                    csv_data_composite = df_composite.to_csv(index=False, sep=";").encode("utf-8")
-                    st.download_button(
-                        label="Scarica CSV Dashboard Composite Score",
-                        data=csv_data_composite,
-                        file_name="dashboard_composite_score.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.warning(f"Per il mercato di riferimento '{market_ref}' non sono disponibili i dati necessari per il Composite Score.")
+            st.warning(f"Il file {f.name} è vuoto o non valido.")
+    
+    if not df_list:
+        st.error("Nessun file valido caricato.")
+        st.stop()
+
+    df = pd.concat(df_list, ignore_index=True)
+
+    # Verifichiamo che le colonne chiave esistano
+    needed_cols = [
+        "Locale", "Title",
+        "Sales Rank: Current", "Sales Rank: 30 days avg.",
+        "Bought in past month",
+        "Return Rate",
+        "Reviews: Rating", "Reviews: Review Count",
+        "Buy Box: Current", "Buy Box: Is Lowest", "Buy Box: Is Lowest 90 days",
+        "Buy Box: Stock", "Buy Box out of stock percentage: 90 days OOS %",
+        "Amazon: Current", "Amazon: Is Lowest", "Amazon: Is Lowest 90 days",
+        "Amazon: Stock", "Amazon out of stock percentage: 90 days OOS %",
+        "New out of stock percentage: 90 days OOS %",
+        "New Offer Count: Current",
+        "ASIN", "Brand",
+        "Package: Dimension (cm³)"
+    ]
+    missing = [c for c in needed_cols if c not in df.columns]
+    if missing:
+        st.error(f"Mancano le seguenti colonne nel file: {', '.join(missing)}.")
+        st.stop()
+
+    # Conversione di colonne numeriche
+    df["Sales_Rank_Current"] = df["Sales Rank: Current"].apply(parse_int)
+    df["Sales_Rank_30days"] = df["Sales Rank: 30 days avg."].apply(parse_int)
+    df["Bought_in_past_month_num"] = df["Bought in past month"].apply(parse_int)
+    df["Return_Rate_num"] = df["Return Rate"].apply(parse_float)
+    df["Reviews_Rating"] = df["Reviews: Rating"].apply(parse_float)
+    df["Reviews_Count"] = df["Reviews: Review Count"].apply(parse_int)
+
+    df["BuyBox_Current"] = df["Buy Box: Current"].apply(parse_float)
+    df["BuyBox_IsLowest"] = df["Buy Box: Is Lowest"].str.lower().eq("yes")
+    df["BuyBox_IsLowest90"] = df["Buy Box: Is Lowest 90 days"].str.lower().eq("yes")
+    df["BuyBox_Stock"] = df["Buy Box: Stock"].apply(parse_int)
+    df["BuyBox_OOS_90"] = df["Buy Box out of stock percentage: 90 days OOS %"].apply(parse_float)
+
+    df["Amazon_Current"] = df["Amazon: Current"].apply(parse_float)
+    df["Amazon_IsLowest"] = df["Amazon: Is Lowest"].str.lower().eq("yes")
+    df["Amazon_IsLowest90"] = df["Amazon: Is Lowest 90 days"].str.lower().eq("yes")
+    df["Amazon_Stock"] = df["Amazon: Stock"].apply(parse_int)
+    df["Amazon_OOS_90"] = df["Amazon out of stock percentage: 90 days OOS %"].apply(parse_float)
+
+    df["New_OOS_90"] = df["New out of stock percentage: 90 days OOS %"].apply(parse_float)
+    df["New_OfferCount"] = df["New Offer Count: Current"].apply(parse_int)
+
+    # Calcolo Opportunity Score
+    # Esempio formula:
+    # OppScore = alpha * -log(SalesRank+1) + beta * log(1 + BoughtMonth) + gamma * ReviewsRating - delta * OfferCount
+    # Usa .fillna(0) o simili per evitare errori
+    df["Sales_Rank_Current"] = df["Sales_Rank_Current"].fillna(999999)
+    df["Bought_in_past_month_num"] = df["Bought_in_past_month_num"].fillna(0)
+    df["Reviews_Rating"] = df["Reviews_Rating"].fillna(0)
+    df["New_OfferCount"] = df["New_OfferCount"].fillna(0)
+
+    # Per evitare log(0), aggiungiamo +1
+    df["Opportunity_Score"] = (
+        alpha * -np.log(df["Sales_Rank_Current"] + 1) +
+        beta * np.log(1 + df["Bought_in_past_month_num"]) +
+        gamma * df["Reviews_Rating"] -
+        delta * df["New_OfferCount"]
+    )
+
+    # Filtri Avanzati
+    # 1) Sales Rank <= max_sales_rank
+    df_filtered = df[df["Sales_Rank_Current"] <= max_sales_rank]
+    # 2) Rating >= min_reviews_rating
+    df_filtered = df_filtered[df_filtered["Reviews_Rating"] >= min_reviews_rating]
+    # 3) Offer Count <= max_offer_count
+    df_filtered = df_filtered[df_filtered["New_OfferCount"] <= max_offer_count]
+    # 4) Prezzo Buy Box compreso tra min_buybox_price e max_buybox_price
+    df_filtered = df_filtered[df_filtered["BuyBox_Current"].fillna(0).between(min_buybox_price, max_buybox_price)]
+
+    # Ordiniamo per Opportunity_Score decrescente
+    df_filtered = df_filtered.sort_values("Opportunity_Score", ascending=False)
+
+    # Selezioniamo le colonne finali per la visualizzazione
+    columns_finali = [
+        "Locale", "Title", "Sales_Rank_Current", "Sales_Rank_30days",
+        "Bought_in_past_month_num", "Reviews_Rating", "Reviews_Count",
+        "BuyBox_Current", "Amazon_Current", "New_OfferCount",
+        "Opportunity_Score", "ASIN", "Brand"
+    ]
+    # Mantieni solo quelle che esistono
+    columns_finali = [c for c in columns_finali if c in df_filtered.columns]
+
+    df_finale = df_filtered[columns_finali].copy()
+
+    st.subheader("Risultati con Opportunity Score e Filtri Avanzati")
+    st.dataframe(df_finale, height=600)
+
+    # Download CSV
+    csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
+    st.download_button(
+        label="Scarica CSV Risultati",
+        data=csv_data,
+        file_name="risultato_opportunity_score.csv",
+        mime="text/csv"
+    )
