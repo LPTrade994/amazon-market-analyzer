@@ -128,6 +128,17 @@ def parse_int(x):
     except:
         return np.nan
 
+# Funzione per formattare il Trend in base al valore di Trend_Bonus
+def format_trend(trend):
+    if pd.isna(trend):
+        return "N/D"
+    if trend > 0.1:
+        return "🔼 Crescente"
+    elif trend < -0.1:
+        return "🔽 Decrescente"
+    else:
+        return "➖ Stabile"
+
 #################################
 # Visualizzazione Immediata degli ASIN dalla Lista di Origine
 #################################
@@ -242,9 +253,10 @@ if avvia:
     df_merged = df_merged[df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price)]
     
     # Calcolo del bonus/penalità per il Trend del Sales Rank
-    # Se SalesRank_90d è disponibile e >0, calcoliamo:
-    # Trend = log((SalesRank_90d + 1) / (SalesRank_Comp + 1))
+    # Trend_Bonus = log((SalesRank_90d + 1) / (SalesRank_Comp + 1))
     df_merged["Trend_Bonus"] = np.log((df_merged["SalesRank_90d"].fillna(df_merged["SalesRank_Comp"]) + 1) / (df_merged["SalesRank_Comp"] + 1))
+    # Formattiamo il trend in una stringa con icona
+    df_merged["Trend"] = df_merged["Trend_Bonus"].apply(format_trend)
     
     # Calcolo dell'Opportunity Score (senza rating)
     # Formula:
@@ -269,7 +281,7 @@ if avvia:
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
         "Price_Base", "Acquisto_Netto", "Price_Comp", "Margin_Pct",
         "Margine_Stimato", "Margine_%", "SalesRank_Comp", "SalesRank_90d",
-        "Trend_Bonus", "Bought_Comp", "NewOffer_Comp",
+        "Trend", "Bought_Comp", "NewOffer_Comp",
         "Opportunity_Score", "Brand (base)", "Package: Dimension (cm³) (base)"
     ]
     cols_final = [c for c in cols_final if c in df_merged.columns]
@@ -277,7 +289,7 @@ if avvia:
     
     # Arrotonda i valori numerici principali a 2 decimali
     cols_to_round = ["Price_Base", "Acquisto_Netto", "Price_Comp", "Margin_Pct",
-                     "Margine_Stimato", "Margine_%", "Trend_Bonus", "Opportunity_Score"]
+                     "Margine_Stimato", "Margine_%", "Opportunity_Score"]
     for col in cols_to_round:
         if col in df_finale.columns:
             df_finale[col] = df_finale[col].round(2)
@@ -304,7 +316,7 @@ if avvia:
         x=alt.X("Margin_Pct:Q", title="Margine (%)"),
         y=alt.Y("Opportunity_Score:Q", title="Opportunity Score"),
         color=alt.Color("Locale (comp):N", title="Mercato Confronto"),
-        tooltip=["Title (base)", "ASIN", "Margin_Pct", "Opportunity_Score"]
+        tooltip=["Title (base)", "ASIN", "Margin_Pct", "Opportunity_Score", "Trend"]
     ).interactive()
     st.altair_chart(chart, use_container_width=True)
     
