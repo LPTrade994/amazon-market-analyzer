@@ -35,7 +35,7 @@ with st.sidebar:
     epsilon = st.slider("Peso per il Margine (%)", 0.0, 10.0, 1.0, step=0.1)
 
     st.markdown("---")
-    st.subheader("Filtri Avanzati (sul mercato di confronto)")
+    st.subheader("Filtri Avanzati (Mercato di Confronto)")
     max_sales_rank = st.number_input("Sales Rank massimo", min_value=1, value=999999)
     min_reviews_rating = st.number_input("Rating minimo", min_value=0.0, max_value=5.0, value=0.0, step=0.1)
     max_offer_count = st.number_input("Offer Count massimo", min_value=1, value=999999)
@@ -82,18 +82,9 @@ def parse_int(x):
         return np.nan
 
 #################################
-# Elaborazione quando si clicca "Calcola Opportunity Score"
+# Elaborazione della Lista di Origine (Base) – Visualizzazione ASIN Unificati
 #################################
-if avvia:
-    # Controllo file base
-    if not files_base:
-        st.warning("Carica almeno un file di Lista di Origine.")
-        st.stop()
-    if not comparison_files:
-        st.warning("Carica almeno un file di Liste di Confronto.")
-        st.stop()
-    
-    # Elaborazione Lista di Origine (Base)
+if files_base:
     base_list = []
     for f in files_base:
         df_temp = load_data(f)
@@ -101,17 +92,24 @@ if avvia:
             base_list.append(df_temp)
         else:
             st.warning(f"Il file base {f.name} è vuoto o non valido.")
-    if not base_list:
-        st.error("Nessun file base valido caricato.")
-        st.stop()
-    df_base = pd.concat(base_list, ignore_index=True)
-    if "ASIN" in df_base.columns:
-        unique_asins = df_base["ASIN"].dropna().unique()
-        st.info("Lista unificata di ASIN dalla Lista di Origine:")
-        st.text_area("Copia qui:", "\n".join(unique_asins), height=200)
-    else:
-        st.warning("I file di origine non contengono la colonna ASIN.")
+    if base_list:
+        df_base = pd.concat(base_list, ignore_index=True)
+        if "ASIN" in df_base.columns:
+            unique_asins = df_base["ASIN"].dropna().unique()
+            st.info("Lista unificata di ASIN dalla Lista di Origine:")
+            st.text_area("Copia qui:", "\n".join(unique_asins), height=200)
+        else:
+            st.warning("I file di origine non contengono la colonna ASIN.")
 
+#################################
+# Elaborazione Completa e Calcolo Opportunity Score
+#################################
+if avvia:
+    # Controllo file di confronto
+    if not comparison_files:
+        st.warning("Carica almeno un file di Liste di Confronto.")
+        st.stop()
+    
     # Elaborazione Liste di Confronto
     comp_list = []
     for f in comparison_files:
@@ -126,12 +124,16 @@ if avvia:
     df_comp = pd.concat(comp_list, ignore_index=True)
     
     # Merge tra base e confronto sulla colonna ASIN
+    if "ASIN" not in df_base.columns or "ASIN" not in df_comp.columns:
+        st.error("Assicurati che entrambi i file (origine e confronto) contengano la colonna ASIN.")
+        st.stop()
+    
     df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner", suffixes=(" (base)", " (comp)"))
     if df_merged.empty:
         st.error("Nessuna corrispondenza trovata tra la Lista di Origine e le Liste di Confronto.")
         st.stop()
     
-    # Conversione dei dati di interesse (utilizziamo i dati del mercato di confronto)
+    # Conversione dei dati di interesse dal mercato di confronto
     df_merged["BuyBox_Base"] = df_merged["Buy Box: Current (base)"].apply(parse_float)
     df_merged["BuyBox_Comp"] = df_merged["Buy Box: Current (comp)"].apply(parse_float)
     df_merged["SalesRank_Comp"] = df_merged["Sales Rank: Current (comp)"].apply(parse_int)
@@ -139,12 +141,12 @@ if avvia:
     df_merged["Reviews_Rating_Comp"] = df_merged["Reviews: Rating (comp)"].apply(parse_float)
     df_merged["NewOffer_Comp"] = df_merged["New Offer Count: Current (comp)"].apply(parse_int)
     
-    # Calcolo del margine percentuale (differenza percentuale tra BuyBox nel mercato di confronto e quello di origine)
+    # Calcolo del margine percentuale tra BuyBox del mercato di confronto e quello di origine
     df_merged["Margin_Pct"] = (df_merged["BuyBox_Comp"] - df_merged["BuyBox_Base"]) / df_merged["BuyBox_Base"] * 100
-    # Consideriamo solo i casi in cui il margine è positivo (opportunità di arbitraggio)
+    # Consideriamo solo i casi in cui il margine è positivo
     df_merged = df_merged[df_merged["Margin_Pct"] > 0]
     
-    # Applichiamo i filtri avanzati (sul mercato di confronto)
+    # Applicazione dei filtri avanzati (sul mercato di confronto)
     df_merged["SalesRank_Comp"] = df_merged["SalesRank_Comp"].fillna(999999)
     df_merged = df_merged[df_merged["SalesRank_Comp"] <= max_sales_rank]
     df_merged["Reviews_Rating_Comp"] = df_merged["Reviews_Rating_Comp"].fillna(0)
@@ -153,8 +155,8 @@ if avvia:
     df_merged = df_merged[df_merged["NewOffer_Comp"] <= max_offer_count]
     df_merged = df_merged[df_merged["BuyBox_Comp"].fillna(0).between(min_buybox_price, max_buybox_price)]
     
-    # Calcolo Opportunity Score
-    # Formula proposta:
+    # Calcolo dell'Opportunity Score
+    # Formula:
     # Opportunity_Score = ε * Margin_Pct +
     #                     β * log(1 + Bought_Comp) +
     #                     γ * Reviews_Rating_Comp -
@@ -168,10 +170,10 @@ if avvia:
         alpha * np.log(df_merged["SalesRank_Comp"] + 1)
     )
     
-    # Ordiniamo i risultati per Opportunity Score decrescente
+    # Ordiniamo i risultati per Opportunity_Score decrescente
     df_merged = df_merged.sort_values("Opportunity_Score", ascending=False)
     
-    # Selezioniamo le colonne da mostrare
+    # Selezione delle colonne finali da visualizzare
     cols_final = [
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
         "BuyBox_Base", "BuyBox_Comp", "Margin_Pct",
