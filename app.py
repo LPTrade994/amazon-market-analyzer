@@ -123,23 +123,24 @@ if avvia:
         st.stop()
     df_comp = pd.concat(comp_list, ignore_index=True)
     
-    # Merge tra base e confronto sulla colonna ASIN
+    # Verifica la presenza della colonna ASIN in entrambi i dataset
     if "ASIN" not in df_base.columns or "ASIN" not in df_comp.columns:
         st.error("Assicurati che entrambi i file (origine e confronto) contengano la colonna ASIN.")
         st.stop()
     
+    # Merge tra base e confronto sulla colonna ASIN
     df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner", suffixes=(" (base)", " (comp)"))
     if df_merged.empty:
         st.error("Nessuna corrispondenza trovata tra la Lista di Origine e le Liste di Confronto.")
         st.stop()
     
-    # Conversione dei dati di interesse dal mercato di confronto
-    df_merged["BuyBox_Base"] = df_merged["Buy Box: Current (base)"].apply(parse_float)
-    df_merged["BuyBox_Comp"] = df_merged["Buy Box: Current (comp)"].apply(parse_float)
-    df_merged["SalesRank_Comp"] = df_merged["Sales Rank: Current (comp)"].apply(parse_int)
-    df_merged["Bought_Comp"] = df_merged["Bought in past month (comp)"].apply(parse_int)
-    df_merged["Reviews_Rating_Comp"] = df_merged["Reviews: Rating (comp)"].apply(parse_float)
-    df_merged["NewOffer_Comp"] = df_merged["New Offer Count: Current (comp)"].apply(parse_int)
+    # Conversione dei dati dal mercato di confronto (usiamo controlli per evitare KeyError)
+    df_merged["BuyBox_Base"] = df_merged.get("Buy Box: Current (base)", pd.Series(np.nan)).apply(parse_float)
+    df_merged["BuyBox_Comp"] = df_merged.get("Buy Box: Current (comp)", pd.Series(np.nan)).apply(parse_float)
+    df_merged["SalesRank_Comp"] = df_merged.get("Sales Rank: Current (comp)", pd.Series(np.nan)).apply(parse_int)
+    df_merged["Bought_Comp"] = df_merged.get("Bought in past month (comp)", pd.Series(np.nan)).apply(parse_int)
+    df_merged["Reviews_Rating_Comp"] = df_merged.get("Reviews: Rating (comp)", pd.Series(np.nan)).apply(parse_float)
+    df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     
     # Calcolo del margine percentuale tra BuyBox del mercato di confronto e quello di origine
     df_merged["Margin_Pct"] = (df_merged["BuyBox_Comp"] - df_merged["BuyBox_Base"]) / df_merged["BuyBox_Base"] * 100
