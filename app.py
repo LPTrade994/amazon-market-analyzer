@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import re
 
 # Configurazione della pagina
 st.set_page_config(
@@ -84,20 +85,21 @@ def parse_int(x):
 
 def parse_rating(x):
     """
-    Rimuove eventuali 'su 5', 'out of 5', '/5' e converte in float.
-    Gestisce anche virgole e spazi.
+    Estrae il valore numerico da una stringa di rating.
+    Ad esempio, da "4,6 su 5" o "4.6 out of 5" restituisce 4.6.
     """
     if not isinstance(x, str):
         return np.nan
-    x_clean = x.lower()
-    x_clean = x_clean.replace(" su 5", "")
-    x_clean = x_clean.replace(" out of 5", "")
-    x_clean = x_clean.replace("/5", "")
-    x_clean = x_clean.replace(",", ".").strip()
-    try:
-        return float(x_clean)
-    except:
-        return np.nan
+    # Estrae la prima sequenza di cifre, punti o virgole
+    match = re.search(r'[\d\.,]+', x)
+    if match:
+        num_str = match.group(0)
+        num_str = num_str.replace(",", ".").strip()
+        try:
+            return float(num_str)
+        except:
+            return np.nan
+    return np.nan
 
 #################################
 # Elaborazione della Lista di Origine (Base) – Visualizzazione ASIN Unificati
@@ -157,13 +159,10 @@ if avvia:
     df_merged["BuyBox_Comp"] = df_merged.get("Buy Box: Current (comp)", pd.Series(np.nan)).apply(parse_float)
     df_merged["SalesRank_Comp"] = df_merged.get("Sales Rank: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["Bought_Comp"] = df_merged.get("Bought in past month (comp)", pd.Series(np.nan)).apply(parse_int)
-
-    # Nuova funzione parse_rating per il rating
     df_merged["Reviews_Rating_Comp"] = (
         df_merged.get("Reviews: Rating (comp)", pd.Series(np.nan))
         .apply(parse_rating)
     )
-
     df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     
     # Calcolo del margine percentuale tra BuyBox del mercato di confronto e quello di origine
