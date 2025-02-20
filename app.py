@@ -9,7 +9,6 @@ st.set_page_config(
     page_icon="🔎",
     layout="wide"
 )
-
 st.title("Amazon Market Analyzer - Arbitraggio Multi-Mercato")
 
 #################################
@@ -29,6 +28,17 @@ with st.sidebar:
     )
 
     st.markdown("---")
+    st.subheader("Prezzo di riferimento")
+    ref_price_base = st.selectbox(
+        "Per la Lista di Origine",
+        ["Buy Box: Current", "Amazon: Current", "New: Current"]
+    )
+    ref_price_comp = st.selectbox(
+        "Per la Lista di Confronto",
+        ["Buy Box: Current", "Amazon: Current", "New: Current"]
+    )
+
+    st.markdown("---")
     st.subheader("Impostazioni Opportunity Score")
     alpha = st.slider("Peso per Sales Rank (penalità)", 0.0, 5.0, 1.0, step=0.1)
     beta = st.slider("Peso per 'Bought in past month'", 0.0, 5.0, 1.0, step=0.1)
@@ -41,8 +51,8 @@ with st.sidebar:
     max_sales_rank = st.number_input("Sales Rank massimo", min_value=1, value=999999)
     min_reviews_rating = st.number_input("Rating minimo", min_value=0.0, max_value=5.0, value=0.0, step=0.1)
     max_offer_count = st.number_input("Offer Count massimo", min_value=1, value=999999)
-    min_buybox_price = st.number_input("Prezzo Buy Box minimo", min_value=0.0, value=0.0)
-    max_buybox_price = st.number_input("Prezzo Buy Box massimo", min_value=0.0, value=999999.0)
+    min_buybox_price = st.number_input("Prezzo di riferimento (Buy Box) minimo", min_value=0.0, value=0.0)
+    max_buybox_price = st.number_input("Prezzo di riferimento (Buy Box) massimo", min_value=0.0, value=999999.0)
 
     st.markdown("---")
     avvia = st.button("Calcola Opportunity Score")
@@ -85,16 +95,18 @@ def parse_int(x):
 
 def parse_rating(x):
     """
-    Estrae il valore numerico da una stringa di rating.
-    Ad esempio, da "4,6 su 5" o "4.6 out of 5" restituisce 4.6.
+    Utilizza una regular expression per estrarre il primo numero (con eventuali punti o virgole)
+    dalla stringa di rating.
+    Esempi:
+      "4,6 su 5" -> 4.6
+      "4.5 out of 5" -> 4.5
+      "Rating: 4.6" -> 4.6
     """
     if not isinstance(x, str):
         return np.nan
-    # Estrae la prima sequenza di cifre, punti o virgole
-    match = re.search(r'[\d\.,]+', x)
+    match = re.search(r'(\d+[\.,]?\d*)', x)
     if match:
-        num_str = match.group(0)
-        num_str = num_str.replace(",", ".").strip()
+        num_str = match.group(1).replace(",", ".").strip()
         try:
             return float(num_str)
         except:
@@ -143,7 +155,7 @@ if avvia:
         st.stop()
     df_comp = pd.concat(comp_list, ignore_index=True)
     
-    # Verifica la presenza della colonna ASIN in entrambi i dataset
+    # Verifica della presenza della colonna ASIN in entrambi i dataset
     if "ASIN" not in df_base.columns or "ASIN" not in df_comp.columns:
         st.error("Assicurati che entrambi i file (origine e confronto) contengano la colonna ASIN.")
         st.stop()
@@ -154,9 +166,13 @@ if avvia:
         st.error("Nessuna corrispondenza trovata tra la Lista di Origine e le Liste di Confronto.")
         st.stop()
     
-    # Conversione dei dati dal mercato di confronto (usiamo .get(...) per evitare KeyError)
-    df_merged["BuyBox_Base"] = df_merged.get("Buy Box: Current (base)", pd.Series(np.nan)).apply(parse_float)
-    df_merged["BuyBox_Comp"] = df_merged.get("Buy Box: Current (comp)", pd.Series(np.nan)).apply(parse_float)
+    # Utilizza le colonne di prezzo selezionate
+    price_col_base = f"{ref_price_base} (base)"
+    price_col_comp = f"{ref_price_comp} (comp)"
+    df_merged["Price_Base"] = df_merged.get(price_col_base, pd.Series(np.nan)).apply(parse_float)
+    df_merged["Price_Comp"] = df_merged.get(price_col_comp, pd.Series(np.nan)).apply(parse_float)
+    
+    # Conversione dei dati dal mercato di confronto (per le altre metriche)
     df_merged["SalesRank_Comp"] = df_merged.get("Sales Rank: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["Bought_Comp"] = df_merged.get("Bought in past month (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["Reviews_Rating_Comp"] = (
@@ -165,9 +181,8 @@ if avvia:
     )
     df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     
-    # Calcolo del margine percentuale tra BuyBox del mercato di confronto e quello di origine
-    df_merged["Margin_Pct"] = (df_merged["BuyBox_Comp"] - df_merged["BuyBox_Base"]) / df_merged["BuyBox_Base"] * 100
-    # Consideriamo solo i casi in cui il margine è positivo
+    # Calcolo del margine percentuale tra il prezzo di riferimento del mercato di confronto e quello di origine
+    df_merged["Margin_Pct"] = (df_merged["Price_Comp"] - df_merged["Price_Base"]) / df_merged["Price_Base"] * 100
     df_merged = df_merged[df_merged["Margin_Pct"] > 0]
     
     # Applicazione dei filtri avanzati (sul mercato di confronto)
@@ -180,8 +195,8 @@ if avvia:
     df_merged["NewOffer_Comp"] = df_merged["NewOffer_Comp"].fillna(0)
     df_merged = df_merged[df_merged["NewOffer_Comp"] <= max_offer_count]
 
-    df_merged["BuyBox_Comp"] = df_merged["BuyBox_Comp"].fillna(0)
-    df_merged = df_merged[df_merged["BuyBox_Comp"].between(min_buybox_price, max_buybox_price)]
+    df_merged["Price_Comp"] = df_merged["Price_Comp"].fillna(0)
+    df_merged = df_merged[df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price)]
     
     # Calcolo dell'Opportunity Score
     # Formula:
@@ -204,7 +219,7 @@ if avvia:
     # Selezione delle colonne finali da visualizzare
     cols_final = [
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
-        "BuyBox_Base", "BuyBox_Comp", "Margin_Pct",
+        "Price_Base", "Price_Comp", "Margin_Pct",
         "SalesRank_Comp", "Bought_Comp", "Reviews_Rating_Comp", "NewOffer_Comp",
         "Opportunity_Score", "Brand (base)", "Package: Dimension (cm³) (base)"
     ]
