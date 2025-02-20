@@ -12,7 +12,7 @@ st.set_page_config(
 st.title("Amazon Market Analyzer - Arbitraggio Multi-Mercato")
 
 #################################
-# Sidebar: Caricamento file e Impostazioni
+# Sidebar: Caricamento file, Scelta Prezzo di Riferimento e Impostazioni
 #################################
 with st.sidebar:
     st.subheader("Caricamento file")
@@ -39,17 +39,23 @@ with st.sidebar:
     )
 
     st.markdown("---")
+    st.subheader("Sconto per gli acquisti")
+    discount_percent = st.number_input("Inserisci lo sconto (%)", min_value=0.0, value=20.0, step=0.1)
+    discount = discount_percent / 100.0  # convertiamo in frazione
+
+    st.markdown("---")
     st.subheader("Impostazioni Opportunity Score")
+    # Questi slider influenzano il calcolo dello score
     alpha = st.slider("Peso per Sales Rank (penalità)", 0.0, 5.0, 1.0, step=0.1)
     beta = st.slider("Peso per 'Bought in past month'", 0.0, 5.0, 1.0, step=0.1)
-    # Rimosso il peso per Reviews Rating, in quanto il rating non interessa
+    # Abbiamo rimosso il peso per Reviews Rating, in quanto non è incluso
     delta = st.slider("Peso penalizzante per Offer Count", 0.0, 5.0, 1.0, step=0.1)
     epsilon = st.slider("Peso per il Margine (%)", 0.0, 10.0, 1.0, step=0.1)
 
     st.markdown("---")
     st.subheader("Filtri Avanzati (Mercato di Confronto)")
     max_sales_rank = st.number_input("Sales Rank massimo", min_value=1, value=999999)
-    # Rimosso il filtro sul Rating minimo
+    # Il filtro sul rating è stato rimosso
     max_offer_count = st.number_input("Offer Count massimo", min_value=1, value=999999)
     min_buybox_price = st.number_input("Prezzo di riferimento (Buy Box) minimo", min_value=0.0, value=0.0)
     max_buybox_price = st.number_input("Prezzo di riferimento (Buy Box) massimo", min_value=0.0, value=999999.0)
@@ -58,7 +64,7 @@ with st.sidebar:
     avvia = st.button("Calcola Opportunity Score")
 
 #################################
-# Funzioni di caricamento e pulizia
+# Funzioni di Caricamento e Parsing
 #################################
 def load_data(uploaded_file):
     """Carica dati da CSV o XLSX in un DataFrame."""
@@ -94,7 +100,7 @@ def parse_int(x):
         return np.nan
 
 #################################
-# Elaborazione della Lista di Origine (Base) – Visualizzazione ASIN Unificati
+# Visualizzazione Immediata degli ASIN dalla Lista di Origine
 #################################
 if files_base:
     base_list = []
@@ -112,6 +118,33 @@ if files_base:
             st.text_area("Copia qui:", "\n".join(unique_asins), height=200)
         else:
             st.warning("I file di origine non contengono la colonna ASIN.")
+    else:
+        st.info("Carica la Lista di Origine per vedere gli ASIN unificati.")
+
+#################################
+# Funzione per Calcolare il Prezzo d'Acquisto Netto
+#################################
+def calc_final_purchase_price(row, discount):
+    """
+    Calcola il prezzo d'acquisto netto, IVA esclusa e scontato, in base al paese.
+    Se il prodotto proviene dall'Italia (Locale "it"):
+      final = (prezzo lordo / 1.22) - (prezzo lordo * discount)
+    Altrimenti (per l'estero, ad es. Germania con IVA 19%):
+      final = (prezzo lordo / 1.19) * (1 - discount)
+    """
+    # Recupera il valore del paese dalla colonna "Locale (base)"
+    locale = row.get("Locale (base)", "it")
+    try:
+        locale = str(locale).strip().lower()
+    except:
+        locale = "it"
+    gross = row["Price_Base"]
+    if pd.isna(gross):
+        return np.nan
+    if locale == "it":
+        return (gross / 1.22) - (gross * discount)
+    else:
+        return (gross / 1.19) * (1 - discount)
 
 #################################
 # Elaborazione Completa e Calcolo Opportunity Score
@@ -146,7 +179,7 @@ if avvia:
         st.error("Nessuna corrispondenza trovata tra la Lista di Origine e le Liste di Confronto.")
         st.stop()
     
-    # Utilizza le colonne di prezzo selezionate
+    # Utilizza le colonne di prezzo selezionate dalla sidebar
     price_col_base = f"{ref_price_base} (base)"
     price_col_comp = f"{ref_price_comp} (comp)"
     df_merged["Price_Base"] = df_merged.get(price_col_base, pd.Series(np.nan)).apply(parse_float)
@@ -157,17 +190,25 @@ if avvia:
     df_merged["Bought_Comp"] = df_merged.get("Bought in past month (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     
-    # Calcolo del margine percentuale tra il prezzo di riferimento del mercato di confronto e quello di origine
+    # Calcolo del margine percentuale tra il prezzo di riferimento (con IVA) del mercato di confronto e quello di origine
     df_merged["Margin_Pct"] = (df_merged["Price_Comp"] - df_merged["Price_Base"]) / df_merged["Price_Base"] * 100
     df_merged = df_merged[df_merged["Margin_Pct"] > 0]
+    
+    # Calcola il prezzo d'acquisto netto per ogni prodotto dalla lista di origine
+    # La funzione utilizza il valore di "Price_Base" (prezzo lordo) e il campo "Locale (base)"
+    df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount), axis=1)
+    
+    # Calcola inoltre il margine stimato in valore assoluto e percentuale basandosi sul prezzo di vendita del mercato di confronto
+    df_merged["Margine_Stimato"] = df_merged["Price_Comp"] - df_merged["Acquisto_Netto"]
+    df_merged["Margine_%"] = (df_merged["Margine_Stimato"] / df_merged["Acquisto_Netto"]) * 100
     
     # Applicazione dei filtri avanzati (sul mercato di confronto)
     df_merged["SalesRank_Comp"] = df_merged["SalesRank_Comp"].fillna(999999)
     df_merged = df_merged[df_merged["SalesRank_Comp"] <= max_sales_rank]
-
+    
     df_merged["NewOffer_Comp"] = df_merged["NewOffer_Comp"].fillna(0)
     df_merged = df_merged[df_merged["NewOffer_Comp"] <= max_offer_count]
-
+    
     df_merged["Price_Comp"] = df_merged["Price_Comp"].fillna(0)
     df_merged = df_merged[df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price)]
     
@@ -190,8 +231,8 @@ if avvia:
     # Selezione delle colonne finali da visualizzare
     cols_final = [
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
-        "Price_Base", "Price_Comp", "Margin_Pct",
-        "SalesRank_Comp", "Bought_Comp", "NewOffer_Comp",
+        "Price_Base", "Acquisto_Netto", "Price_Comp", "Margin_Pct",
+        "Margine_Stimato", "Margine_%", "SalesRank_Comp", "Bought_Comp", "NewOffer_Comp",
         "Opportunity_Score", "Brand (base)", "Package: Dimension (cm³) (base)"
     ]
     cols_final = [c for c in cols_final if c in df_merged.columns]
