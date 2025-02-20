@@ -42,14 +42,14 @@ with st.sidebar:
     st.subheader("Impostazioni Opportunity Score")
     alpha = st.slider("Peso per Sales Rank (penalità)", 0.0, 5.0, 1.0, step=0.1)
     beta = st.slider("Peso per 'Bought in past month'", 0.0, 5.0, 1.0, step=0.1)
-    gamma = st.slider("Peso per Reviews Rating", 0.0, 5.0, 1.0, step=0.1)
+    # Rimosso il peso per Reviews Rating, in quanto il rating non interessa
     delta = st.slider("Peso penalizzante per Offer Count", 0.0, 5.0, 1.0, step=0.1)
     epsilon = st.slider("Peso per il Margine (%)", 0.0, 10.0, 1.0, step=0.1)
 
     st.markdown("---")
     st.subheader("Filtri Avanzati (Mercato di Confronto)")
     max_sales_rank = st.number_input("Sales Rank massimo", min_value=1, value=999999)
-    min_reviews_rating = st.number_input("Rating minimo", min_value=0.0, max_value=5.0, value=0.0, step=0.1)
+    # Rimosso il filtro sul Rating minimo
     max_offer_count = st.number_input("Offer Count massimo", min_value=1, value=999999)
     min_buybox_price = st.number_input("Prezzo di riferimento (Buy Box) minimo", min_value=0.0, value=0.0)
     max_buybox_price = st.number_input("Prezzo di riferimento (Buy Box) massimo", min_value=0.0, value=999999.0)
@@ -92,26 +92,6 @@ def parse_int(x):
         return int(x.strip())
     except:
         return np.nan
-
-def parse_rating(x):
-    """
-    Utilizza una regular expression per estrarre il primo numero (con eventuali punti o virgole)
-    dalla stringa di rating.
-    Esempi:
-      "4,6 su 5" -> 4.6
-      "4.5 out of 5" -> 4.5
-      "Rating: 4.6" -> 4.6
-    """
-    if not isinstance(x, str):
-        return np.nan
-    match = re.search(r'(\d+[\.,]?\d*)', x)
-    if match:
-        num_str = match.group(1).replace(",", ".").strip()
-        try:
-            return float(num_str)
-        except:
-            return np.nan
-    return np.nan
 
 #################################
 # Elaborazione della Lista di Origine (Base) – Visualizzazione ASIN Unificati
@@ -172,13 +152,9 @@ if avvia:
     df_merged["Price_Base"] = df_merged.get(price_col_base, pd.Series(np.nan)).apply(parse_float)
     df_merged["Price_Comp"] = df_merged.get(price_col_comp, pd.Series(np.nan)).apply(parse_float)
     
-    # Conversione dei dati dal mercato di confronto (per le altre metriche)
+    # Conversione dei dati dal mercato di confronto per le altre metriche
     df_merged["SalesRank_Comp"] = df_merged.get("Sales Rank: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["Bought_Comp"] = df_merged.get("Bought in past month (comp)", pd.Series(np.nan)).apply(parse_int)
-    df_merged["Reviews_Rating_Comp"] = (
-        df_merged.get("Reviews: Rating (comp)", pd.Series(np.nan))
-        .apply(parse_rating)
-    )
     df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     
     # Calcolo del margine percentuale tra il prezzo di riferimento del mercato di confronto e quello di origine
@@ -189,27 +165,22 @@ if avvia:
     df_merged["SalesRank_Comp"] = df_merged["SalesRank_Comp"].fillna(999999)
     df_merged = df_merged[df_merged["SalesRank_Comp"] <= max_sales_rank]
 
-    df_merged["Reviews_Rating_Comp"] = df_merged["Reviews_Rating_Comp"].fillna(0)
-    df_merged = df_merged[df_merged["Reviews_Rating_Comp"] >= min_reviews_rating]
-
     df_merged["NewOffer_Comp"] = df_merged["NewOffer_Comp"].fillna(0)
     df_merged = df_merged[df_merged["NewOffer_Comp"] <= max_offer_count]
 
     df_merged["Price_Comp"] = df_merged["Price_Comp"].fillna(0)
     df_merged = df_merged[df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price)]
     
-    # Calcolo dell'Opportunity Score
+    # Calcolo dell'Opportunity Score (senza rating)
     # Formula:
     # Opportunity_Score = ε * Margin_Pct +
-    #                     β * log(1 + Bought_Comp) +
-    #                     γ * Reviews_Rating_Comp -
+    #                     β * log(1 + Bought_Comp) -
     #                     δ * NewOffer_Comp -
     #                     α * log(SalesRank_Comp + 1)
     df_merged["Opportunity_Score"] = (
         epsilon * df_merged["Margin_Pct"] +
-        beta * np.log(1 + df_merged["Bought_Comp"].fillna(0)) +
-        gamma * df_merged["Reviews_Rating_Comp"] -
-        delta * df_merged["NewOffer_Comp"] -
+        beta * np.log(1 + df_merged["Bought_Comp"].fillna(0)) -
+        delta * df_merged["NewOffer_Comp"].fillna(0) -
         alpha * np.log(df_merged["SalesRank_Comp"] + 1)
     )
     
@@ -220,7 +191,7 @@ if avvia:
     cols_final = [
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
         "Price_Base", "Price_Comp", "Margin_Pct",
-        "SalesRank_Comp", "Bought_Comp", "Reviews_Rating_Comp", "NewOffer_Comp",
+        "SalesRank_Comp", "Bought_Comp", "NewOffer_Comp",
         "Opportunity_Score", "Brand (base)", "Package: Dimension (cm³) (base)"
     ]
     cols_final = [c for c in cols_final if c in df_merged.columns]
