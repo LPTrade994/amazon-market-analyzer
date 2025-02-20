@@ -8,6 +8,7 @@ st.set_page_config(
     page_icon="🔎",
     layout="wide"
 )
+
 st.title("Amazon Market Analyzer - Arbitraggio Multi-Mercato")
 
 #################################
@@ -81,6 +82,23 @@ def parse_int(x):
     except:
         return np.nan
 
+def parse_rating(x):
+    """
+    Rimuove eventuali 'su 5', 'out of 5', '/5' e converte in float.
+    Gestisce anche virgole e spazi.
+    """
+    if not isinstance(x, str):
+        return np.nan
+    x_clean = x.lower()
+    x_clean = x_clean.replace(" su 5", "")
+    x_clean = x_clean.replace(" out of 5", "")
+    x_clean = x_clean.replace("/5", "")
+    x_clean = x_clean.replace(",", ".").strip()
+    try:
+        return float(x_clean)
+    except:
+        return np.nan
+
 #################################
 # Elaborazione della Lista di Origine (Base) – Visualizzazione ASIN Unificati
 #################################
@@ -134,12 +152,18 @@ if avvia:
         st.error("Nessuna corrispondenza trovata tra la Lista di Origine e le Liste di Confronto.")
         st.stop()
     
-    # Conversione dei dati dal mercato di confronto (usiamo controlli per evitare KeyError)
+    # Conversione dei dati dal mercato di confronto (usiamo .get(...) per evitare KeyError)
     df_merged["BuyBox_Base"] = df_merged.get("Buy Box: Current (base)", pd.Series(np.nan)).apply(parse_float)
     df_merged["BuyBox_Comp"] = df_merged.get("Buy Box: Current (comp)", pd.Series(np.nan)).apply(parse_float)
     df_merged["SalesRank_Comp"] = df_merged.get("Sales Rank: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["Bought_Comp"] = df_merged.get("Bought in past month (comp)", pd.Series(np.nan)).apply(parse_int)
-    df_merged["Reviews_Rating_Comp"] = df_merged.get("Reviews: Rating (comp)", pd.Series(np.nan)).apply(parse_float)
+
+    # Nuova funzione parse_rating per il rating
+    df_merged["Reviews_Rating_Comp"] = (
+        df_merged.get("Reviews: Rating (comp)", pd.Series(np.nan))
+        .apply(parse_rating)
+    )
+
     df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     
     # Calcolo del margine percentuale tra BuyBox del mercato di confronto e quello di origine
@@ -150,11 +174,15 @@ if avvia:
     # Applicazione dei filtri avanzati (sul mercato di confronto)
     df_merged["SalesRank_Comp"] = df_merged["SalesRank_Comp"].fillna(999999)
     df_merged = df_merged[df_merged["SalesRank_Comp"] <= max_sales_rank]
+
     df_merged["Reviews_Rating_Comp"] = df_merged["Reviews_Rating_Comp"].fillna(0)
     df_merged = df_merged[df_merged["Reviews_Rating_Comp"] >= min_reviews_rating]
+
     df_merged["NewOffer_Comp"] = df_merged["NewOffer_Comp"].fillna(0)
     df_merged = df_merged[df_merged["NewOffer_Comp"] <= max_offer_count]
-    df_merged = df_merged[df_merged["BuyBox_Comp"].fillna(0).between(min_buybox_price, max_buybox_price)]
+
+    df_merged["BuyBox_Comp"] = df_merged["BuyBox_Comp"].fillna(0)
+    df_merged = df_merged[df_merged["BuyBox_Comp"].between(min_buybox_price, max_buybox_price)]
     
     # Calcolo dell'Opportunity Score
     # Formula:
@@ -166,12 +194,12 @@ if avvia:
     df_merged["Opportunity_Score"] = (
         epsilon * df_merged["Margin_Pct"] +
         beta * np.log(1 + df_merged["Bought_Comp"].fillna(0)) +
-        gamma * df_merged["Reviews_Rating_Comp"].fillna(0) -
-        delta * df_merged["NewOffer_Comp"].fillna(0) -
+        gamma * df_merged["Reviews_Rating_Comp"] -
+        delta * df_merged["NewOffer_Comp"] -
         alpha * np.log(df_merged["SalesRank_Comp"] + 1)
     )
     
-    # Ordiniamo i risultati per Opportunity_Score decrescente
+    # Ordiniamo i risultati per Opportunity Score decrescente
     df_merged = df_merged.sort_values("Opportunity_Score", ascending=False)
     
     # Selezione delle colonne finali da visualizzare
