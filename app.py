@@ -48,14 +48,14 @@ with st.sidebar:
     # Questi slider influenzano il calcolo dello score
     alpha = st.slider("Peso per Sales Rank (penalità)", 0.0, 5.0, 1.0, step=0.1)
     beta = st.slider("Peso per 'Bought in past month'", 0.0, 5.0, 1.0, step=0.1)
-    # Abbiamo rimosso il peso per Reviews Rating, in quanto non è incluso
+    # Il peso per Reviews Rating è stato rimosso
     delta = st.slider("Peso penalizzante per Offer Count", 0.0, 5.0, 1.0, step=0.1)
     epsilon = st.slider("Peso per il Margine (%)", 0.0, 10.0, 1.0, step=0.1)
 
     st.markdown("---")
     st.subheader("Filtri Avanzati (Mercato di Confronto)")
     max_sales_rank = st.number_input("Sales Rank massimo", min_value=1, value=999999)
-    # Il filtro sul rating è stato rimosso
+    # Filtro sul rating è stato rimosso
     max_offer_count = st.number_input("Offer Count massimo", min_value=1, value=999999)
     min_buybox_price = st.number_input("Prezzo di riferimento (Buy Box) minimo", min_value=0.0, value=0.0)
     max_buybox_price = st.number_input("Prezzo di riferimento (Buy Box) massimo", min_value=0.0, value=999999.0)
@@ -127,12 +127,11 @@ if files_base:
 def calc_final_purchase_price(row, discount):
     """
     Calcola il prezzo d'acquisto netto, IVA esclusa e scontato, in base al paese.
-    Se il prodotto proviene dall'Italia (Locale "it"):
+    Se il prodotto è acquistato in Italia (Locale "it"):
       final = (prezzo lordo / 1.22) - (prezzo lordo * discount)
-    Altrimenti (per l'estero, ad es. Germania con IVA 19%):
+    Altrimenti (ad es. Germania, IVA 19%):
       final = (prezzo lordo / 1.19) * (1 - discount)
     """
-    # Recupera il valore del paese dalla colonna "Locale (base)"
     locale = row.get("Locale (base)", "it")
     try:
         locale = str(locale).strip().lower()
@@ -195,10 +194,9 @@ if avvia:
     df_merged = df_merged[df_merged["Margin_Pct"] > 0]
     
     # Calcola il prezzo d'acquisto netto per ogni prodotto dalla lista di origine
-    # La funzione utilizza il valore di "Price_Base" (prezzo lordo) e il campo "Locale (base)"
     df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount), axis=1)
     
-    # Calcola inoltre il margine stimato in valore assoluto e percentuale basandosi sul prezzo di vendita del mercato di confronto
+    # Calcola il margine stimato (in valore assoluto e percentuale)
     df_merged["Margine_Stimato"] = df_merged["Price_Comp"] - df_merged["Acquisto_Netto"]
     df_merged["Margine_%"] = (df_merged["Margine_Stimato"] / df_merged["Acquisto_Netto"]) * 100
     
@@ -237,6 +235,12 @@ if avvia:
     ]
     cols_final = [c for c in cols_final if c in df_merged.columns]
     df_finale = df_merged[cols_final].copy()
+    
+    # Arrotonda i valori numerici principali a 2 decimali
+    cols_to_round = ["Price_Base", "Acquisto_Netto", "Price_Comp", "Margin_Pct", "Margine_Stimato", "Margine_%", "Opportunity_Score"]
+    for col in cols_to_round:
+        if col in df_finale.columns:
+            df_finale[col] = df_finale[col].round(2)
     
     st.subheader("Risultati Opportunità di Arbitraggio")
     st.dataframe(df_finale, height=600)
