@@ -147,10 +147,6 @@ with st.sidebar:
     shipping_cost_rev = st.number_input("Inserisci il costo di spedizione (Revenue) (€)", min_value=0.0, value=0.0, step=0.1, key="shipping_cost_rev")
     
     st.markdown("---")
-    st.subheader("Costo d'Acquisto Netto per Revenue Calculator")
-    purchase_cost_rev = st.number_input("Inserisci il costo d'acquisto netto (€)", min_value=0.0, value=0.0, step=0.1, key="purchase_cost_rev")
-    
-    st.markdown("---")
     avvia = st.button("Calcola Opportunity Score")
 
 #################################
@@ -244,16 +240,20 @@ def rev_calc_fees(category: str, price: float, shipping: float) -> dict:
         "total_fees": total_fees
     }
 
-def rev_calc_revenue_metrics(row, shipping_cost_rev, purchase_cost_rev):
+def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type="comp"):
     """
-    Calcola le metriche revenue sul mercato di riferimento:
-      - Prezzo Vendita Corrente: da Price_Base
-      - Costo d'Acquisto Netto: usa il valore fornito (purchase_cost_rev > 0) altrimenti Acquisto_Netto
-      - Shipping_Cost, Fees, Net_Revenue, Margine Netto (€) e (%) e altri dati utili
+    Calcola le metriche revenue per il mercato specificato (base o comp).
+    - Prezzo Vendita Corrente: Price_Comp se market_type="comp", Price_Base se "base"
+    - Costo d'Acquisto Netto: Acquisto_Netto (calcolato automaticamente)
+    - Shipping_Cost, Fees, Net_Revenue, Margine Netto (€) e (%) e altri dati utili
     """
-    purchase_net = purchase_cost_rev if purchase_cost_rev > 0 else row["Acquisto_Netto"]
-    prezzo_vendita = row["Price_Base"]
-    category = row.get("Category (base)", row.get("Category", "Altri prodotti"))
+    if market_type == "comp":
+        prezzo_vendita = row["Price_Comp"]
+    else:
+        prezzo_vendita = row["Price_Base"]
+    
+    purchase_net = row["Acquisto_Netto"]
+    category = row.get("Category (base)", "Altri prodotti")
     fees = rev_calc_fees(category, prezzo_vendita, shipping_cost_rev)
     net_selling_price = prezzo_vendita - fees["total_fees"]
     margin_net = net_selling_price - (purchase_net + shipping_cost_rev)
@@ -294,7 +294,7 @@ if files_base:
         st.info("Carica la Lista di Origine per vedere gli ASIN unificati.")
 
 #################################
-# Funzione per il calcolo del Prezzo d'Acquisto Netto (già presente)
+# Funzione per il calcolo del Prezzo d'Acquisto Netto
 #################################
 def calc_final_purchase_price(row, discount):
     """
@@ -382,35 +382,65 @@ if avvia:
     )
     
     # ---------------------------
-    # Calcolo e Visualizzazione Revenue Calculator (RISULTATI PRIMI)
+    # Calcolo e Visualizzazione Revenue Calculator per Mercato di Confronto
     # ---------------------------
-    df_revenue = df_merged.apply(lambda row: rev_calc_revenue_metrics(row, shipping_cost_rev, purchase_cost_rev), axis=1)
-    df_revenue["ASIN"] = df_merged["ASIN"]
-    df_revenue["Title (base)"] = df_merged["Title (base)"]
-    df_revenue["Locale (base)"] = df_merged["Locale (base)"] if "Locale (base)" in df_merged.columns else np.nan
-    df_revenue["Locale (comp)"] = df_merged["Locale (comp)"] if "Locale (comp)" in df_merged.columns else np.nan
+    df_revenue_comp = df_merged.apply(lambda row: rev_calc_revenue_metrics(row, shipping_cost_rev, market_type="comp"), axis=1)
+    df_revenue_comp["ASIN"] = df_merged["ASIN"]
+    df_revenue_comp["Title (base)"] = df_merged["Title (base)"]
+    df_revenue_comp["Locale (base)"] = df_merged["Locale (base)"] if "Locale (base)" in df_merged.columns else np.nan
+    df_revenue_comp["Locale (comp)"] = df_merged["Locale (comp)"] if "Locale (comp)" in df_merged.columns else np.nan
+    df_revenue_comp["Price_Comp"] = df_merged["Price_Comp"]  # Aggiunto per visualizzare il prezzo di vendita
     
-    revenue_cols = [
-        "Locale (base)", "Locale (comp)", "ASIN", "Title (base)", "Prezzo Vendita Corrente",
+    revenue_cols_comp = [
+        "Locale (base)", "Locale (comp)", "ASIN", "Title (base)", "Price_Comp", "Prezzo Vendita Corrente",
         "Costo d'Acquisto Netto", "Shipping_Cost", "Fees", "Net_Revenue",
         "Margine_Netto (€)", "Margine_Netto (%)", "Bought_Comp", "SalesRank_Comp", "Trend"
     ]
-    df_revenue_final = df_revenue[revenue_cols].copy()
-    for col in ["Prezzo Vendita Corrente", "Costo d'Acquisto Netto", "Shipping_Cost", "Fees", "Net_Revenue", "Margine_Netto (€)", "Margine_Netto (%)"]:
-        df_revenue_final[col] = df_revenue_final[col].round(2)
+    df_revenue_final_comp = df_revenue_comp[revenue_cols_comp].copy()
+    for col in ["Price_Comp", "Prezzo Vendita Corrente", "Costo d'Acquisto Netto", "Shipping_Cost", "Fees", "Net_Revenue", "Margine_Netto (€)", "Margine_Netto (%)"]:
+        df_revenue_final_comp[col] = df_revenue_final_comp[col].round(2)
     
-    st.subheader("Risultati Revenue Calculator")
-    st.dataframe(df_revenue_final, height=600)
-    csv_data_rev = df_revenue_final.to_csv(index=False, sep=";").encode("utf-8")
+    st.subheader("Risultati Revenue Calculator - Mercato di Confronto")
+    st.dataframe(df_revenue_final_comp, height=600)
+    csv_data_rev_comp = df_revenue_final_comp.to_csv(index=False, sep=";").encode("utf-8")
     st.download_button(
-        label="Scarica CSV Risultati Revenue",
-        data=csv_data_rev,
-        file_name="risultato_revenue_calculator.csv",
+        label="Scarica CSV Risultati Revenue - Mercato Confronto",
+        data=csv_data_rev_comp,
+        file_name="risultato_revenue_calculator_comp.csv",
         mime="text/csv"
     )
     
     # ---------------------------
-    # Visualizzazione Opportunity Score (risultati successivi)
+    # Calcolo e Visualizzazione Revenue Calculator per Mercato Base
+    # ---------------------------
+    df_revenue_base = df_merged.apply(lambda row: rev_calc_revenue_metrics(row, shipping_cost_rev, market_type="base"), axis=1)
+    df_revenue_base["ASIN"] = df_merged["ASIN"]
+    df_revenue_base["Title (base)"] = df_merged["Title (base)"]
+    df_revenue_base["Locale (base)"] = df_merged["Locale (base)"] if "Locale (base)" in df_merged.columns else np.nan
+    df_revenue_base["Locale (comp)"] = df_merged["Locale (comp)"] if "Locale (comp)" in df_merged.columns else np.nan
+    df_revenue_base["Price_Base"] = df_merged["Price_Base"]  # Aggiunto per visualizzare il prezzo di vendita sul mercato base
+    
+    revenue_cols_base = [
+        "Locale (base)", "Locale (comp)", "ASIN", "Title (base)", "Price_Base", "Prezzo Vendita Corrente",
+        "Costo d'Acquisto Netto", "Shipping_Cost", "Fees", "Net_Revenue",
+        "Margine_Netto (€)", "Margine_Netto (%)", "Bought_Comp", "SalesRank_Comp", "Trend"
+    ]
+    df_revenue_final_base = df_revenue_base[revenue_cols_base].copy()
+    for col in ["Price_Base", "Prezzo Vendita Corrente", "Costo d'Acquisto Netto", "Shipping_Cost", "Fees", "Net_Revenue", "Margine_Netto (€)", "Margine_Netto (%)"]:
+        df_revenue_final_base[col] = df_revenue_final_base[col].round(2)
+    
+    st.subheader("Risultati Revenue Calculator - Mercato Base")
+    st.dataframe(df_revenue_final_base, height=600)
+    csv_data_rev_base = df_revenue_final_base.to_csv(index=False, sep=";").encode("utf-8")
+    st.download_button(
+        label="Scarica CSV Risultati Revenue - Mercato Base",
+        data=csv_data_rev_base,
+        file_name="risultato_revenue_calculator_base.csv",
+        mime="text/csv"
+    )
+    
+    # ---------------------------
+    # Visualizzazione Opportunity Score
     # ---------------------------
     cols_final = [
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
