@@ -11,8 +11,11 @@ import math
 def truncate_2dec(value: float) -> float:
     """
     Tronca un valore a 2 decimali (senza arrotondare).
+    Se il valore è NaN o None, restituisce NaN.
     Esempio: 0.689 -> 0.68
     """
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return np.nan
     return math.floor(value * 100) / 100.0
 
 def calc_referral_fee(category: str, total_sale: float) -> float:
@@ -230,15 +233,15 @@ def calc_final_purchase_price(row, discount):
 #################################
 def calc_revenue_metrics(row, shipping_cost):
     """
-    Calcola le metriche Revenue basate sul Revenue Calculator, restituendo:
+    Calcola le metriche Revenue rilevanti:
       - Acquisto_Netto: prezzo d'acquisto netto
       - Price_Comp: prezzo di vendita del mercato di confronto
       - Margine_Comp: margine netto in € (Price_Comp - Acquisto_Netto - commissioni su Price_Comp)
       - Margine_%_Comp: margine netto percentuale (Margine_Comp / Acquisto_Netto * 100)
-    Utilizza la categoria proveniente dai dati italiani.
+    La categoria è quella italiana, presa dalla colonna "Category (base)".
     """
     category = row.get("Category", "Altri prodotti")
-    price_comp = row["Price_Comp"]  # Prezzo di vendita nel mercato di confronto
+    price_comp = row["Price_Comp"]
     fees_comp = calc_fees(category, price_comp, shipping_cost)
     net_revenue_comp = price_comp - fees_comp["total_fees"]
     acq_net = row["Acquisto_Netto"]
@@ -293,7 +296,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Sconto per gli acquisti")
     discount_percent = st.number_input("Inserisci lo sconto (%)", min_value=0.0, value=st.session_state.get("discount_percent", 20.0), step=0.1, key="discount_percent")
-    discount = discount_percent / 100.0  # convertiamo in frazione
+    discount = discount_percent / 100.0
     st.markdown("---")
     st.subheader("Shipping Cost per Revenue Calculator")
     shipping_cost_input = st.number_input("Inserisci il costo di spedizione (€)", min_value=0.0, value=0.0, step=0.01, key="shipping_cost")
@@ -407,7 +410,7 @@ if files_base:
         st.info("Carica la Lista di Origine per vedere gli ASIN unificati.")
 
 #################################
-# Elaborazione e Calcolo Opportunity Score e Revenue Metrics
+# Elaborazione e Calcolo dei Dati di Revenue (Margine Reale)
 #################################
 if avvia:
     if not comparison_files:
@@ -440,24 +443,22 @@ if avvia:
     df_merged["Price_Base"] = df_merged.get(price_col_base, pd.Series(np.nan)).apply(parse_float)
     df_merged["Price_Comp"] = df_merged.get(price_col_comp, pd.Series(np.nan)).apply(parse_float)
     
-    # Altri parsing (SalesRank, Bought, etc.) rimossi, dato che non servono per il margine reale
-    # Calcoliamo il prezzo d'acquisto netto
+    # Calcolo del prezzo d'acquisto netto
     df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount), axis=1)
     
-    # Selezione della categoria: usiamo quella italiana (Category (base)) se presente
+    # Selezione della categoria: utilizziamo quella italiana
     if "Category (base)" in df_merged.columns:
         df_merged["Category"] = df_merged["Category (base)"]
     else:
         df_merged["Category"] = "Altri prodotti"
     
-    # Calcolo delle metriche Revenue (utilizzando il Revenue Calculator sul prezzo di confronto)
+    # Calcolo delle metriche Revenue rilevanti (usando il Revenue Calculator sul prezzo di confronto)
     revenue_cols = df_merged.apply(lambda row: calc_revenue_metrics(row, shipping_cost_input), axis=1)
     df_merged = pd.concat([df_merged, revenue_cols], axis=1)
     
-    # Selezioniamo solo le colonne essenziali:
-    # Dati descrittivi e dati di margine reale:
-    # - ASIN, Title (base), Brand (base), Category
-    # - Acquisto_Netto, Price_Comp, Margine_Comp, Margine_%_Comp
+    # Selezione e riordinamento delle colonne finali:
+    # Mostriamo: ASIN, Title (base), Brand (base), Category, Acquisto_Netto, Price_Comp,
+    # Margine_Comp, Margine_%_Comp
     cols_final = ["ASIN", "Title (base)", "Brand (base)", "Category", 
                   "Acquisto_Netto", "Price_Comp", "Margine_Comp", "Margine_%_Comp"]
     cols_final = [c for c in cols_final if c in df_merged.columns]
