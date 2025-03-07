@@ -549,9 +549,15 @@ if avvia:
     # Aggiungi le colonne identificative mancanti
     df_revenue["ASIN"] = df_merged["ASIN"]
     df_revenue["Title (base)"] = df_merged["Title (base)"]
+    # Aggiungi anche i paesi di riferimento
+    df_revenue["Locale (base)"] = df_merged["Locale (base)"] if "Locale (base)" in df_merged.columns else np.nan
+    df_revenue["Locale (comp)"] = df_merged["Locale (comp)"] if "Locale (comp)" in df_merged.columns else np.nan
     # Riordina le colonne per una visualizzazione lineare
-    revenue_cols = ["ASIN", "Title (base)", "Price_Ref", "Acquisto_Netto", "Shipping_Cost", "Fees", "Net_Revenue",
-                    "Margine_Netto (€)", "Margine_Netto (%)", "Bought_Comp", "SalesRank_Comp", "Trend"]
+    revenue_cols = [
+        "Locale (base)", "Locale (comp)", "ASIN", "Title (base)", "Price_Ref",
+        "Acquisto_Netto", "Shipping_Cost", "Fees", "Net_Revenue",
+        "Margine_Netto (€)", "Margine_Netto (%)", "Bought_Comp", "SalesRank_Comp", "Trend"
+    ]
     df_revenue_final = df_revenue[revenue_cols].copy()
     # Arrotonda i valori numerici a 2 decimali
     for col in ["Price_Ref", "Acquisto_Netto", "Shipping_Cost", "Fees", "Net_Revenue", "Margine_Netto (€)", "Margine_Netto (%)"]:
