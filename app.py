@@ -6,20 +6,22 @@ import altair as alt
 import math
 
 #################################
-# Funzioni Revenue Calculator
+# Revenue Calculator Functions
 #################################
 def truncate_2dec(value: float) -> float:
     """
     Tronca un valore a 2 decimali (senza arrotondare).
     Se il valore è NaN o None, restituisce NaN.
-    Esempio: 0.689 -> 0.68
     """
     if value is None or (isinstance(value, float) and np.isnan(value)):
         return np.nan
     return math.floor(value * 100) / 100.0
 
 def calc_referral_fee(category: str, total_sale: float) -> float:
-    # (Implementazione invariata – vedi codice precedente)
+    """
+    Calcola la commissione di segnalazione in base alla categoria e al totale vendita (prezzo + spedizione).
+    Applica un minimo di 0,30 € ove previsto.
+    """
     referral = 0.0
     if category == "Accessori per dispositivi Amazon":
         referral = 0.45 * total_sale
@@ -165,10 +167,6 @@ def calc_referral_fee(category: str, total_sale: float) -> float:
 def calc_closing_fee(category: str) -> float:
     """
     Restituisce la commissione di chiusura (se prevista) in base alla categoria.
-    Dalla tabella:
-      - Libri -> 1,01 €
-      - Musica, video e DVD, Software, Videogiochi - Giochi e accessori, Console per videogiochi -> 0,81 €
-      - Altre categorie -> 0 €
     """
     if category == "Libri":
         return 1.01
@@ -179,11 +177,7 @@ def calc_closing_fee(category: str) -> float:
 
 def calc_fees(category: str, price: float, shipping: float) -> dict:
     """
-    Calcola le commissioni Amazon:
-      - referral_fee (troncato a 2 decimali)
-      - closing_fee (se prevista)
-      - digital_tax (3% su [referral_fee + closing_fee], troncata a 2 decimali)
-      - total_fees
+    Calcola le commissioni Amazon (referral, closing e digital tax).
     """
     total_sale = price + shipping
     referral_raw = calc_referral_fee(category, total_sale)
@@ -200,16 +194,11 @@ def calc_fees(category: str, price: float, shipping: float) -> dict:
         "total_fees": total_fees
     }
 
-#################################
-# Funzione per calcolare il Prezzo d'Acquisto Netto
-#################################
-def calc_final_purchase_price(row, discount):
+def calc_final_purchase_price_rev(row, discount):
     """
     Calcola il prezzo d'acquisto netto (IVA esclusa e scontato) in base al paese.
-    Se il prodotto è acquistato in Italia (Locale "it"):
-      final = (prezzo lordo / 1.22) - (prezzo lordo * discount)
-    Altrimenti:
-      final = (prezzo lordo / 1.19) * (1 - discount)
+    Per l'Italia: (prezzo lordo / 1.22) * (1 - discount)
+    Per altri paesi: (prezzo lordo / 1.19) * (1 - discount)
     """
     locale = row.get("Locale (base)", "it")
     try:
@@ -220,23 +209,19 @@ def calc_final_purchase_price(row, discount):
     if pd.isna(gross):
         return np.nan
     if locale == "it":
-        return (gross / 1.22) - (gross * discount)
+        return (gross / 1.22) * (1 - discount)
     else:
         return (gross / 1.19) * (1 - discount)
 
-#################################
-# Funzione per calcolare le metriche Revenue rilevanti
-#################################
 def calc_revenue_metrics(row, shipping_cost):
     """
-    Calcola le metriche Revenue rilevanti:
-      - Acquisto_Netto: prezzo d'acquisto netto
+    Calcola le metriche revenue:
+      - Acquisto_Netto: prezzo d'acquisto netto (già calcolato)
       - Price_Comp: prezzo di vendita del mercato di confronto
-      - Margine_Comp: margine netto in € (Price_Comp - Acquisto_Netto - commissioni su Price_Comp)
-      - Margine_%_Comp: margine netto percentuale (Margine_Comp / Acquisto_Netto * 100)
-    La categoria è quella italiana, presa dalla colonna "Category (base)".
+      - Margine_Comp: margine netto in € (Price_Comp - commissioni - Acquisto_Netto)
+      - Margine_%_Comp: margine netto percentuale
     """
-    category = row.get("Category", "Altri prodotti")
+    category = row.get("Category", row.get("Category (base)", "Altri prodotti"))
     price_comp = row["Price_Comp"]
     fees_comp = calc_fees(category, price_comp, shipping_cost)
     net_revenue_comp = price_comp - fees_comp["total_fees"]
@@ -256,7 +241,9 @@ def calc_revenue_metrics(row, shipping_cost):
 if 'recipes' not in st.session_state:
     st.session_state['recipes'] = {}
 
+#################################
 # Configurazione della pagina
+#################################
 st.set_page_config(
     page_title="Amazon Market Analyzer - Arbitraggio Multi-Mercato",
     page_icon="🔎",
@@ -265,7 +252,7 @@ st.set_page_config(
 st.title("Amazon Market Analyzer - Arbitraggio Multi-Mercato")
 
 #################################
-# Sidebar: Caricamento file, Prezzo di riferimento, Sconto, Shipping Cost, Impostazioni e Ricette
+# Sidebar: Caricamento file, Prezzo di riferimento, Sconto, Impostazioni e Ricette
 #################################
 with st.sidebar:
     st.subheader("Caricamento file")
@@ -279,6 +266,7 @@ with st.sidebar:
         type=["csv", "xlsx"],
         accept_multiple_files=True
     )
+
     st.markdown("---")
     st.subheader("Prezzo di riferimento")
     ref_price_base = st.selectbox(
@@ -289,13 +277,12 @@ with st.sidebar:
         "Per la Lista di Confronto",
         ["Buy Box: Current", "Amazon: Current", "New: Current"]
     )
+
     st.markdown("---")
     st.subheader("Sconto per gli acquisti")
     discount_percent = st.number_input("Inserisci lo sconto (%)", min_value=0.0, value=st.session_state.get("discount_percent", 20.0), step=0.1, key="discount_percent")
-    discount = discount_percent / 100.0
-    st.markdown("---")
-    st.subheader("Shipping Cost per Revenue Calculator")
-    shipping_cost_input = st.number_input("Inserisci il costo di spedizione (€)", min_value=0.0, value=0.0, step=0.01, key="shipping_cost")
+    discount = discount_percent / 100.0  # conversione in frazione
+
     st.markdown("---")
     st.subheader("Impostazioni Opportunity Score")
     alpha = st.slider("Peso per Sales Rank (penalità)", 0.0, 5.0, st.session_state.get("alpha", 1.0), step=0.1, key="alpha")
@@ -303,12 +290,14 @@ with st.sidebar:
     delta = st.slider("Peso penalizzante per Offer Count", 0.0, 5.0, st.session_state.get("delta", 1.0), step=0.1, key="delta")
     epsilon = st.slider("Peso per il Margine (%)", 0.0, 10.0, st.session_state.get("epsilon", 1.0), step=0.1, key="epsilon")
     zeta = st.slider("Peso per Trend Sales Rank (90 giorni vs. attuale)", 0.0, 5.0, st.session_state.get("zeta", 1.0), step=0.1, key="zeta")
+
     st.markdown("---")
     st.subheader("Filtri Avanzati (Mercato di Confronto)")
     max_sales_rank = st.number_input("Sales Rank massimo", min_value=1, value=999999)
     max_offer_count = st.number_input("Offer Count massimo", min_value=1, value=999999)
     min_buybox_price = st.number_input("Prezzo di riferimento (Buy Box) minimo", min_value=0.0, value=0.0)
     max_buybox_price = st.number_input("Prezzo di riferimento (Buy Box) massimo", min_value=0.0, value=999999.0)
+
     st.markdown("---")
     st.subheader("Personalizzazione e Salvataggio di Ricette")
     selected_recipe = st.selectbox("Carica Ricetta", options=["-- Nessuna --"] + list(st.session_state['recipes'].keys()))
@@ -334,6 +323,7 @@ with st.sidebar:
             st.success(f"Ricetta '{new_recipe_name}' salvata!")
         else:
             st.error("Inserisci un nome valido per la ricetta.")
+
     st.markdown("---")
     avvia = st.button("Calcola Opportunity Score")
 
@@ -374,6 +364,7 @@ def parse_int(x):
         return np.nan
 
 def format_trend(trend):
+    """Formatta il trend in base al valore di Trend_Bonus."""
     if pd.isna(trend):
         return "N/D"
     if trend > 0.1:
@@ -384,7 +375,7 @@ def format_trend(trend):
         return "➖ Stabile"
 
 #################################
-# Visualizzazione degli ASIN dalla Lista di Origine
+# Visualizzazione Immediata degli ASIN dalla Lista di Origine
 #################################
 if files_base:
     base_list = []
@@ -406,13 +397,15 @@ if files_base:
         st.info("Carica la Lista di Origine per vedere gli ASIN unificati.")
 
 #################################
-# Elaborazione e Calcolo dei Dati di Revenue (Margine Reale)
+# Elaborazione Completa e Calcolo
 #################################
 if avvia:
+    # Controllo file di confronto
     if not comparison_files:
         st.warning("Carica almeno un file di Liste di Confronto.")
         st.stop()
     
+    # Elaborazione Liste di Confronto
     comp_list = []
     for f in comparison_files:
         df_temp = load_data(f)
@@ -425,68 +418,100 @@ if avvia:
         st.stop()
     df_comp = pd.concat(comp_list, ignore_index=True)
     
+    # Verifica della presenza della colonna ASIN in entrambi i dataset
     if "ASIN" not in df_base.columns or "ASIN" not in df_comp.columns:
         st.error("Assicurati che entrambi i file (origine e confronto) contengano la colonna ASIN.")
         st.stop()
     
+    # Merge tra base e confronto sulla colonna ASIN
     df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner", suffixes=(" (base)", " (comp)"))
     if df_merged.empty:
         st.error("Nessuna corrispondenza trovata tra la Lista di Origine e le Liste di Confronto.")
         st.stop()
     
+    # Utilizza le colonne di prezzo selezionate dalla sidebar
     price_col_base = f"{ref_price_base} (base)"
     price_col_comp = f"{ref_price_comp} (comp)"
     df_merged["Price_Base"] = df_merged.get(price_col_base, pd.Series(np.nan)).apply(parse_float)
     df_merged["Price_Comp"] = df_merged.get(price_col_comp, pd.Series(np.nan)).apply(parse_float)
     
-    # Calcolo del prezzo d'acquisto netto
-    df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount), axis=1)
+    # Conversione dei dati dal mercato di confronto per le altre metriche
+    df_merged["SalesRank_Comp"] = df_merged.get("Sales Rank: Current (comp)", pd.Series(np.nan)).apply(parse_int)
+    df_merged["Bought_Comp"] = df_merged.get("Bought in past month (comp)", pd.Series(np.nan)).apply(parse_int)
+    df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
+    df_merged["SalesRank_90d"] = df_merged.get("Sales Rank: 90 days avg. (comp)", pd.Series(np.nan)).apply(parse_int)
     
-    # Selezione della categoria: utilizziamo quella italiana
-    if "Category (base)" in df_merged.columns:
-        df_merged["Category"] = df_merged["Category (base)"]
-    else:
-        df_merged["Category"] = "Altri prodotti"
+    # Calcola il prezzo d'acquisto netto utilizzando il Revenue Calculator
+    df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price_rev(row, discount), axis=1)
+    # Imposta la categoria (usando "Category (base)" se presente)
+    df_merged["Category"] = df_merged.get("Category (base)", "Altri prodotti")
     
-    # Calcolo delle metriche Revenue rilevanti (usando il Revenue Calculator sul prezzo di confronto)
-    revenue_cols = df_merged.apply(lambda row: calc_revenue_metrics(row, shipping_cost_input), axis=1)
-    df_merged = pd.concat([df_merged, revenue_cols], axis=1)
+    # Calcola le metriche revenue (Margine netto in € e %)
+    df_metrics = df_merged.apply(lambda row: calc_revenue_metrics(row, 0.0), axis=1)
+    df_metrics = pd.DataFrame(list(df_metrics), index=df_merged.index)
+    df_merged["Margine_Comp"] = df_metrics["Margine_Comp"]
+    df_merged["Margine_%_Comp"] = df_metrics["Margine_%_Comp"]
     
-    # Selezione e riordinamento delle colonne finali:
-    # Mostriamo: ASIN, Title (base), Brand (base), Category, Acquisto_Netto, Price_Comp, Margine_Comp, Margine_%_Comp
-    cols_final = ["ASIN", "Title (base)", "Brand (base)", "Category", 
-                  "Acquisto_Netto", "Price_Comp", "Margine_Comp", "Margine_%_Comp"]
+    # Filtra le righe con margine netto positivo
+    df_merged = df_merged[df_merged["Margine_%_Comp"] > 0]
+    
+    # Applicazione dei filtri avanzati (sul mercato di confronto)
+    df_merged["SalesRank_Comp"] = df_merged["SalesRank_Comp"].fillna(999999)
+    df_merged = df_merged[df_merged["SalesRank_Comp"] <= max_sales_rank]
+    
+    df_merged["NewOffer_Comp"] = df_merged["NewOffer_Comp"].fillna(0)
+    df_merged = df_merged[df_merged["NewOffer_Comp"] <= max_offer_count]
+    
+    df_merged["Price_Comp"] = df_merged["Price_Comp"].fillna(0)
+    df_merged = df_merged[df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price)]
+    
+    # Calcolo del bonus/penalità per il Trend del Sales Rank e formattazione
+    df_merged["Trend_Bonus"] = np.log((df_merged["SalesRank_90d"].fillna(df_merged["SalesRank_Comp"]) + 1) / (df_merged["SalesRank_Comp"] + 1))
+    df_merged["Trend"] = df_merged["Trend_Bonus"].apply(format_trend)
+    
+    # Selezione delle colonne finali (snellite) da visualizzare:
+    # Descrizione articolo, ASIN, prezzo d'acquisto netto, prezzi mercati di riferimento,
+    # margine netto % e in €, acquistati nel mese scorso, Sales Rank, Trend.
+    cols_final = [
+        "Title (base)", "ASIN", "Acquisto_Netto", "Price_Base", "Price_Comp",
+        "Margine_%_Comp", "Margine_Comp", "Bought_Comp", "SalesRank_Comp", "Trend"
+    ]
     cols_final = [c for c in cols_final if c in df_merged.columns]
     df_finale = df_merged[cols_final].copy()
     
     # Arrotonda i valori numerici principali a 2 decimali
-    cols_to_round = ["Acquisto_Netto", "Price_Comp", "Margine_Comp", "Margine_%_Comp"]
+    cols_to_round = ["Acquisto_Netto", "Price_Base", "Price_Comp", "Margine_%_Comp", "Margine_Comp"]
     for col in cols_to_round:
         if col in df_finale.columns:
             df_finale[col] = df_finale[col].round(2)
     
-    # Conversione delle colonne numeriche individualmente
-    numeric_cols = ["Acquisto_Netto", "Price_Comp", "Margine_Comp", "Margine_%_Comp"]
-    for col in numeric_cols:
-        if col in df_finale.columns:
-            df_finale[col] = pd.to_numeric(df_finale[col].squeeze(), errors="coerce")
-    
-    # Conversione delle colonne stringa
-    string_cols = ["ASIN", "Title (base)", "Brand (base)", "Category"]
-    for col in string_cols:
-        if col in df_finale.columns:
-            df_finale[col] = df_finale[col].astype(str)
-    
-    df_finale = df_finale.reset_index(drop=True)
-    
-    st.subheader("Risultati: Margine Reale")
+    st.subheader("Risultati Revenue Calculator")
     st.dataframe(df_finale, height=600)
     
-    # Pulsante per scaricare i risultati in CSV
+    #################################
+    # Dashboard Interattiva
+    #################################
+    st.markdown("---")
+    st.subheader("Dashboard Interattiva")
+    if not df_finale.empty:
+        st.metric("Numero di Opportunità", len(df_finale))
+        st.metric("Margine Medio (%)", round(df_finale["Margine_%_Comp"].mean(), 2))
+        st.metric("Margine Medio (€)", round(df_finale["Margine_Comp"].mean(), 2))
+    else:
+        st.info("Nessun prodotto trovato con i filtri applicati.")
+    
+    chart = alt.Chart(df_finale.reset_index()).mark_circle(size=60).encode(
+        x=alt.X("Margine_%_Comp:Q", title="Margine Netto (%)"),
+        y=alt.Y("Margine_Comp:Q", title="Margine Netto (€)"),
+        color=alt.Color("Locale (comp):N", title="Mercato Confronto"),
+        tooltip=["Title (base)", "ASIN", "Acquisto_Netto", "Price_Base", "Price_Comp", "Margine_%_Comp", "Margine_Comp", "Bought_Comp", "SalesRank_Comp", "Trend"]
+    ).interactive()
+    st.altair_chart(chart, use_container_width=True)
+    
     csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
     st.download_button(
         label="Scarica CSV Risultati",
         data=csv_data,
-        file_name="risultato_margine_reale.csv",
+        file_name="risultato_revenue_calculator.csv",
         mime="text/csv"
     )
