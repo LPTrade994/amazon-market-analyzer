@@ -44,7 +44,8 @@ commission_rates = {
     "Prima infanzia": 0.15,
     "Moda": 0.15,
     "Prodotti per animali domestici": 0.15,
-    "Informatica": 0.07
+    # Per "Informatica" aggiorno il tasso a 0.0676 per ottenere referral fee e digital tax che combaciano con l'Amazon calculator
+    "Informatica": 0.0676
 }
 
 #################################
@@ -155,34 +156,56 @@ def rev_calc_fees(category: str, price: float) -> dict:
     }
 
 def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
-    # Per FBM il prezzo di vendita lordo viene utilizzato direttamente
-    category = row.get("Categories: Root (base)", "Altri prodotti")
+    # Per FBM si utilizza il prezzo di vendita lordo e si sottrae:
+    # - Le fee (referral fee + digital tax)
+    # - Il costo di gestione (spedizione)
+    # - Il costo delle merci vendute, pari a: Acquisto_Netto + (IVA stimata sul prezzo di vendita)
     if market_type == "base":
         price = row["Price_Base"]
+        locale = row.get("Locale (base)", "it").lower()
+        category = row.get("Categories: Root (base)", "Altri prodotti")
     else:
         price = row["Price_Comp"]
+        locale = row.get("Locale (comp)", "it").lower()
+        category = row.get("Categories: Root (comp)", "Altri prodotti")
     
     if pd.isna(price):
         return pd.Series({
             "Margine_Netto (€)": np.nan,
-            "Margine_Netto (%)": np.nan
+            "Margine_Netto (%)": np.nan,
+            "Margine_Reale (%)": np.nan
         })
     
-    # Calcola le fee basandosi sul prezzo lordo
+    iva_rate = iva_rates.get(locale, 0.22)
+    
+    # Calcola le fee sul prezzo lordo
     fees = rev_calc_fees(category, price)
     total_fees = fees["total_fees"]
     
-    # Totale costi: commissioni + costo di spedizione
-    total_costs = total_fees + shipping_cost_rev
+    # Costo di gestione (spedizione)
+    total_shipping = shipping_cost_rev
+    
+    # Prezzo d'acquisto netto (già calcolato)
     purchase_net = row["Acquisto_Netto"]
     
-    # Calcola il margine netto usando il prezzo lordo
-    margin_net = price - total_costs - purchase_net
-    margin_pct = (margin_net / price) * 100 if price != 0 else np.nan
+    # Calcola la quota IVA sul prezzo di vendita (gross)
+    vat_amount = price - (price / (1 + iva_rate))
+    # Il costo delle merci vendute ufficiale è la somma del costo d'acquisto netto e della quota IVA
+    cogs = purchase_net + vat_amount
+    
+    # Margine netto (profitto) = prezzo di vendita - (fee + spedizione + costo merci vendute)
+    margin_net = price - total_fees - total_shipping - cogs
+    
+    # La "margine netto (%) ufficiale" (errato) sarebbe margin_net / price * 100,
+    # mentre il "margine reale (%)" lo definiamo come:
+    # margine reale = margin_net / (prezzo di vendita al netto di IVA) * 100
+    net_sales = price / (1 + iva_rate)
+    margin_real_pct = (margin_net / net_sales) * 100 if net_sales != 0 else np.nan
     
     return pd.Series({
         "Margine_Netto (€)": round(margin_net, 2),
-        "Margine_Netto (%)": round(margin_pct, 2)
+        "Margine_Netto (%)": round((margin_net / price) * 100, 2),
+        "Margine_Reale (%)": round(margin_real_pct, 2)
     })
 
 #################################
@@ -229,8 +252,8 @@ if avvia:
     
     df_finale = pd.concat([
         df_merged[["Locale (base)", "Locale (comp)", "ASIN", "Title (base)", "Price_Base", "Price_Comp", "Acquisto_Netto"]],
-        df_revenue_base[["Margine_Netto (€)_Origine", "Margine_Netto (%)_Origine"]],
-        df_revenue_comp[["Margine_Netto (€)_Confronto", "Margine_Netto (%)_Confronto"]]
+        df_revenue_base[["Margine_Netto (€)_Origine", "Margine_Netto (%)_Origine", "Margine_Reale (%)_Origine"]],
+        df_revenue_comp[["Margine_Netto (€)_Confronto", "Margine_Netto (%)_Confronto", "Margine_Reale (%)_Confronto"]]
     ], axis=1)
     
     st.subheader("Risultati Revenue Calculator")
