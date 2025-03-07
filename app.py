@@ -129,7 +129,7 @@ def calc_final_purchase_price(row, discount, iva_rates):
     return round(final_price, 2)
 
 #################################
-# Funzioni Revenue Calculator
+# Funzioni Revenue Calculator (FBM)
 #################################
 def rev_truncate_2dec(value: float) -> float:
     if value is None or np.isnan(value):
@@ -155,13 +155,12 @@ def rev_calc_fees(category: str, price: float) -> dict:
     }
 
 def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
+    # Per FBM il prezzo di vendita lordo viene utilizzato direttamente
     category = row.get("Categories: Root (base)", "Altri prodotti")
     if market_type == "base":
         price = row["Price_Base"]
-        locale = row.get("Locale (base)", "it").lower()
     else:
         price = row["Price_Comp"]
-        locale = row.get("Locale (comp)", "de").lower()
     
     if pd.isna(price):
         return pd.Series({
@@ -169,15 +168,18 @@ def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
             "Margine_Netto (%)": np.nan
         })
     
-    iva_rate = iva_rates.get(locale, 0.22)
-    # Calcola il prezzo al netto dell'IVA
-    price_net = price / (1 + iva_rate)
+    # Calcola le fee basandosi sul prezzo lordo
     fees = rev_calc_fees(category, price)
     total_fees = fees["total_fees"]
+    
+    # Totale costi: commissioni + costo di spedizione
     total_costs = total_fees + shipping_cost_rev
     purchase_net = row["Acquisto_Netto"]
-    margin_net = price_net - total_costs - purchase_net
+    
+    # Calcola il margine netto usando il prezzo lordo
+    margin_net = price - total_costs - purchase_net
     margin_pct = (margin_net / price) * 100 if price != 0 else np.nan
+    
     return pd.Series({
         "Margine_Netto (€)": round(margin_net, 2),
         "Margine_Netto (%)": round(margin_pct, 2)
