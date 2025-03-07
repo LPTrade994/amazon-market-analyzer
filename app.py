@@ -19,11 +19,7 @@ def truncate_2dec(value: float) -> float:
     return math.floor(value * 100) / 100.0
 
 def calc_referral_fee(category: str, total_sale: float) -> float:
-    """
-    Calcola la commissione di segnalazione (referral fee) in base alla categoria e al prezzo totale (prezzo + spedizione).
-    Restituisce la commissione, SENZA la commissione di chiusura.
-    Se applicabile, viene applicato il minimo di 0,30 €.
-    """
+    # (Implementazione invariata – vedi codice precedente)
     referral = 0.0
     if category == "Accessori per dispositivi Amazon":
         referral = 0.45 * total_sale
@@ -473,7 +469,7 @@ if avvia:
     numeric_cols = ["Acquisto_Netto", "Price_Comp", "Margine_Comp", "Margine_%_Comp"]
     for col in numeric_cols:
         if col in df_finale.columns:
-            df_finale[col] = pd.to_numeric(df_finale[col], errors="coerce")
+            df_finale[col] = pd.to_numeric(df_finale[col].squeeze(), errors="coerce")
     
     # Conversione delle colonne stringa
     string_cols = ["ASIN", "Title (base)", "Brand (base)", "Category"]
