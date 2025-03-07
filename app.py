@@ -170,13 +170,13 @@ def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
         })
     
     iva_rate = iva_rates.get(locale, 0.22)
-    iva = rev_truncate_2dec(price * iva_rate / (1 + iva_rate))  # IVA inclusa nel prezzo
+    # Calcola il prezzo al netto dell'IVA
+    price_net = price / (1 + iva_rate)
     fees = rev_calc_fees(category, price)
     total_fees = fees["total_fees"]
     total_costs = total_fees + shipping_cost_rev
-    net_revenue = price - iva - total_costs
     purchase_net = row["Acquisto_Netto"]
-    margin_net = net_revenue - purchase_net
+    margin_net = price_net - total_costs - purchase_net
     margin_pct = (margin_net / price) * 100 if price != 0 else np.nan
     return pd.Series({
         "Margine_Netto (€)": round(margin_net, 2),
