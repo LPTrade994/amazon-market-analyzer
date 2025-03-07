@@ -469,13 +469,17 @@ if avvia:
         if col in df_finale.columns:
             df_finale[col] = df_finale[col].round(2)
     
-    # Conversione esplicita dei tipi per evitare problemi con pyarrow
+    # Conversione delle colonne numeriche individualmente
     numeric_cols = ["Acquisto_Netto", "Price_Comp", "Margine_Comp", "Margine_%_Comp"]
-    if set(numeric_cols).issubset(df_finale.columns):
-        df_finale[numeric_cols] = df_finale[numeric_cols].apply(lambda x: pd.to_numeric(x, errors="coerce"))
+    for col in numeric_cols:
+        if col in df_finale.columns:
+            df_finale[col] = pd.to_numeric(df_finale[col], errors="coerce")
+    
+    # Conversione delle colonne stringa
     string_cols = ["ASIN", "Title (base)", "Brand (base)", "Category"]
-    if set(string_cols).issubset(df_finale.columns):
-        df_finale[string_cols] = df_finale[string_cols].astype(str)
+    for col in string_cols:
+        if col in df_finale.columns:
+            df_finale[col] = df_finale[col].astype(str)
     
     df_finale = df_finale.reset_index(drop=True)
     
