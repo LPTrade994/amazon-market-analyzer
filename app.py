@@ -469,9 +469,17 @@ if avvia:
         if col in df_finale.columns:
             df_finale[col] = df_finale[col].round(2)
     
-    # Per le colonne di tipo oggetto, riempi eventuali NaN con stringa vuota per evitare errori in st.dataframe
-    for col in df_finale.select_dtypes(include=[object]).columns:
-        df_finale[col] = df_finale[col].fillna("")
+    # Conversione esplicita dei tipi per evitare problemi con pyarrow
+    numeric_cols = ["Acquisto_Netto", "Price_Comp", "Margine_Comp", "Margine_%_Comp"]
+    for col in numeric_cols:
+        if col in df_finale.columns:
+            df_finale[col] = pd.to_numeric(df_finale[col], errors="coerce")
+    string_cols = ["ASIN", "Title (base)", "Brand (base)", "Category"]
+    for col in string_cols:
+        if col in df_finale.columns:
+            df_finale[col] = df_finale[col].astype(str)
+    
+    df_finale = df_finale.reset_index(drop=True)
     
     st.subheader("Risultati: Margine Reale")
     st.dataframe(df_finale, height=600)
