@@ -457,8 +457,7 @@ if avvia:
     df_merged = pd.concat([df_merged, revenue_cols], axis=1)
     
     # Selezione e riordinamento delle colonne finali:
-    # Mostriamo: ASIN, Title (base), Brand (base), Category, Acquisto_Netto, Price_Comp,
-    # Margine_Comp, Margine_%_Comp
+    # Mostriamo: ASIN, Title (base), Brand (base), Category, Acquisto_Netto, Price_Comp, Margine_Comp, Margine_%_Comp
     cols_final = ["ASIN", "Title (base)", "Brand (base)", "Category", 
                   "Acquisto_Netto", "Price_Comp", "Margine_Comp", "Margine_%_Comp"]
     cols_final = [c for c in cols_final if c in df_merged.columns]
@@ -469,6 +468,10 @@ if avvia:
     for col in cols_to_round:
         if col in df_finale.columns:
             df_finale[col] = df_finale[col].round(2)
+    
+    # Per le colonne di tipo oggetto, riempi eventuali NaN con stringa vuota per evitare errori in st.dataframe
+    for col in df_finale.select_dtypes(include=[object]).columns:
+        df_finale[col] = df_finale[col].fillna("")
     
     st.subheader("Risultati: Margine Reale")
     st.dataframe(df_finale, height=600)
