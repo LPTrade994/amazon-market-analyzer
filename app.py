@@ -28,9 +28,23 @@ iva_rates = {
 #################################
 # Mapping delle commissioni per categoria
 #################################
-commission_params = {
-    "Informatica": {"rate": 0.07, "min": 0.30},
-    # Aggiungi altre categorie se necessario
+commission_rates = {
+    "Elettronica": 0.08,
+    "Giardino e giardinaggio": 0.15,
+    "Casa e cucina": 0.15,
+    "Strumenti musicali": 0.15,
+    "Videogiochi": 0.15,
+    "Alimentari e cura della casa": 0.15,
+    "Salute e cura della persona": 0.15,
+    "Grandi elettrodomestici": 0.08,
+    "Sport e tempo libero": 0.15,
+    "Auto e Moto": 0.15,
+    "Fai da te": 0.15,
+    "Giochi e giocattoli": 0.15,
+    "Prima infanzia": 0.15,
+    "Moda": 0.15,
+    "Prodotti per animali domestici": 0.15,
+    "Informatica": 0.07
 }
 
 #################################
@@ -123,16 +137,15 @@ def rev_truncate_2dec(value: float) -> float:
     return math.floor(value * 100) / 100.0
 
 def rev_calc_referral_fee(category: str, price: float) -> float:
-    params = commission_params.get(category, {"rate": 0.15, "min": 0.30})
-    referral = params["rate"] * price
-    if "min" in params:
-        referral = max(referral, params["min"])
-    return referral
+    rate = commission_rates.get(category, 0.15)  # Default al 15% se categoria non trovata
+    referral = rate * price
+    min_referral = 0.30  # Commissione minima
+    return max(referral, min_referral)
 
 def rev_calc_fees(category: str, price: float) -> dict:
     referral_raw = rev_calc_referral_fee(category, price)
     referral_fee = rev_truncate_2dec(referral_raw)
-    digital_tax_raw = 0.03 * referral_fee
+    digital_tax_raw = 0.03 * referral_fee  # Imposta sui servizi digitali (3%)
     digital_tax = rev_truncate_2dec(digital_tax_raw)
     total_fees = rev_truncate_2dec(referral_fee + digital_tax)
     return {
@@ -142,7 +155,7 @@ def rev_calc_fees(category: str, price: float) -> dict:
     }
 
 def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
-    category = row.get("Category (base)", "Altri prodotti")
+    category = row.get("Categories: Root (base)", "Altri prodotti")
     if market_type == "base":
         price = row["Price_Base"]
         locale = row.get("Locale (base)", "it").lower()
