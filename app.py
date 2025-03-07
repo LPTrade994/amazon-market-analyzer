@@ -447,8 +447,7 @@ if avvia:
     df_merged["Category"] = df_merged.get("Category (base)", "Altri prodotti")
     
     # Calcola le metriche revenue (Margine netto in € e %)
-    df_metrics = df_merged.apply(lambda row: calc_revenue_metrics(row, 0.0), axis=1)
-    df_metrics = pd.DataFrame(list(df_metrics), index=df_merged.index)
+    df_metrics = df_merged.apply(lambda row: calc_revenue_metrics(row, 0.0), axis=1, result_type='expand')
     df_merged["Margine_Comp"] = df_metrics["Margine_Comp"]
     df_merged["Margine_%_Comp"] = df_metrics["Margine_%_Comp"]
     
@@ -503,7 +502,7 @@ if avvia:
     chart = alt.Chart(df_finale.reset_index()).mark_circle(size=60).encode(
         x=alt.X("Margine_%_Comp:Q", title="Margine Netto (%)"),
         y=alt.Y("Margine_Comp:Q", title="Margine Netto (€)"),
-        color=alt.Color("Locale (comp):N", title="Mercato Confronto"),
+        color=alt.value('blue'),
         tooltip=["Title (base)", "ASIN", "Acquisto_Netto", "Price_Base", "Price_Comp", "Margine_%_Comp", "Margine_Comp", "Bought_Comp", "SalesRank_Comp", "Trend"]
     ).interactive()
     st.altair_chart(chart, use_container_width=True)
