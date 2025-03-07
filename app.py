@@ -26,7 +26,15 @@ iva_rates = {
 }
 
 #################################
-# Sidebar: Caricamento file, Prezzo di riferimento, Sconto, Impostazioni, Ricette, Revenue Calculator
+# Mapping delle commissioni per categoria
+#################################
+commission_params = {
+    "Informatica": {"rate": 0.07, "min": 0.30},
+    # Aggiungi altre categorie se necessario
+}
+
+#################################
+# Sidebar
 #################################
 with st.sidebar:
     st.subheader("Caricamento file")
@@ -68,7 +76,6 @@ with st.sidebar:
 # Funzioni di Caricamento e Parsing
 #################################
 def load_data(uploaded_file):
-    """Carica dati da CSV o XLSX in un DataFrame."""
     if not uploaded_file:
         return None
     fname = uploaded_file.name.lower()
@@ -82,7 +89,6 @@ def load_data(uploaded_file):
             return pd.read_csv(uploaded_file, sep=",", dtype=str)
 
 def parse_float(x):
-    """Converte stringhe in float, gestendo simboli e errori."""
     if not isinstance(x, str):
         return np.nan
     x_clean = x.replace("€", "").replace(",", ".").strip()
@@ -92,14 +98,9 @@ def parse_float(x):
         return np.nan
 
 #################################
-# Funzione per il calcolo del Prezzo d'Acquisto Netto
+# Calcolo Prezzo d'Acquisto Netto
 #################################
 def calc_final_purchase_price(row, discount, iva_rates):
-    """
-    Calcola il prezzo d'acquisto netto in base al mercato di origine.
-    - Per IT: sconto sul prezzo IVA inclusa, sottratto dal prezzo IVA esclusa.
-    - Per altri mercati: sconto sul prezzo IVA esclusa.
-    """
     locale = row.get("Locale (base)", "it").lower()
     gross = row["Price_Base"]
     if pd.isna(gross):
@@ -114,29 +115,34 @@ def calc_final_purchase_price(row, discount, iva_rates):
     return round(final_price, 2)
 
 #################################
-# Funzioni per il Revenue Calculator
+# Funzioni Revenue Calculator
 #################################
 def rev_truncate_2dec(value: float) -> float:
-    """Tronca un valore a 2 decimali senza arrotondare."""
     if value is None or np.isnan(value):
         return np.nan
     return math.floor(value * 100) / 100.0
 
-def rev_calc_fees(price, market):
-    """Calcola le commissioni Amazon in base al mercato."""
-    referral_fee = price * 0.15  # 15% come negli esempi
-    digital_tax = referral_fee * 0.03  # 3% della referral fee
-    total_fees = referral_fee + digital_tax
+def rev_calc_referral_fee(category: str, price: float) -> float:
+    params = commission_params.get(category, {"rate": 0.15, "min": 0.30})
+    referral = params["rate"] * price
+    if "min" in params:
+        referral = max(referral, params["min"])
+    return referral
+
+def rev_calc_fees(category: str, price: float) -> dict:
+    referral_raw = rev_calc_referral_fee(category, price)
+    referral_fee = rev_truncate_2dec(referral_raw)
+    digital_tax_raw = 0.03 * referral_fee
+    digital_tax = rev_truncate_2dec(digital_tax_raw)
+    total_fees = rev_truncate_2dec(referral_fee + digital_tax)
     return {
-        "referral_fee": rev_truncate_2dec(referral_fee),
-        "digital_tax": rev_truncate_2dec(digital_tax),
-        "total_fees": rev_truncate_2dec(total_fees)
+        "referral_fee": referral_fee,
+        "digital_tax": digital_tax,
+        "total_fees": total_fees
     }
 
 def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
-    """
-    Calcola le metriche revenue per il mercato specificato (base o comp).
-    """
+    category = row.get("Category (base)", "Altri prodotti")
     if market_type == "base":
         price = row["Price_Base"]
         locale = row.get("Locale (base)", "it").lower()
@@ -151,8 +157,8 @@ def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
         })
     
     iva_rate = iva_rates.get(locale, 0.22)
-    iva = rev_truncate_2dec(price * iva_rate)
-    fees = rev_calc_fees(price, locale)
+    iva = rev_truncate_2dec(price * iva_rate / (1 + iva_rate))  # IVA inclusa nel prezzo
+    fees = rev_calc_fees(category, price)
     total_fees = fees["total_fees"]
     total_costs = total_fees + shipping_cost_rev
     net_revenue = price - iva - total_costs
@@ -165,34 +171,20 @@ def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
     })
 
 #################################
-# Elaborazione Completa e Calcolo Revenue Calculator
+# Elaborazione
 #################################
 if avvia:
     if not files_base or not comparison_files:
         st.warning("Carica almeno un file per la Lista di Origine e uno per le Liste di Confronto.")
         st.stop()
     
-    # Caricamento file base
-    base_list = []
-    for f in files_base:
-        df_temp = load_data(f)
-        if df_temp is not None and not df_temp.empty:
-            base_list.append(df_temp)
-        else:
-            st.warning(f"Il file di origine {f.name} è vuoto o non valido.")
+    base_list = [load_data(f) for f in files_base if load_data(f) is not None and not load_data(f).empty]
     if not base_list:
         st.error("Nessun file di origine valido caricato.")
         st.stop()
     df_base = pd.concat(base_list, ignore_index=True)
 
-    # Caricamento file di confronto
-    comp_list = []
-    for f in comparison_files:
-        df_temp = load_data(f)
-        if df_temp is not None and not df_temp.empty:
-            comp_list.append(df_temp)
-        else:
-            st.warning(f"Il file di confronto {f.name} è vuoto o non valido.")
+    comp_list = [load_data(f) for f in comparison_files if load_data(f) is not None and not load_data(f).empty]
     if not comp_list:
         st.error("Nessun file di confronto valido caricato.")
         st.stop()
@@ -214,15 +206,12 @@ if avvia:
     
     df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount, iva_rates), axis=1)
     
-    # Calcolo Revenue Calculator per mercato di origine
     df_revenue_base = df_merged.apply(lambda row: rev_calc_revenue_metrics(row, shipping_cost_rev, "base", iva_rates), axis=1)
     df_revenue_base = df_revenue_base.add_suffix("_Origine")
     
-    # Calcolo Revenue Calculator per mercato di confronto
     df_revenue_comp = df_merged.apply(lambda row: rev_calc_revenue_metrics(row, shipping_cost_rev, "comp", iva_rates), axis=1)
     df_revenue_comp = df_revenue_comp.add_suffix("_Confronto")
     
-    # Unione dei dati
     df_finale = pd.concat([
         df_merged[["Locale (base)", "Locale (comp)", "ASIN", "Title (base)", "Price_Base", "Price_Comp", "Acquisto_Netto"]],
         df_revenue_base[["Margine_Netto (€)_Origine", "Margine_Netto (%)_Origine"]],
