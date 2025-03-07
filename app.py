@@ -335,24 +335,24 @@ def rev_calc_fees(category: str, price: float, shipping: float) -> dict:
 def rev_calc_revenue_metrics(row, shipping_cost_rev):
     """
     Calcola le metriche revenue sul mercato di riferimento:
-      - Price_Ref: Prezzo di vendita (dal mercato di riferimento)
-      - Acquisto_Netto: Prezzo d'acquisto netto (già calcolato)
-      - Shipping_Cost: Costo di spedizione (Revenue)
-      - Fees: Commissioni Amazon (totale)
-      - Net_Revenue: Prezzo di vendita netto (dopo commissioni)
-      - Margine_Netto (€): Differenza tra Net_Revenue e (Acquisto_Netto + Shipping_Cost)
-      - Margine_Netto (%): Margine in percentuale
-      - Bought_Comp, SalesRank_Comp, Trend: Altri dati utili (acquisti nel mese, sales rank, trend)
+      - Prezzo Vendita Corrente: prezzo di vendita corrente (dal mercato di riferimento)
+      - Acquisto_Netto: prezzo d'acquisto netto (già calcolato)
+      - Shipping_Cost: costo di spedizione (Revenue)
+      - Fees: commissioni Amazon (totale)
+      - Net_Revenue: prezzo di vendita netto (dopo commissioni)
+      - Margine_Netto (€): differenza tra Net_Revenue e (Acquisto_Netto + Shipping_Cost)
+      - Margine_Netto (%): margine in percentuale
+      - Bought_Comp, SalesRank_Comp, Trend: altri dati utili
     """
     category = row.get("Category (base)", row.get("Category", "Altri prodotti"))
-    price_ref = row["Price_Base"]
-    fees = rev_calc_fees(category, price_ref, shipping_cost_rev)
-    net_selling_price = price_ref - fees["total_fees"]
+    prezzo_vendita = row["Price_Base"]
+    fees = rev_calc_fees(category, prezzo_vendita, shipping_cost_rev)
+    net_selling_price = prezzo_vendita - fees["total_fees"]
     cost_total = row["Acquisto_Netto"] + shipping_cost_rev
     margin_net = net_selling_price - cost_total
     margin_pct = (margin_net / cost_total * 100) if cost_total != 0 else np.nan
     return pd.Series({
-         "Price_Ref": price_ref,
+         "Prezzo Vendita Corrente": prezzo_vendita,
          "Acquisto_Netto": row["Acquisto_Netto"],
          "Shipping_Cost": shipping_cost_rev,
          "Fees": fees["total_fees"],
@@ -411,7 +411,7 @@ def calc_final_purchase_price(row, discount):
         return (gross / 1.19) * (1 - discount)
 
 #################################
-# Elaborazione Completa e Calcolo Opportunity Score
+# Elaborazione Completa e Calcolo Opportunity Score e Revenue Calculator
 #################################
 if avvia:
     # Controllo file di confronto
@@ -489,9 +489,40 @@ if avvia:
         zeta * df_merged["Trend_Bonus"]
     )
     
-    # Ordiniamo i risultati per Opportunity Score decrescente
-    df_merged = df_merged.sort_values("Opportunity_Score", ascending=False)
+    # ---------------------------
+    # Calcolo e Visualizzazione Revenue Calculator (RISULTATI PRIMI)
+    # ---------------------------
+    df_revenue = df_merged.apply(lambda row: rev_calc_revenue_metrics(row, shipping_cost_rev), axis=1)
+    # Aggiungi le colonne identificative mancanti
+    df_revenue["ASIN"] = df_merged["ASIN"]
+    df_revenue["Title (base)"] = df_merged["Title (base)"]
+    df_revenue["Locale (base)"] = df_merged["Locale (base)"] if "Locale (base)" in df_merged.columns else np.nan
+    df_revenue["Locale (comp)"] = df_merged["Locale (comp)"] if "Locale (comp)" in df_merged.columns else np.nan
+    # Riordina le colonne per una visualizzazione lineare
+    revenue_cols = [
+        "Locale (base)", "Locale (comp)", "ASIN", "Title (base)", "Prezzo Vendita Corrente",
+        "Acquisto_Netto", "Shipping_Cost", "Fees", "Net_Revenue",
+        "Margine_Netto (€)", "Margine_Netto (%)", "Bought_Comp", "SalesRank_Comp", "Trend"
+    ]
+    df_revenue_final = df_revenue[revenue_cols].copy()
+    # Arrotonda i valori numerici a 2 decimali
+    for col in ["Prezzo Vendita Corrente", "Acquisto_Netto", "Shipping_Cost", "Fees", "Net_Revenue", "Margine_Netto (€)", "Margine_Netto (%)"]:
+        df_revenue_final[col] = df_revenue_final[col].round(2)
     
+    st.subheader("Risultati Revenue Calculator")
+    st.dataframe(df_revenue_final, height=600)
+    
+    csv_data_rev = df_revenue_final.to_csv(index=False, sep=";").encode("utf-8")
+    st.download_button(
+        label="Scarica CSV Risultati Revenue",
+        data=csv_data_rev,
+        file_name="risultato_revenue_calculator.csv",
+        mime="text/csv"
+    )
+    
+    # ---------------------------
+    # Visualizzazione Opportunity Score (risultati successivi)
+    # ---------------------------
     # Selezione delle colonne finali per Opportunity Score
     cols_final = [
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
@@ -513,9 +544,6 @@ if avvia:
     st.subheader("Risultati Opportunity Score")
     st.dataframe(df_finale, height=600)
     
-    #################################
-    # Dashboard Interattiva per Opportunity Score
-    #################################
     st.markdown("---")
     st.subheader("Dashboard Interattiva")
     if not df_finale.empty:
@@ -538,39 +566,5 @@ if avvia:
         label="Scarica CSV Risultati Opportunity Score",
         data=csv_data,
         file_name="risultato_opportunity_arbitrage.csv",
-        mime="text/csv"
-    )
-    
-    #################################
-    # Calcolo e Visualizzazione Revenue Calculator
-    #################################
-    # Calcola le metriche revenue per ogni riga utilizzando il revenue calculator
-    df_revenue = df_merged.apply(lambda row: rev_calc_revenue_metrics(row, shipping_cost_rev), axis=1)
-    # Aggiungi le colonne identificative mancanti
-    df_revenue["ASIN"] = df_merged["ASIN"]
-    df_revenue["Title (base)"] = df_merged["Title (base)"]
-    # Aggiungi anche i paesi di riferimento
-    df_revenue["Locale (base)"] = df_merged["Locale (base)"] if "Locale (base)" in df_merged.columns else np.nan
-    df_revenue["Locale (comp)"] = df_merged["Locale (comp)"] if "Locale (comp)" in df_merged.columns else np.nan
-    # Riordina le colonne per una visualizzazione lineare
-    revenue_cols = [
-        "Locale (base)", "Locale (comp)", "ASIN", "Title (base)", "Price_Ref",
-        "Acquisto_Netto", "Shipping_Cost", "Fees", "Net_Revenue",
-        "Margine_Netto (€)", "Margine_Netto (%)", "Bought_Comp", "SalesRank_Comp", "Trend"
-    ]
-    df_revenue_final = df_revenue[revenue_cols].copy()
-    # Arrotonda i valori numerici a 2 decimali
-    for col in ["Price_Ref", "Acquisto_Netto", "Shipping_Cost", "Fees", "Net_Revenue", "Margine_Netto (€)", "Margine_Netto (%)"]:
-        df_revenue_final[col] = df_revenue_final[col].round(2)
-    
-    st.markdown("---")
-    st.subheader("Risultati Revenue Calculator")
-    st.dataframe(df_revenue_final, height=600)
-    
-    csv_data_rev = df_revenue_final.to_csv(index=False, sep=";").encode("utf-8")
-    st.download_button(
-        label="Scarica CSV Risultati Revenue",
-        data=csv_data_rev,
-        file_name="risultato_revenue_calculator.csv",
         mime="text/csv"
     )
