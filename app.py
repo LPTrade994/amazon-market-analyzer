@@ -3,8 +3,211 @@ import pandas as pd
 import numpy as np
 import re
 import altair as alt
+import math
 
+#################################
+# Funzioni Revenue Calculator
+#################################
+def truncate_2dec(value: float) -> float:
+    """
+    Tronca un valore a 2 decimali (senza arrotondare).
+    Esempio: 0.689 -> 0.68
+    """
+    return math.floor(value * 100) / 100.0
+
+def calc_referral_fee(category: str, total_sale: float) -> float:
+    """
+    Calcola la commissione di segnalazione (referral fee) in base alla categoria e al prezzo totale (prezzo + spedizione).
+    Restituisce la commissione, SENZA la commissione di chiusura.
+    Se applicabile, viene applicato il minimo di 0,30 €.
+    """
+    referral = 0.0
+    if category == "Accessori per dispositivi Amazon":
+        referral = 0.45 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Auto e moto":
+        if total_sale <= 50:
+            referral = 0.15 * total_sale
+        else:
+            referral = (0.15 * 50) + (0.09 * (total_sale - 50))
+        referral = max(referral, 0.30)
+    elif category == "Prodotti prima infanzia":
+        if total_sale <= 10:
+            referral = 0.08 * total_sale
+        else:
+            referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Zaini e borse":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Bellezza, salute e cura della persona":
+        if total_sale <= 10:
+            referral = 0.08 * total_sale
+        else:
+            referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Birra, vino e alcolici":
+        referral = 0.10 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Libri":
+        referral = 0.15 * total_sale
+        # Per Libri la commissione minima non viene applicata sul referral, ma si aggiunge una closing fee.
+    elif category == "Forniture per commercio, industria e scienza":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Abbigliamento e accessori":
+        if total_sale <= 15:
+            referral = 0.08 * total_sale
+        else:
+            referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Materiale elettrico e forniture di energia per uso industriale":
+        referral = 0.12 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Elettrodomestici compatti":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Informatica":
+        referral = 0.07 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Elettronica":
+        referral = 0.07 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Accessori per biciclette":
+        referral = 0.08 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Accessori elettronici":
+        if total_sale <= 100:
+            referral = 0.15 * total_sale
+        else:
+            referral = (0.15 * 100) + (0.08 * (total_sale - 100))
+        referral = max(referral, 0.30)
+    elif category == "Occhiali":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Calzature":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Elettrodomestici di grandi dimensioni":
+        referral = 0.07 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Arredamento":
+        if total_sale <= 200:
+            referral = 0.15 * total_sale
+        else:
+            referral = (0.15 * 200) + (0.10 * (total_sale - 200))
+        referral = max(referral, 0.30)
+    elif category == "Alimentari e cura della casa":
+        if total_sale <= 10:
+            referral = 0.08 * total_sale
+        else:
+            referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Amazon Handmade":
+        referral = 0.12 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Casa e cucina":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Gioielli":
+        if total_sale <= 250:
+            referral = 0.20 * total_sale
+        else:
+            referral = (0.20 * 250) + (0.05 * (total_sale - 250))
+        referral = max(referral, 0.30)
+    elif category == "Giardino e giardinaggio":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Valigeria":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Materassi":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Musica, video e DVD":
+        referral = 0.15 * total_sale
+        # Non forziamo minimo 0.30 se non indicato.
+    elif category == "Strumenti musicali e DJ/Produzione audio e video":
+        referral = 0.12 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Cancelleria e prodotti per ufficio":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Prodotti per animali domestici":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Software":
+        referral = 0.15 * total_sale
+        # Nessun minimo indicato.
+    elif category == "Sport e tempo libero":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Pneumatici":
+        referral = 0.07 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Attrezzi e fai da te":
+        referral = 0.13 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Giochi e giocattoli":
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    elif category == "Videogiochi - Giochi e accessori":
+        referral = 0.15 * total_sale
+    elif category == "Console per videogiochi":
+        referral = 0.08 * total_sale
+    elif category == "Orologi":
+        if total_sale <= 250:
+            referral = 0.15 * total_sale
+        else:
+            referral = (0.15 * 250) + (0.05 * (total_sale - 250))
+        referral = max(referral, 0.30)
+    else:
+        # Default: 15% con minimo 0.30
+        referral = 0.15 * total_sale
+        referral = max(referral, 0.30)
+    return referral
+
+def calc_closing_fee(category: str) -> float:
+    """
+    Restituisce la commissione di chiusura (se prevista).
+    Dalla tabella:
+      - Libri -> 1,01 €
+      - Musica, video e DVD, Software, Videogiochi - Giochi e accessori, Console per videogiochi -> 0,81 €
+      - Altre categorie -> 0 €
+    """
+    if category == "Libri":
+        return 1.01
+    elif category in ["Musica, video e DVD", "Software", "Videogiochi - Giochi e accessori", "Console per videogiochi"]:
+        return 0.81
+    else:
+        return 0.0
+
+def calc_fees(category: str, price: float, shipping: float) -> dict:
+    """
+    Calcola:
+      - referral_fee (troncato a 2 decimali)
+      - closing_fee (se prevista)
+      - digital_tax (3% su [referral_fee + closing_fee], troncata a 2 decimali)
+      - total_fees
+    """
+    total_sale = price + shipping
+    referral_raw = calc_referral_fee(category, total_sale)
+    referral_fee = truncate_2dec(referral_raw)
+    closing_raw = calc_closing_fee(category)
+    closing_fee = truncate_2dec(closing_raw)
+    digital_tax_raw = 0.03 * (referral_fee + closing_fee)
+    digital_tax = truncate_2dec(digital_tax_raw)
+    total_fees = truncate_2dec(referral_fee + closing_fee + digital_tax)
+    return {
+        "referral_fee": referral_fee,
+        "closing_fee": closing_fee,
+        "digital_tax": digital_tax,
+        "total_fees": total_fees
+    }
+
+#################################
 # Inizializzazione delle "ricette" in session_state
+#################################
 if 'recipes' not in st.session_state:
     st.session_state['recipes'] = {}
 
@@ -47,6 +250,10 @@ with st.sidebar:
     st.subheader("Sconto per gli acquisti")
     discount_percent = st.number_input("Inserisci lo sconto (%)", min_value=0.0, value=st.session_state.get("discount_percent", 20.0), step=0.1, key="discount_percent")
     discount = discount_percent / 100.0  # convertiamo in frazione
+
+    st.markdown("---")
+    st.subheader("Shipping Cost per Revenue Calculator")
+    shipping_cost_input = st.number_input("Inserisci il costo di spedizione (€)", min_value=0.0, value=0.0, step=0.01, key="shipping_cost")
 
     st.markdown("---")
     st.subheader("Impostazioni Opportunity Score")
@@ -128,7 +335,6 @@ def parse_int(x):
     except:
         return np.nan
 
-# Funzione per formattare il Trend in base al valore di Trend_Bonus
 def format_trend(trend):
     if pd.isna(trend):
         return "N/D"
@@ -140,29 +346,7 @@ def format_trend(trend):
         return "➖ Stabile"
 
 #################################
-# Visualizzazione Immediata degli ASIN dalla Lista di Origine
-#################################
-if files_base:
-    base_list = []
-    for f in files_base:
-        df_temp = load_data(f)
-        if df_temp is not None and not df_temp.empty:
-            base_list.append(df_temp)
-        else:
-            st.warning(f"Il file base {f.name} è vuoto o non valido.")
-    if base_list:
-        df_base = pd.concat(base_list, ignore_index=True)
-        if "ASIN" in df_base.columns:
-            unique_asins = df_base["ASIN"].dropna().unique()
-            st.info("Lista unificata di ASIN dalla Lista di Origine:")
-            st.text_area("Copia qui:", "\n".join(unique_asins), height=200)
-        else:
-            st.warning("I file di origine non contengono la colonna ASIN.")
-    else:
-        st.info("Carica la Lista di Origine per vedere gli ASIN unificati.")
-
-#################################
-# Funzione per Calcolare il Prezzo d'Acquisto Netto
+# Funzione per calcolare il Prezzo d'Acquisto Netto
 #################################
 def calc_final_purchase_price(row, discount):
     """
@@ -186,15 +370,70 @@ def calc_final_purchase_price(row, discount):
         return (gross / 1.19) * (1 - discount)
 
 #################################
-# Elaborazione Completa e Calcolo Opportunity Score
+# Funzione per calcolare le metriche Revenue (in base al Revenue Calculator)
+#################################
+def calc_revenue_metrics(row, shipping_cost):
+    """
+    Calcola le commissioni e i ricavi netti derivanti dalla vendita su Amazon,
+    sia per il mercato base (Italia) sia per il mercato di confronto.
+    Utilizza il prezzo dell'articolo e la categoria (prendendo quella italiana).
+    Restituisce:
+      - Amazon_Fees_It, Net_Revenue_It, Margine_It, Margine_%_It
+      - Amazon_Fees_Comp, Net_Revenue_Comp, Margine_Comp, Margine_%_Comp
+    """
+    category = row.get("Category", "Altri prodotti")
+    price_it = row["Price_Base"]  # Prezzo di vendita in Italia (base)
+    price_comp = row["Price_Comp"]  # Prezzo di vendita nel mercato di confronto
+    fees_it = calc_fees(category, price_it, shipping_cost)
+    fees_comp = calc_fees(category, price_comp, shipping_cost)
+    net_it = price_it - fees_it["total_fees"]
+    net_comp = price_comp - fees_comp["total_fees"]
+    acq_net = row["Acquisto_Netto"]
+    margin_it = net_it - acq_net
+    margin_comp = net_comp - acq_net
+    margin_it_pct = (margin_it / acq_net) * 100 if acq_net != 0 else np.nan
+    margin_comp_pct = (margin_comp / acq_net) * 100 if acq_net != 0 else np.nan
+    return pd.Series({
+        "Amazon_Fees_It": fees_it["total_fees"],
+        "Net_Revenue_It": net_it,
+        "Margine_It": margin_it,
+        "Margine_%_It": margin_it_pct,
+        "Amazon_Fees_Comp": fees_comp["total_fees"],
+        "Net_Revenue_Comp": net_comp,
+        "Margine_Comp": margin_comp,
+        "Margine_%_Comp": margin_comp_pct,
+    })
+
+#################################
+# Visualizzazione degli ASIN dalla Lista di Origine
+#################################
+if files_base:
+    base_list = []
+    for f in files_base:
+        df_temp = load_data(f)
+        if df_temp is not None and not df_temp.empty:
+            base_list.append(df_temp)
+        else:
+            st.warning(f"Il file base {f.name} è vuoto o non valido.")
+    if base_list:
+        df_base = pd.concat(base_list, ignore_index=True)
+        if "ASIN" in df_base.columns:
+            unique_asins = df_base["ASIN"].dropna().unique()
+            st.info("Lista unificata di ASIN dalla Lista di Origine:")
+            st.text_area("Copia qui:", "\n".join(unique_asins), height=200)
+        else:
+            st.warning("I file di origine non contengono la colonna ASIN.")
+    else:
+        st.info("Carica la Lista di Origine per vedere gli ASIN unificati.")
+
+#################################
+# Elaborazione e Calcolo Opportunity Score
 #################################
 if avvia:
-    # Controllo file di confronto
     if not comparison_files:
         st.warning("Carica almeno un file di Liste di Confronto.")
         st.stop()
     
-    # Elaborazione Liste di Confronto
     comp_list = []
     for f in comparison_files:
         df_temp = load_data(f)
@@ -207,42 +446,32 @@ if avvia:
         st.stop()
     df_comp = pd.concat(comp_list, ignore_index=True)
     
-    # Verifica della presenza della colonna ASIN in entrambi i dataset
     if "ASIN" not in df_base.columns or "ASIN" not in df_comp.columns:
         st.error("Assicurati che entrambi i file (origine e confronto) contengano la colonna ASIN.")
         st.stop()
     
-    # Merge tra base e confronto sulla colonna ASIN
     df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner", suffixes=(" (base)", " (comp)"))
     if df_merged.empty:
         st.error("Nessuna corrispondenza trovata tra la Lista di Origine e le Liste di Confronto.")
         st.stop()
     
-    # Utilizza le colonne di prezzo selezionate dalla sidebar
     price_col_base = f"{ref_price_base} (base)"
     price_col_comp = f"{ref_price_comp} (comp)"
     df_merged["Price_Base"] = df_merged.get(price_col_base, pd.Series(np.nan)).apply(parse_float)
     df_merged["Price_Comp"] = df_merged.get(price_col_comp, pd.Series(np.nan)).apply(parse_float)
     
-    # Conversione dei dati dal mercato di confronto per le altre metriche
     df_merged["SalesRank_Comp"] = df_merged.get("Sales Rank: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["Bought_Comp"] = df_merged.get("Bought in past month (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
-    # Leggi anche il Sales Rank a 90 giorni, se presente
     df_merged["SalesRank_90d"] = df_merged.get("Sales Rank: 90 days avg. (comp)", pd.Series(np.nan)).apply(parse_int)
     
-    # Calcolo del margine percentuale tra il prezzo di riferimento (con IVA) del mercato di confronto e quello di origine
     df_merged["Margin_Pct"] = (df_merged["Price_Comp"] - df_merged["Price_Base"]) / df_merged["Price_Base"] * 100
     df_merged = df_merged[df_merged["Margin_Pct"] > 0]
     
-    # Calcola il prezzo d'acquisto netto per ogni prodotto dalla lista di origine
     df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount), axis=1)
-    
-    # Calcola il margine stimato (in valore assoluto e percentuale)
     df_merged["Margine_Stimato"] = df_merged["Price_Comp"] - df_merged["Acquisto_Netto"]
     df_merged["Margine_%"] = (df_merged["Margine_Stimato"] / df_merged["Acquisto_Netto"]) * 100
     
-    # Applicazione dei filtri avanzati (sul mercato di confronto)
     df_merged["SalesRank_Comp"] = df_merged["SalesRank_Comp"].fillna(999999)
     df_merged = df_merged[df_merged["SalesRank_Comp"] <= max_sales_rank]
     
@@ -252,19 +481,9 @@ if avvia:
     df_merged["Price_Comp"] = df_merged["Price_Comp"].fillna(0)
     df_merged = df_merged[df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price)]
     
-    # Calcolo del bonus/penalità per il Trend del Sales Rank
-    # Trend_Bonus = log((SalesRank_90d + 1) / (SalesRank_Comp + 1))
     df_merged["Trend_Bonus"] = np.log((df_merged["SalesRank_90d"].fillna(df_merged["SalesRank_Comp"]) + 1) / (df_merged["SalesRank_Comp"] + 1))
-    # Formattiamo il trend in una stringa con icona
     df_merged["Trend"] = df_merged["Trend_Bonus"].apply(format_trend)
     
-    # Calcolo dell'Opportunity Score (senza rating)
-    # Formula:
-    # Opportunity_Score = ε * Margin_Pct +
-    #                     β * log(1 + Bought_Comp) -
-    #                     δ * NewOffer_Comp -
-    #                     α * log(SalesRank_Comp + 1) +
-    #                     ζ * Trend_Bonus
     df_merged["Opportunity_Score"] = (
         epsilon * df_merged["Margin_Pct"] +
         beta * np.log(1 + df_merged["Bought_Comp"].fillna(0)) -
@@ -272,24 +491,34 @@ if avvia:
         alpha * np.log(df_merged["SalesRank_Comp"] + 1) +
         zeta * df_merged["Trend_Bonus"]
     )
-    
-    # Ordiniamo i risultati per Opportunity Score decrescente
     df_merged = df_merged.sort_values("Opportunity_Score", ascending=False)
     
-    # Selezione delle colonne finali da visualizzare
+    # Selezione della categoria: prendiamo quella dal mercato italiano, se presente, altrimenti default.
+    if "Category (base)" in df_merged.columns:
+        df_merged["Category"] = df_merged["Category (base)"]
+    else:
+        df_merged["Category"] = "Altri prodotti"
+    
+    # Calcolo delle metriche Revenue (margine in base ai costi di vendita su Amazon)
+    revenue_cols = df_merged.apply(lambda row: calc_revenue_metrics(row, shipping_cost_input), axis=1)
+    df_merged = pd.concat([df_merged, revenue_cols], axis=1)
+    
     cols_final = [
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
         "Price_Base", "Acquisto_Netto", "Price_Comp", "Margin_Pct",
-        "Margine_Stimato", "Margine_%", "SalesRank_Comp", "SalesRank_90d",
-        "Trend", "Bought_Comp", "NewOffer_Comp",
+        "Margine_Stimato", "Margine_%",
+        "Amazon_Fees_It", "Net_Revenue_It", "Margine_It", "Margine_%_It",
+        "Amazon_Fees_Comp", "Net_Revenue_Comp", "Margine_Comp", "Margine_%_Comp",
+        "SalesRank_Comp", "SalesRank_90d", "Trend", "Bought_Comp", "NewOffer_Comp",
         "Opportunity_Score", "Brand (base)", "Package: Dimension (cm³) (base)"
     ]
     cols_final = [c for c in cols_final if c in df_merged.columns]
     df_finale = df_merged[cols_final].copy()
     
-    # Arrotonda i valori numerici principali a 2 decimali
     cols_to_round = ["Price_Base", "Acquisto_Netto", "Price_Comp", "Margin_Pct",
-                     "Margine_Stimato", "Margine_%", "Opportunity_Score"]
+                     "Margine_Stimato", "Margine_%", "Opportunity_Score",
+                     "Amazon_Fees_It", "Net_Revenue_It", "Margine_It", "Margine_%_It",
+                     "Amazon_Fees_Comp", "Net_Revenue_Comp", "Margine_Comp", "Margine_%_Comp"]
     for col in cols_to_round:
         if col in df_finale.columns:
             df_finale[col] = df_finale[col].round(2)
@@ -297,13 +526,8 @@ if avvia:
     st.subheader("Risultati Opportunità di Arbitraggio")
     st.dataframe(df_finale, height=600)
     
-    #################################
-    # Dashboard Interattiva
-    #################################
     st.markdown("---")
     st.subheader("Dashboard Interattiva")
-    
-    # Visualizza alcune metriche chiave
     if not df_finale.empty:
         st.metric("Numero di Opportunità", len(df_finale))
         st.metric("Margine Medio (%)", round(df_finale["Margin_Pct"].mean(), 2))
@@ -311,7 +535,6 @@ if avvia:
     else:
         st.info("Nessun prodotto trovato con i filtri applicati.")
     
-    # Grafico Scatter: Margine (%) vs Opportunity Score
     chart = alt.Chart(df_finale.reset_index()).mark_circle(size=60).encode(
         x=alt.X("Margin_Pct:Q", title="Margine (%)"),
         y=alt.Y("Opportunity_Score:Q", title="Opportunity Score"),
@@ -320,7 +543,6 @@ if avvia:
     ).interactive()
     st.altair_chart(chart, use_container_width=True)
     
-    # Pulsante di download CSV
     csv_data = df_finale.to_csv(index=False, sep=";").encode("utf-8")
     st.download_button(
         label="Scarica CSV Risultati",
