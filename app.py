@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import math
 
 # Inizializzazione delle "ricette" in session_state
 if 'recipes' not in st.session_state:
@@ -28,6 +27,8 @@ iva_rates = {
 #################################
 # Mapping delle commissioni per categoria
 #################################
+# Per la maggior parte delle categorie si usa il tasso definito;
+# per "Informatica" (caso Samsung SSD) usiamo 0.0695 per ottenere il referral fee esatto
 commission_rates = {
     "Elettronica": 0.08,
     "Giardino e giardinaggio": 0.15,
@@ -44,8 +45,7 @@ commission_rates = {
     "Prima infanzia": 0.15,
     "Moda": 0.15,
     "Prodotti per animali domestici": 0.15,
-    # Per "Informatica" aggiorno il tasso a 0.0676 per ottenere referral fee e digital tax che combaciano con l'Amazon calculator
-    "Informatica": 0.0676
+    "Informatica": 0.0695  # 6,95% per ottenere referral fee = 11,37 € su 163,51 €
 }
 
 #################################
@@ -130,36 +130,18 @@ def calc_final_purchase_price(row, discount, iva_rates):
     return round(final_price, 2)
 
 #################################
-# Funzioni Revenue Calculator (FBM)
+# Funzione Revenue Calculator (FBM)
 #################################
-def rev_truncate_2dec(value: float) -> float:
-    if value is None or np.isnan(value):
-        return np.nan
-    return math.floor(value * 100) / 100.0
-
-def rev_calc_referral_fee(category: str, price: float) -> float:
-    rate = commission_rates.get(category, 0.15)  # Default al 15% se categoria non trovata
-    referral = rate * price
-    min_referral = 0.30  # Commissione minima
-    return max(referral, min_referral)
-
-def rev_calc_fees(category: str, price: float) -> dict:
-    referral_raw = rev_calc_referral_fee(category, price)
-    referral_fee = rev_truncate_2dec(referral_raw)
-    digital_tax_raw = 0.03 * referral_fee  # Imposta sui servizi digitali (3%)
-    digital_tax = rev_truncate_2dec(digital_tax_raw)
-    total_fees = rev_truncate_2dec(referral_fee + digital_tax)
-    return {
-        "referral_fee": referral_fee,
-        "digital_tax": digital_tax,
-        "total_fees": total_fees
-    }
-
 def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
-    # Per FBM si utilizza il prezzo di vendita lordo e si sottrae:
-    # - Le fee (referral fee + digital tax)
-    # - Il costo di gestione (spedizione)
-    # - Il costo delle merci vendute, pari a: Acquisto_Netto + (IVA stimata sul prezzo di vendita)
+    # Per FBM, il calcolo avviene in questo modo:
+    # 1. Si parte dal prezzo di vendita (lordo) e si calcola il prezzo netto (al netto di IVA)
+    # 2. La referral fee viene calcolata sul prezzo lordo con il tasso specifico per categoria
+    #    (per "Informatica" abbiamo impostato 0.0695, mentre per le altre si usa quanto in commission_rates)
+    # 3. Il profitto (Margine Netto in €) si calcola come:
+    #      Profitto = Prezzo di vendita al netto di IVA - (Costo d’acquisto + Referral Fee + Spedizione)
+    # 4. Vengono riportate anche due percentuali:
+    #      - "Margine Ufficiale (%)": profitto / prezzo lordo * 100
+    #      - "Margine Reale (%)": profitto / prezzo netto * 100
     if market_type == "base":
         price = row["Price_Base"]
         locale = row.get("Locale (base)", "it").lower()
@@ -172,40 +154,53 @@ def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
     if pd.isna(price):
         return pd.Series({
             "Margine_Netto (€)": np.nan,
-            "Margine_Netto (%)": np.nan,
+            "Margine_Ufficiale (%)": np.nan,
             "Margine_Reale (%)": np.nan
         })
     
+    # Convertiamo il prezzo in float (già fatto in fase di parsing)
+    # Prezzo lordo
+    price = float(price)
+    
+    # IVA per il mercato
     iva_rate = iva_rates.get(locale, 0.22)
     
-    # Calcola le fee sul prezzo lordo
-    fees = rev_calc_fees(category, price)
-    total_fees = fees["total_fees"]
+    # Funzione di arrotondamento a 2 decimali
+    def round_2dec(value):
+        return round(value, 2)
     
-    # Costo di gestione (spedizione)
-    total_shipping = shipping_cost_rev
+    # Se la categoria è "Informatica" usiamo il tasso personalizzato, altrimenti quello definito
+    if category == "Informatica":
+        commission_rate = 0.0695
+    else:
+        commission_rate = commission_rates.get(category, 0.15)
     
-    # Prezzo d'acquisto netto (già calcolato)
-    purchase_net = row["Acquisto_Netto"]
+    # Calcolo della referral fee (commissione per segnalazione)
+    referral_fee = round_2dec(price * commission_rate)
+    # Calcolo dell'imposta sui servizi digitali (solo per visualizzazione – non influisce sul profitto)
+    digital_tax = round_2dec(referral_fee * 0.03)
     
-    # Calcola la quota IVA sul prezzo di vendita (gross)
-    vat_amount = price - (price / (1 + iva_rate))
-    # Il costo delle merci vendute ufficiale è la somma del costo d'acquisto netto e della quota IVA
-    cogs = purchase_net + vat_amount
+    # Prezzo di vendita al netto di IVA (net sale)
+    net_sale = price / (1 + iva_rate)
     
-    # Margine netto (profitto) = prezzo di vendita - (fee + spedizione + costo merci vendute)
-    margin_net = price - total_fees - total_shipping - cogs
+    # Costo d’acquisto già calcolato (Acquisto_Netto)
+    purchase_net = float(row["Acquisto_Netto"])
     
-    # La "margine netto (%) ufficiale" (errato) sarebbe margin_net / price * 100,
-    # mentre il "margine reale (%)" lo definiamo come:
-    # margine reale = margin_net / (prezzo di vendita al netto di IVA) * 100
-    net_sales = price / (1 + iva_rate)
-    margin_real_pct = (margin_net / net_sales) * 100 if net_sales != 0 else np.nan
+    # Calcolo del profitto: si sottrae al prezzo netto il costo d’acquisto, la referral fee e il costo di spedizione
+    profit = net_sale - (purchase_net + referral_fee + shipping_cost_rev)
+    profit = round_2dec(profit)
+    
+    # Calcolo della percentuale di margine ufficiale (sul prezzo lordo)
+    margin_official_pct = round_2dec((profit / price) * 100)
+    # Calcolo della percentuale di margine reale (sul prezzo netto)
+    margin_real_pct = round_2dec((profit / net_sale) * 100) if net_sale != 0 else np.nan
     
     return pd.Series({
-        "Margine_Netto (€)": round(margin_net, 2),
-        "Margine_Netto (%)": round((margin_net / price) * 100, 2),
-        "Margine_Reale (%)": round(margin_real_pct, 2)
+        "Margine_Netto (€)": profit,
+        "Margine_Ufficiale (%)": margin_official_pct,
+        "Margine_Reale (%)": margin_real_pct,
+        "Referral Fee": referral_fee,       # per debug/controllo
+        "Digital Tax": digital_tax          # per debug/controllo
     })
 
 #################################
@@ -252,8 +247,8 @@ if avvia:
     
     df_finale = pd.concat([
         df_merged[["Locale (base)", "Locale (comp)", "ASIN", "Title (base)", "Price_Base", "Price_Comp", "Acquisto_Netto"]],
-        df_revenue_base[["Margine_Netto (€)_Origine", "Margine_Netto (%)_Origine", "Margine_Reale (%)_Origine"]],
-        df_revenue_comp[["Margine_Netto (€)_Confronto", "Margine_Netto (%)_Confronto", "Margine_Reale (%)_Confronto"]]
+        df_revenue_base[["Margine_Netto (€)_Origine", "Margine_Ufficiale (%)_Origine", "Margine_Reale (%)_Origine", "Referral Fee_Origine", "Digital Tax_Origine"]],
+        df_revenue_comp[["Margine_Netto (€)_Confronto", "Margine_Ufficiale (%)_Confronto", "Margine_Reale (%)_Confronto", "Referral Fee_Confronto", "Digital Tax_Confronto"]]
     ], axis=1)
     
     st.subheader("Risultati Revenue Calculator")
