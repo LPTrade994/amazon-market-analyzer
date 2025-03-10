@@ -2,15 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import math
-
-# Verifica se matplotlib è installato, altrimenti lo installa
-try:
-    import matplotlib.pyplot as plt
-except ModuleNotFoundError:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "matplotlib"])
-    import matplotlib.pyplot as plt
-
+import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
@@ -720,4 +712,3 @@ if st.session_state["results_available"]:
     with tabs[0]:
         # Summary metrics
         st.markdown('<h2 class="sub-header">Riepilogo Opportunità</h2>', unsafe_allow_html=True)
-        # (il resto della visualizzazione rimane invariato)
