@@ -2,100 +2,58 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import math
-import plotly.express as px
-import plotly.graph_objects as go
 from io import BytesIO
 
 # Set page configuration
 st.set_page_config(
-    page_title="Amazon Market Analyzer Pro - Multi-Market Arbitrage",
+    page_title="Amazon Market Analyzer - Multi-Market Arbitrage",
     page_icon="🛒",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # Custom CSS for better UI
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.5rem;
+    .main-title {
         color: #232F3E;
         font-weight: 700;
-        margin-bottom: 1rem;
-        background: linear-gradient(90deg, #FF9900, #232F3E);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
     }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #232F3E;
+    .highlight {
+        background-color: #FF9900;
+        padding: 0.2rem 0.5rem;
+        border-radius: 0.3rem;
+        color: white;
         font-weight: 600;
-        margin-top: 1.5rem;
-        margin-bottom: 0.5rem;
     }
     .card {
-        background-color: #FFFFFF;
-        border-radius: 0.5rem;
-        padding: 1.5rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        margin-bottom: 1rem;
-    }
-    .metric-card {
-        background-color: #FFFFFF;
+        background-color: #F9F9F9;
         border-radius: 0.5rem;
         padding: 1rem;
+        margin-bottom: 1rem;
+        border: 1px solid #DDD;
+    }
+    .metric-card {
         text-align: center;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        padding: 1rem;
+        background-color: #F9F9F9;
+        border-radius: 0.5rem;
+        border: 1px solid #DDD;
     }
-    .metric-value {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #232F3E;
-    }
-    .metric-label {
-        font-size: 0.9rem;
-        color: #666;
-    }
-    .stButton button {
-        background-color: #FF9900;
-        color: white;
+    .success-text {
+        color: #1E8E3E;
         font-weight: 600;
-        border: none;
-        padding: 0.5rem 1rem;
-        border-radius: 0.3rem;
     }
-    .stButton button:hover {
-        background-color: #E88A00;
+    .warning-text {
+        color: #F9A825;
+        font-weight: 600;
     }
-    .market-flag {
-        font-size: 1.2rem;
-        margin-right: 0.5rem;
+    .error-text {
+        color: #D32F2F;
+        font-weight: 600;
     }
-    .footer {
-        margin-top: 3rem;
-        text-align: center;
-        color: #666;
-        font-size: 0.8rem;
-    }
-    div[data-testid="stSidebarNav"] {
-        background-color: #232F3E;
-        padding-top: 2rem;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #FAFAFA;
-        border-radius: 4px 4px 0 0;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #FF9900;
-        color: white;
+    .info-text {
+        color: #1976D2;
+        font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -112,18 +70,14 @@ def get_market_flag(locale):
     return flags.get(locale.lower(), "🌍")
 
 # Title and introduction
-st.markdown('<h1 class="main-header">Amazon Market Analyzer Pro</h1>', unsafe_allow_html=True)
-st.markdown('<div class="card">Strumento avanzato per identificare opportunità di arbitraggio tra i marketplace Amazon europei. Analizza prezzi, calcola commissioni e individua i prodotti più redditizi da acquistare in un mercato e rivendere in un altro.</div>', unsafe_allow_html=True)
+st.markdown("<h1 class='main-title'>Amazon Market Analyzer - Multi-Market Arbitrage</h1>", unsafe_allow_html=True)
+st.markdown("<div class='card'>Strumento avanzato per identificare opportunità di arbitraggio tra i marketplace Amazon europei. Analizza prezzi, calcola commissioni e individua i prodotti più redditizi da acquistare in un mercato e rivendere in un altro.</div>", unsafe_allow_html=True)
 
 # Initialize session state
 if 'opportunities' not in st.session_state:
     st.session_state['opportunities'] = None
 if 'results_available' not in st.session_state:
     st.session_state['results_available'] = False
-if 'selected_products' not in st.session_state:
-    st.session_state['selected_products'] = []
-if 'calculation_history' not in st.session_state:
-    st.session_state['calculation_history'] = []
 
 #################################
 # CONSTANTS AND MAPPINGS
@@ -195,11 +149,7 @@ MARKETS = {
 #################################
 
 with st.sidebar:
-    st.markdown("# 🛒 Impostazioni")
     st.markdown("### 📊 Configurazione Analisi")
-    
-    # File Upload Section
-    st.markdown("#### 📤 Caricamento file")
     
     # Base market selection
     base_market = st.selectbox(
@@ -222,6 +172,7 @@ with st.sidebar:
         st.warning(f"Rimosso {MARKETS[base_market]['name']} dai mercati di confronto perché è già il mercato di origine.")
     
     # File uploaders
+    st.markdown("### 📤 Caricamento File")
     files_base = st.file_uploader(
         f"Lista di Origine ({MARKETS[base_market]['flag']} {base_market.upper()})",
         type=["csv", "xlsx"],
@@ -242,7 +193,7 @@ with st.sidebar:
     st.markdown("---")
     
     # Price reference settings
-    st.markdown("#### 💰 Impostazioni Prezzo")
+    st.markdown("### 💰 Impostazioni Prezzo")
     
     ref_price_base = st.selectbox(
         "Prezzo di riferimento (Origine)",
@@ -259,9 +210,9 @@ with st.sidebar:
     st.markdown("---")
     
     # Discount settings
-    st.markdown("#### 🏷️ Sconti e Costi")
+    st.markdown("### 🏷️ Sconti e Costi")
     
-    discount_percent = st.slider(
+    discount_percent = st.number_input(
         "Sconto per gli acquisti (%)",
         min_value=0.0,
         max_value=40.0,
@@ -279,7 +230,7 @@ with st.sidebar:
         help="Costo di spedizione per unità da includere nel calcolo della redditività"
     )
     
-    min_margin_percent = st.slider(
+    min_margin_percent = st.number_input(
         "Margine minimo (%)",
         min_value=0.0,
         max_value=50.0,
@@ -419,9 +370,9 @@ def calc_fba_fee(row, locale):
     category = row.get("Categories: Root (base)", "Other")
     
     # Base FBA fee (simplified model)
-    if "Elettronica" in category or "Electronic" in category or "Elektronik" in category or "Électronique" in category or "Electrónica" in category:
+    if "Elettronica" in str(category) or "Electronic" in str(category) or "Elektronik" in str(category) or "Électronique" in str(category) or "Electrónica" in str(category):
         base_fee = 2.70
-    elif "Informatica" in category or "Computer" in category or "Informática" in category or "Informatique" in category:
+    elif "Informatica" in str(category) or "Computer" in str(category) or "Informática" in str(category) or "Informatique" in str(category):
         base_fee = 2.40
     else:
         base_fee = 3.20
@@ -692,16 +643,48 @@ if avvia:
             # Store in session state
             st.session_state["opportunities"] = final_opportunities
             st.session_state["results_available"] = True
-            st.session_state["calculation_history"].append({
-                "timestamp": pd.Timestamp.now(),
-                "base_market": base_market,
-                "comparison_markets": comparison_markets,
-                "discount": discount_percent,
-                "num_opportunities": len(final_opportunities)
-            })
             
             # Success message
             st.success(f"✅ Analisi completata! Trovate {len(final_opportunities)} opportunità di arbitraggio redditizie.")
         else:
             st.warning("⚠️ Nessuna opportunità di arbitraggio trovata che soddisfi i criteri minimi di margine.")
-            st.session_state["results_available"]
+            st.session_state["results_available"] = False
+
+#################################
+# RESULTS VISUALIZATION
+#################################
+
+if st.session_state["results_available"]:
+    opportunities = st.session_state["opportunities"]
+    
+    # Summary metrics
+    st.markdown("## 📊 Riepilogo Opportunità")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown(f'<h1>{len(opportunities)}</h1>', unsafe_allow_html=True)
+        st.markdown('<p>Opportunità Trovate</p>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+    with col2:
+        avg_profit = opportunities["Profitto_Arbitraggio"].mean()
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown(f'<h1>{avg_profit:.2f}€</h1>', unsafe_allow_html=True)
+        st.markdown('<p>Profitto Medio</p>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+    with col3:
+        avg_roi = opportunities["ROI_Arbitraggio"].mean()
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown(f'<h1>{avg_roi:.2f}%</h1>', unsafe_allow_html=True)
+        st.markdown('<p>ROI Medio</p>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+    with col4:
+        best_market = opportunities["Locale (comp)"].value_counts().idxmax()
+        market_count = opportunities["Locale (comp)"].value_counts().max()
+        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+        st.markdown(f'<h1>{get_market_flag(best_market)} {best_market.upper()}</h1>', unsafe_allow_html=True)
+        st.markdown(f'<p>Miglior Mercato ({
