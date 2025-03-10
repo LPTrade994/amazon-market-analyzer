@@ -129,10 +129,6 @@ if 'selected_products' not in st.session_state:
     st.session_state['selected_products'] = []
 if 'calculation_history' not in st.session_state:
     st.session_state['calculation_history'] = []
-if 'base_asins' not in st.session_state:
-    st.session_state['base_asins'] = []
-if 'base_data_loaded' not in st.session_state:
-    st.session_state['base_data_loaded'] = False
 
 #################################
 # CONSTANTS AND MAPPINGS
@@ -198,144 +194,6 @@ MARKETS = {
     "es": {"name": "Amazon Spagna", "flag": "🇪🇸", "currency": "EUR", "domain": "amazon.es"},
     "uk": {"name": "Amazon UK", "flag": "🇬🇧", "currency": "GBP", "domain": "amazon.co.uk"},
 }
-
-#################################
-# SIDEBAR CONFIGURATION
-#################################
-
-with st.sidebar:
-    st.image("https://m.media-amazon.com/images/G/01/sell/images/prime-boxes/prime-boxes-2._CB1198675309_.svg", width=200)
-    st.markdown("### Impostazioni Analisi")
-    
-    # File Upload Section
-    st.markdown("#### 📤 Caricamento file")
-    
-    # Base market selection
-    base_market = st.selectbox(
-        "Mercato di Origine (Acquisto)",
-        options=["it", "de", "fr", "es", "uk"],
-        format_func=lambda x: f"{MARKETS[x]['flag']} {MARKETS[x]['name']}",
-    )
-    
-    # Comparison markets selection
-    comparison_markets = st.multiselect(
-        "Mercati di Destinazione (Vendita)",
-        options=["it", "de", "fr", "es", "uk"],
-        default=["de", "fr", "es"] if base_market != "de" else ["it", "fr", "es"],
-        format_func=lambda x: f"{MARKETS[x]['flag']} {MARKETS[x]['name']}",
-    )
-    
-    # Remove base market from comparison if selected
-    if base_market in comparison_markets:
-        comparison_markets.remove(base_market)
-        st.warning(f"Rimosso {MARKETS[base_market]['name']} dai mercati di confronto perché è già il mercato di origine.")
-    
-    # File uploaders
-    files_base = st.file_uploader(
-        f"Lista di Origine ({MARKETS[base_market]['flag']} {base_market.upper()})",
-        type=["csv", "xlsx"],
-        accept_multiple_files=True,
-        help="Carica uno o più file del mercato di origine (dove acquisti)"
-    )
-    
-    # Dynamically create file uploaders for each comparison market
-    comparison_files = {}
-    for market in comparison_markets:
-        comparison_files[market] = st.file_uploader(
-            f"Lista per {MARKETS[market]['flag']} {market.upper()} (Confronto)",
-            type=["csv", "xlsx"],
-            accept_multiple_files=True,
-            help=f"Carica uno o più file del mercato {market.upper()} (dove vendi)"
-        )
-    
-    st.markdown("---")
-    
-    # Price reference settings
-    st.markdown("#### 💰 Impostazioni Prezzo")
-    
-    ref_price_base = st.selectbox(
-        "Prezzo di riferimento (Origine)",
-        ["Buy Box: Current", "Amazon: Current", "New: Current"],
-        help="Scegli quale prezzo usare per il calcolo dal mercato di origine"
-    )
-    
-    ref_price_comp = st.selectbox(
-        "Prezzo di riferimento (Destinazione)",
-        ["Buy Box: Current", "Amazon: Current", "New: Current"],
-        help="Scegli quale prezzo usare per il calcolo dai mercati di destinazione"
-    )
-    
-    st.markdown("---")
-    
-    # Discount settings
-    st.markdown("#### 🏷️ Sconti e Costi")
-    
-    discount_percent = st.slider(
-        "Sconto per gli acquisti (%)",
-        min_value=0.0,
-        max_value=40.0,
-        value=20.0,
-        step=0.5,
-        help="Percentuale di sconto sui prodotti acquistati (es. per acquisti in volume)"
-    )
-    discount = discount_percent / 100.0
-    
-    shipping_cost_rev = st.number_input(
-        "Costo di Spedizione (€)",
-        min_value=0.0,
-        value=5.13,
-        step=0.1,
-        help="Costo di spedizione per unità da includere nel calcolo della redditività"
-    )
-    
-    min_margin_percent = st.slider(
-        "Margine minimo (%)",
-        min_value=0.0,
-        max_value=50.0,
-        value=15.0,
-        step=1.0,
-        help="Margine percentuale minimo per considerare un'opportunità valida"
-    )
-    
-    min_margin_euro = st.number_input(
-        "Margine minimo (€)",
-        min_value=0.0,
-        value=5.0,
-        step=1.0,
-        help="Margine minimo in euro per considerare un'opportunità valida"
-    )
-    
-    st.markdown("---")
-    
-    # Advanced settings
-    with st.expander("Impostazioni Avanzate"):
-        include_fba_fee = st.checkbox(
-            "Includi FBA Fee",
-            value=True,
-            help="Includi la fee di Fulfillment by Amazon nel calcolo dei costi"
-        )
-        
-        include_fixed_fee = st.checkbox(
-            "Includi Fee Fissa per Unità",
-            value=True,
-            help="Includi la fee fissa di €0.99 per unità venduta"
-        )
-        
-        custom_exchange_rate = st.number_input(
-            "Tasso di Cambio GBP/EUR",
-            min_value=0.5,
-            max_value=2.0,
-            value=1.18,
-            step=0.01,
-            help="Tasso di cambio personalizzato tra GBP e EUR per il mercato UK"
-        )
-    
-    # Extract ASINs button
-    st.markdown("---")
-    extract_asin = st.button("📋 Estrai ASINs dalla Lista di Origine", use_container_width=True)
-    
-    # Calculate button
-    avvia = st.button("🔍 Calcola Opportunità", use_container_width=True)
 
 #################################
 # DATA LOADING AND PROCESSING FUNCTIONS
@@ -532,86 +390,207 @@ def calc_revenue_metrics(row, shipping_cost, market_type, vat_rates, include_fba
     })
 
 #################################
-# ASIN EXTRACTION FUNCTION
+# SIDEBAR CONFIGURATION
 #################################
 
-def extract_asins_from_files(files):
-    """Extract unique ASINs from uploaded files"""
-    if not files:
-        return []
+with st.sidebar:
+    st.image("https://m.media-amazon.com/images/G/01/sell/images/prime-boxes/prime-boxes-2._CB1198675309_.svg", width=200)
+    st.markdown("### Impostazioni Analisi")
     
-    all_asins = []
+    # File Upload Section
+    st.markdown("#### 📤 Caricamento file")
     
-    for file in files:
-        df = load_data(file)
-        if df is not None and not df.empty and "ASIN" in df.columns:
-            asins = df["ASIN"].dropna().unique().tolist()
-            all_asins.extend(asins)
+    # Base market selection
+    base_market = st.selectbox(
+        "Mercato di Origine (Acquisto)",
+        options=["it", "de", "fr", "es", "uk"],
+        format_func=lambda x: f"{MARKETS[x]['flag']} {MARKETS[x]['name']}",
+    )
     
-    # Return unique ASINs
-    return sorted(list(set(all_asins)))
+    # Comparison markets selection
+    comparison_markets = st.multiselect(
+        "Mercati di Destinazione (Vendita)",
+        options=["it", "de", "fr", "es", "uk"],
+        default=["de", "fr", "es"] if base_market != "de" else ["it", "fr", "es"],
+        format_func=lambda x: f"{MARKETS[x]['flag']} {MARKETS[x]['name']}",
+    )
+    
+    # Remove base market from comparison if selected
+    if base_market in comparison_markets:
+        comparison_markets.remove(base_market)
+        st.warning(f"Rimosso {MARKETS[base_market]['name']} dai mercati di confronto perché è già il mercato di origine.")
+    
+    # File uploaders
+    files_base = st.file_uploader(
+        f"Lista di Origine ({MARKETS[base_market]['flag']} {base_market.upper()})",
+        type=["csv", "xlsx"],
+        accept_multiple_files=True,
+        help="Carica uno o più file del mercato di origine (dove acquisti)"
+    )
+    
+    # ASIN extraction section
+    if files_base:
+        with st.expander("📋 Estrai ASINs dalla Lista di Origine", expanded=True):
+            st.info("Questa funzione estrae tutti gli ASIN dai file caricati per facilitare la creazione delle liste di confronto.")
+            
+            # Load and extract ASINs from base files
+            base_asins = []
+            for file in files_base:
+                df = load_data(file)
+                if df is not None and 'ASIN' in df.columns:
+                    base_asins.extend(df['ASIN'].dropna().unique().tolist())
+            
+            # Remove duplicates and sort
+            unique_asins = sorted(list(set(base_asins)))
+            
+            if unique_asins:
+                # Display count and sample
+                st.write(f"Trovati **{len(unique_asins)}** ASIN unici nei file caricati.")
+                
+                # Format options
+                format_option = st.radio(
+                    "Formato di output:",
+                    ["Un ASIN per riga", "ASINs separati da virgola", "ASINs separati da spazio"]
+                )
+                
+                # Format the ASINs based on the selection
+                if format_option == "Un ASIN per riga":
+                    formatted_asins = "\n".join(unique_asins)
+                elif format_option == "ASINs separati da virgola":
+                    formatted_asins = ", ".join(unique_asins)
+                else:  # Separated by space
+                    formatted_asins = " ".join(unique_asins)
+                
+                # Create a text area with the ASINs
+                st.text_area(
+                    "ASINs estratti (puoi copiare e incollare)",
+                    value=formatted_asins,
+                    height=200
+                )
+                
+                # Download buttons
+                col1, col2 = st.columns(2)
+                
+                # CSV download
+                csv_data = pd.DataFrame({"ASIN": unique_asins})
+                csv_file = csv_data.to_csv(index=False).encode('utf-8')
+                col1.download_button(
+                    label="📥 Scarica come CSV",
+                    data=csv_file,
+                    file_name=f"asins_{base_market}.csv",
+                    mime="text/csv"
+                )
+                
+                # TXT download
+                txt_file = formatted_asins.encode('utf-8')
+                col2.download_button(
+                    label="📥 Scarica come TXT",
+                    data=txt_file,
+                    file_name=f"asins_{base_market}.txt",
+                    mime="text/plain"
+                )
+            else:
+                st.warning("Nessun ASIN trovato nei file caricati o la colonna 'ASIN' non è presente nei file.")
+    
+    # Dynamically create file uploaders for each comparison market
+    comparison_files = {}
+    for market in comparison_markets:
+        comparison_files[market] = st.file_uploader(
+            f"Lista per {MARKETS[market]['flag']} {market.upper()} (Confronto)",
+            type=["csv", "xlsx"],
+            accept_multiple_files=True,
+            help=f"Carica uno o più file del mercato {market.upper()} (dove vendi)"
+        )
+    
+    st.markdown("---")
+    
+    # Price reference settings
+    st.markdown("#### 💰 Impostazioni Prezzo")
+    
+    ref_price_base = st.selectbox(
+        "Prezzo di riferimento (Origine)",
+        ["Buy Box: Current", "Amazon: Current", "New: Current"],
+        help="Scegli quale prezzo usare per il calcolo dal mercato di origine"
+    )
+    
+    ref_price_comp = st.selectbox(
+        "Prezzo di riferimento (Destinazione)",
+        ["Buy Box: Current", "Amazon: Current", "New: Current"],
+        help="Scegli quale prezzo usare per il calcolo dai mercati di destinazione"
+    )
+    
+    st.markdown("---")
+    
+    # Discount settings
+    st.markdown("#### 🏷️ Sconti e Costi")
+    
+    discount_percent = st.slider(
+        "Sconto per gli acquisti (%)",
+        min_value=0.0,
+        max_value=40.0,
+        value=20.0,
+        step=0.5,
+        help="Percentuale di sconto sui prodotti acquistati (es. per acquisti in volume)"
+    )
+    discount = discount_percent / 100.0
+    
+    shipping_cost_rev = st.number_input(
+        "Costo di Spedizione (€)",
+        min_value=0.0,
+        value=5.13,
+        step=0.1,
+        help="Costo di spedizione per unità da includere nel calcolo della redditività"
+    )
+    
+    min_margin_percent = st.slider(
+        "Margine minimo (%)",
+        min_value=0.0,
+        max_value=50.0,
+        value=15.0,
+        step=1.0,
+        help="Margine percentuale minimo per considerare un'opportunità valida"
+    )
+    
+    min_margin_euro = st.number_input(
+        "Margine minimo (€)",
+        min_value=0.0,
+        value=5.0,
+        step=1.0,
+        help="Margine minimo in euro per considerare un'opportunità valida"
+    )
+    
+    st.markdown("---")
+    
+    # Advanced settings
+    with st.expander("Impostazioni Avanzate"):
+        include_fba_fee = st.checkbox(
+            "Includi FBA Fee",
+            value=True,
+            help="Includi la fee di Fulfillment by Amazon nel calcolo dei costi"
+        )
+        
+        include_fixed_fee = st.checkbox(
+            "Includi Fee Fissa per Unità",
+            value=True,
+            help="Includi la fee fissa di €0.99 per unità venduta"
+        )
+        
+        custom_exchange_rate = st.number_input(
+            "Tasso di Cambio GBP/EUR",
+            min_value=0.5,
+            max_value=2.0,
+            value=1.18,
+            step=0.01,
+            help="Tasso di cambio personalizzato tra GBP e EUR per il mercato UK"
+        )
+    
+    # Calculate button
+    st.markdown("---")
+    avvia = st.button("🔍 Calcola Opportunità", use_container_width=True)
 
 #################################
 # DATA PROCESSING EXECUTION
 #################################
-
-# Extract ASINs from base market files
-if extract_asin:
-    if not files_base:
-        st.error("🚫 Devi caricare almeno un file per la Lista di Origine.")
-    else:
-        with st.spinner("Estrazione ASINs in corso..."):
-            asins = extract_asins_from_files(files_base)
-            if asins:
-                st.session_state['base_asins'] = asins
-                st.session_state['base_data_loaded'] = True
-                st.success(f"✅ Estratti {len(asins)} ASINs unici dalla Lista di Origine.")
-            else:
-                st.error("🚫 Nessun ASIN trovato nei file caricati. Verifica che i file contengano una colonna 'ASIN'.")
-
-# Display extracted ASINs 
-if st.session_state['base_data_loaded'] and st.session_state['base_asins']:
-    with st.expander(f"📋 Lista ASINs dal mercato {get_market_flag(base_market)} {base_market.upper()} ({len(st.session_state['base_asins'])} prodotti)", expanded=True):
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            # Display ASINs in a textarea for easy copying
-            asins_text = "\n".join(st.session_state['base_asins'])
-            st.text_area("ASINs (uno per riga)", value=asins_text, height=200)
-            
-        with col2:
-            # Add copy functionality
-            st.markdown("#### Opzioni")
-            st.markdown("Copia gli ASINs per generare liste di confronto su altri marketplace Amazon.")
-            
-            # Format options
-            format_option = st.radio(
-                "Formato:",
-                ["Uno per riga", "Separati da virgola", "Separati da punto e virgola"]
-            )
-            
-            # Format ASINs based on selection
-            if format_option == "Uno per riga":
-                formatted_asins = "\n".join(st.session_state['base_asins'])
-            elif format_option == "Separati da virgola":
-                formatted_asins = ",".join(st.session_state['base_asins'])
-            else:
-                formatted_asins = ";".join(st.session_state['base_asins'])
-            
-            # Create download button
-            st.download_button(
-                label="📥 Scarica lista ASINs",
-                data=formatted_asins,
-                file_name=f"asins_{base_market}.txt",
-                mime="text/plain"
-            )
-            
-            st.markdown("---")
-            st.markdown("""
-            **Suggerimento:**
-            * Usa questi ASINs per creare liste di confronto su [Amazon Keepa](https://keepa.com) o altre piattaforme
-            * Importa gli stessi ASINs sui diversi marketplace per il confronto dei prezzi
-            """)
 
 if avvia:
     with st.spinner("Analisi in corso..."):
@@ -747,53 +726,4 @@ if avvia:
             
             if not valid_opportunities.empty:
                 valid_opportunities["Opportunità_Score"] = (
-                    valid_opportunities["Profitto_Arbitraggio"] * 0.6 + 
-                    valid_opportunities["Profitto_Percentuale"] * 0.2 + 
-                    valid_opportunities["ROI_Arbitraggio"] * 0.2
-                ).round(2)
-                
-                valid_opportunities["Mercato_Origine"] = valid_opportunities["Locale (base)"].apply(
-                    lambda x: f"{get_market_flag(x)} {x.upper()}"
-                )
-                valid_opportunities["Mercato_Destinazione"] = valid_opportunities["Locale (comp)"].apply(
-                    lambda x: f"{get_market_flag(x)} {x.upper()}"
-                )
-                
-                all_opportunities.append(valid_opportunities)
-        
-        # Combine all opportunities
-        if all_opportunities:
-            final_opportunities = pd.concat(all_opportunities, ignore_index=True)
-            final_opportunities = final_opportunities.sort_values(by="Opportunità_Score", ascending=False)
-            
-            # Store in session state
-            st.session_state["opportunities"] = final_opportunities
-            st.session_state["results_available"] = True
-            st.session_state["calculation_history"].append({
-                "timestamp": pd.Timestamp.now(),
-                "base_market": base_market,
-                "comparison_markets": comparison_markets,
-                "discount": discount_percent,
-                "num_opportunities": len(final_opportunities)
-            })
-            
-            # Success message
-            st.success(f"✅ Analisi completata! Trovate {len(final_opportunities)} opportunità di arbitraggio redditizie.")
-        else:
-            st.warning("⚠️ Nessuna opportunità di arbitraggio trovata che soddisfi i criteri minimi di margine.")
-            st.session_state["results_available"] = False
-
-#################################
-# RESULTS VISUALIZATION
-#################################
-
-if st.session_state["results_available"]:
-    opportunities = st.session_state["opportunities"]
-    
-    # Create tabs for different views
-    tabs = st.tabs(["📊 Dashboard", "📋 Tabella Dettagliata", "📈 Grafici", "🔍 Analisi Prodotto", "📝 Note"])
-    
-    # DASHBOARD TAB
-    with tabs[0]:
-        # Summary metrics
-        st.markdown('<h2 class="sub-header">Riepilogo Opportunità</h2>', unsafe_allow_html=True)
+                    valid_opportunities["Profitto_Arbitraggio"] * 0.6 +
