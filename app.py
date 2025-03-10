@@ -1,3 +1,6 @@
+Ecco il codice completo dell'applicazione con la nuova funzionalità di estrazione ASIN integrata:
+
+```python
 import streamlit as st
 import pandas as pd
 import numpy as np
