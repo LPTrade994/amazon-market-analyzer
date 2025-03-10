@@ -2,13 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import math
-import matplotlib.pyplot as plt
-import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
-from st_aggrid import AgGrid, GridOptionsBuilder
-from st_aggrid.shared import JsCode
-import base64
 from io import BytesIO
 
 # Set page configuration
@@ -200,8 +195,8 @@ MARKETS = {
 #################################
 
 with st.sidebar:
-    st.image("https://m.media-amazon.com/images/G/01/sell/images/prime-boxes/prime-boxes-2._CB1198675309_.svg", width=200)
-    st.markdown("### Impostazioni Analisi")
+    st.markdown("# 🛒 Impostazioni")
+    st.markdown("### 📊 Configurazione Analisi")
     
     # File Upload Section
     st.markdown("#### 📤 Caricamento file")
@@ -424,9 +419,9 @@ def calc_fba_fee(row, locale):
     category = row.get("Categories: Root (base)", "Other")
     
     # Base FBA fee (simplified model)
-    if "Elettronica" in category or "Electronic" in category:
+    if "Elettronica" in category or "Electronic" in category or "Elektronik" in category or "Électronique" in category or "Electrónica" in category:
         base_fee = 2.70
-    elif "Informatica" in category or "Computer" in category:
+    elif "Informatica" in category or "Computer" in category or "Informática" in category or "Informatique" in category:
         base_fee = 2.40
     else:
         base_fee = 3.20
@@ -523,6 +518,11 @@ def calc_revenue_metrics(row, shipping_cost, market_type, vat_rates, include_fba
         "Margine_Percentuale": round(margin_pct, 2),
         "ROI": round(roi, 2)
     })
+
+def format_amazon_url(asin, marketplace):
+    """Format Amazon URL for a given ASIN and marketplace"""
+    domain = MARKETS.get(marketplace, MARKETS["it"])["domain"]
+    return f"https://www.{domain}/dp/{asin}"
 
 #################################
 # DATA PROCESSING EXECUTION
@@ -674,6 +674,14 @@ if avvia:
                     lambda x: f"{get_market_flag(x)} {x.upper()}"
                 )
                 
+                # Generate Amazon URLs
+                valid_opportunities["URL_Origine"] = valid_opportunities.apply(
+                    lambda row: format_amazon_url(row["ASIN"], row["Locale (base)"]), axis=1
+                )
+                valid_opportunities["URL_Destinazione"] = valid_opportunities.apply(
+                    lambda row: format_amazon_url(row["ASIN"], row["Locale (comp)"]), axis=1
+                )
+                
                 all_opportunities.append(valid_opportunities)
         
         # Combine all opportunities
@@ -696,19 +704,4 @@ if avvia:
             st.success(f"✅ Analisi completata! Trovate {len(final_opportunities)} opportunità di arbitraggio redditizie.")
         else:
             st.warning("⚠️ Nessuna opportunità di arbitraggio trovata che soddisfi i criteri minimi di margine.")
-            st.session_state["results_available"] = False
-
-#################################
-# RESULTS VISUALIZATION
-#################################
-
-if st.session_state["results_available"]:
-    opportunities = st.session_state["opportunities"]
-    
-    # Create tabs for different views
-    tabs = st.tabs(["📊 Dashboard", "📋 Tabella Dettagliata", "📈 Grafici", "🔍 Analisi Prodotto", "📝 Note"])
-    
-    # DASHBOARD TAB
-    with tabs[0]:
-        # Summary metrics
-        st.markdown('<h2 class="sub-header">Riepilogo Opportunità</h2>', unsafe_allow_html=True)
+            st.session_state["results_available"]
