@@ -1,6 +1,3 @@
-Ecco il codice completo dell'applicazione con la nuova funzionalità di estrazione ASIN integrata:
-
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -719,14 +716,4 @@ if avvia:
             df_result["Differenza_Percentuale"] = (df_result["Differenza_Prezzo"] / df_result["Price_Base"] * 100).round(2)
             df_result["Profitto_Arbitraggio"] = df_result["Margine_Netto_Confronto"]
             df_result["Profitto_Percentuale"] = df_result["Margine_Percentuale_Confronto"]
-            df_result["ROI_Arbitraggio"] = (df_result["Profitto_Arbitraggio"] / df_result["Acquisto_Netto"] * 100).round(2)
-            
-            # Filter for valid opportunities
-            valid_opportunities = df_result[
-                (df_result["Profitto_Arbitraggio"] >= min_margin_euro) & 
-                (df_result["Profitto_Percentuale"] >= min_margin_percent)
-            ].copy()
-            
-            if not valid_opportunities.empty:
-                valid_opportunities["Opportunità_Score"] = (
-                    valid_opportunities["Profitto_Arbitraggio"] * 0.6 +
+            df_result["ROI_Arbitraggio"] = (df_result["Profitto_Arbitraggio"] / df_result
