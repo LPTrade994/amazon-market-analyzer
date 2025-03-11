@@ -1,3 +1,6 @@
+Ecco la versione modificata del codice che dovrebbe essere completamente compatibile con le versioni più recenti di Streamlit:
+
+```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -448,9 +451,9 @@ def calc_fba_fee(row, locale):
     category = row.get("Categories: Root (base)", "Other")
     
     # Base FBA fee (simplified model)
-    if "Elettronica" in category or "Electronic" in category:
+    if "Elettronica" in str(category) or "Electronic" in str(category):
         base_fee = 2.70
-    elif "Informatica" in category or "Computer" in category:
+    elif "Informatica" in str(category) or "Computer" in str(category):
         base_fee = 2.40
     else:
         base_fee = 3.20
@@ -577,6 +580,7 @@ def remove_from_cart(item_id):
     """Remove product from cart"""
     if 'cart_items' in st.session_state:
         st.session_state['cart_items'] = [item for item in st.session_state['cart_items'] if item['id'] != item_id]
+        st.rerun()
 
 #################################
 # DATA PROCESSING EXECUTION
@@ -948,7 +952,8 @@ if st.session_state["results_available"]:
                 with col1:
                     st.write(f"**{row['ASIN']}** - {row['Title (base)'][:80]}... | Profitto: €{row['Profitto_Arbitraggio']:.2f}")
                 with col2:
-                    if st.button(f"➕ Aggiungi", key=f"add_{idx}"):
+                    key = f"add_{idx}_{row['ASIN']}"  # Make key unique based on both idx and ASIN
+                    if st.button(f"➕ Aggiungi", key=key):
                         add_to_cart(
                             row['ASIN'], 
                             row['Title (base)'], 
@@ -974,7 +979,8 @@ if st.session_state["results_available"]:
                 label="📥 Scarica CSV",
                 data=csv_data,
                 file_name="amazon_arbitrage_opportunities.csv",
-                mime="text/csv"
+                mime="text/csv",
+                key="download-csv"
             )
             
         with col2:
@@ -1001,7 +1007,8 @@ if st.session_state["results_available"]:
                 label="📥 Scarica Excel",
                 data=buffer,
                 file_name="amazon_arbitrage_opportunities.xlsx",
-                mime="application/vnd.ms-excel"
+                mime="application/vnd.ms-excel",
+                key="download-excel"
             )
     
     # CHARTS TAB
@@ -1109,22 +1116,25 @@ if st.session_state["results_available"]:
             st.plotly_chart(fig, use_container_width=True)
             
             # Line chart showing profit trend by price range
-            price_bins = pd.cut(opportunities["Price_Base"], bins=10)
-            price_profit = opportunities.groupby(price_bins)[["Profitto_Arbitraggio", "ROI_Arbitraggio"]].mean().reset_index()
-            price_profit["Price_Range"] = price_profit["Price_Base"].astype(str)
-            
-            fig2 = px.line(
-                price_profit,
-                x="Price_Range",
-                y=["Profitto_Arbitraggio", "ROI_Arbitraggio"],
-                title="Trend di Profitto e ROI per Fascia di Prezzo",
-                labels={
-                    "Price_Range": "Fascia di Prezzo",
-                    "value": "Valore",
-                    "variable": "Metrica"
-                }
-            )
-            st.plotly_chart(fig2, use_container_width=True)
+            try:
+                price_bins = pd.cut(opportunities["Price_Base"], bins=10)
+                price_profit = opportunities.groupby(price_bins)[["Profitto_Arbitraggio", "ROI_Arbitraggio"]].mean().reset_index()
+                price_profit["Price_Range"] = price_profit["Price_Base"].astype(str)
+                
+                fig2 = px.line(
+                    price_profit,
+                    x="Price_Range",
+                    y=["Profitto_Arbitraggio", "ROI_Arbitraggio"],
+                    title="Trend di Profitto e ROI per Fascia di Prezzo",
+                    labels={
+                        "Price_Range": "Fascia di Prezzo",
+                        "value": "Valore",
+                        "variable": "Metrica"
+                    }
+                )
+                st.plotly_chart(fig2, use_container_width=True)
+            except:
+                st.warning("Non ci sono dati sufficienti per generare il grafico di trend.")
             
         elif chart_type == "ROI per Categoria":
             if "Categories: Root (base)" in opportunities.columns:
@@ -1132,36 +1142,42 @@ if st.session_state["results_available"]:
                 top_cats = opportunities["Categories: Root (base)"].value_counts().head(10).index.tolist()
                 cat_data = opportunities[opportunities["Categories: Root (base)"].isin(top_cats)]
                 
-                fig = px.box(
-                    cat_data,
-                    x="Categories: Root (base)",
-                    y="ROI_Arbitraggio",
-                    color="Categories: Root (base)",
-                    title="ROI per Categoria (Top 10)",
-                    labels={
-                        "Categories: Root (base)": "Categoria",
-                        "ROI_Arbitraggio": "ROI (%)"
-                    }
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Heatmap of Category by Market Pair
-                if len(cat_data) > 10:  # Only show if we have enough data
-                    pivot = pd.pivot_table(
+                if not cat_data.empty:
+                    fig = px.box(
                         cat_data,
-                        values="Profitto_Arbitraggio",
-                        index="Categories: Root (base)",
-                        columns="Market_Pair",
-                        aggfunc="mean"
-                    ).fillna(0)
-                    
-                    fig2 = px.imshow(
-                        pivot,
-                        title="Profitto Medio per Categoria e Coppia di Mercati",
-                        labels=dict(x="Coppia di Mercati", y="Categoria", color="Profitto (€)"),
-                        color_continuous_scale="Viridis"
+                        x="Categories: Root (base)",
+                        y="ROI_Arbitraggio",
+                        color="Categories: Root (base)",
+                        title="ROI per Categoria (Top 10)",
+                        labels={
+                            "Categories: Root (base)": "Categoria",
+                            "ROI_Arbitraggio": "ROI (%)"
+                        }
                     )
-                    st.plotly_chart(fig2, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Heatmap of Category by Market Pair
+                    if len(cat_data) > 10:  # Only show if we have enough data
+                        try:
+                            pivot = pd.pivot_table(
+                                cat_data,
+                                values="Profitto_Arbitraggio",
+                                index="Categories: Root (base)",
+                                columns="Market_Pair",
+                                aggfunc="mean"
+                            ).fillna(0)
+                            
+                            fig2 = px.imshow(
+                                pivot,
+                                title="Profitto Medio per Categoria e Coppia di Mercati",
+                                labels=dict(x="Coppia di Mercati", y="Categoria", color="Profitto (€)"),
+                                color_continuous_scale="Viridis"
+                            )
+                            st.plotly_chart(fig2, use_container_width=True)
+                        except:
+                            st.warning("Non ci sono dati sufficienti per generare la heatmap.")
+                else:
+                    st.warning("Non ci sono dati sufficienti per generare i grafici per categoria.")
             else:
                 st.warning("Dati di categoria non disponibili nei file caricati.")
     
@@ -1329,50 +1345,54 @@ if st.session_state["results_available"]:
             # Price breakdown chart
             st.markdown('<h4>Breakdown dei Costi</h4>', unsafe_allow_html=True)
             
-            best_market = market_data[0]
-            best_market_locale = best_market["Mercato"].split()[-1].lower()
-            
-            # Prepare data for waterfall chart
-            best_row = asin_data[asin_data["Locale (comp)"] == best_market_locale].iloc[0]
-            
-            net_sell_price = best_row["Price_Comp"] / (1 + VAT_RATES.get(best_market_locale, 0.22))
-            vat_amount = best_row["Price_Comp"] - net_sell_price
-            
-            waterfall_data = [
-                {"x": "Prezzo di Vendita", "y": best_row["Price_Comp"], "type": "total"},
-                {"x": "IVA", "y": -vat_amount, "type": "negative"},
-                {"x": "Commissione Amazon", "y": -best_row["Referral_Fee_Confronto"], "type": "negative"},
-                {"x": "Tassa Digitale", "y": -best_row["Digital_Tax_Confronto"], "type": "negative"},
-                {"x": "FBA", "y": -best_row["FBA_Fee_Confronto"], "type": "negative"},
-                {"x": "Spedizione", "y": -shipping_cost_rev, "type": "negative"},
-                {"x": "Costo Acquisto", "y": -best_row["Acquisto_Netto"], "type": "negative"},
-                {"x": "Profitto Netto", "y": best_row["Profitto_Arbitraggio"], "type": "positive"}
-            ]
-            
-            # Create color mapping
-            colors = {
-                "total": "#1f77b4",  # blue
-                "negative": "#d62728",  # red
-                "positive": "#2ca02c"   # green
-            }
-            
-            # Create the waterfall chart
-            fig = go.Figure(go.Waterfall(
-                x=[item["x"] for item in waterfall_data],
-                y=[item["y"] for item in waterfall_data],
-                measure=["absolute"] + ["relative"] * 6 + ["total"],
-                text=[f"€{abs(item['y']):.2f}" for item in waterfall_data],
-                textposition="outside",
-                connector={"line": {"color": "rgb(63, 63, 63)"}},
-                marker={"color": [colors[item["type"]] for item in waterfall_data]}
-            ))
-            
-            fig.update_layout(
-                title=f"Breakdown del Prezzo - {best_market['Mercato']}",
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
+            if market_data:  # Check if market_data is not empty
+                best_market = market_data[0]
+                best_market_locale = best_market["Mercato"].split()[-1].lower()
+                
+                # Prepare data for waterfall chart
+                best_row = asin_data[asin_data["Locale (comp)"] == best_market_locale]
+                
+                if not best_row.empty:  # Check if best_row is not empty
+                    best_row = best_row.iloc[0]
+                    
+                    net_sell_price = best_row["Price_Comp"] / (1 + VAT_RATES.get(best_market_locale, 0.22))
+                    vat_amount = best_row["Price_Comp"] - net_sell_price
+                    
+                    waterfall_data = [
+                        {"x": "Prezzo di Vendita", "y": best_row["Price_Comp"], "type": "total"},
+                        {"x": "IVA", "y": -vat_amount, "type": "negative"},
+                        {"x": "Commissione Amazon", "y": -best_row["Referral_Fee_Confronto"], "type": "negative"},
+                        {"x": "Tassa Digitale", "y": -best_row["Digital_Tax_Confronto"], "type": "negative"},
+                        {"x": "FBA", "y": -best_row["FBA_Fee_Confronto"], "type": "negative"},
+                        {"x": "Spedizione", "y": -shipping_cost_rev, "type": "negative"},
+                        {"x": "Costo Acquisto", "y": -best_row["Acquisto_Netto"], "type": "negative"},
+                        {"x": "Profitto Netto", "y": best_row["Profitto_Arbitraggio"], "type": "positive"}
+                    ]
+                    
+                    # Create color mapping
+                    colors = {
+                        "total": "#1f77b4",  # blue
+                        "negative": "#d62728",  # red
+                        "positive": "#2ca02c"   # green
+                    }
+                    
+                    # Create the waterfall chart
+                    fig = go.Figure(go.Waterfall(
+                        x=[item["x"] for item in waterfall_data],
+                        y=[item["y"] for item in waterfall_data],
+                        measure=["absolute"] + ["relative"] * 6 + ["total"],
+                        text=[f"€{abs(item['y']):.2f}" for item in waterfall_data],
+                        textposition="outside",
+                        connector={"line": {"color": "rgb(63, 63, 63)"}},
+                        marker={"color": [colors[item["type"]] for item in waterfall_data]}
+                    ))
+                    
+                    fig.update_layout(
+                        title=f"Breakdown del Prezzo - {best_market['Mercato']}",
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
     
     # NOTES TAB
     with tabs[4]:
@@ -1468,27 +1488,29 @@ if st.session_state["cart_items"]:
             </div>
             """, unsafe_allow_html=True)
         with cols[1]:
-            if st.button("❌", key=f"remove_{item['id']}"):
+            # Use a more unique key for each remove button
+            if st.button("❌", key=f"remove_{item['id']}_{item['asin'][-4:]}"):
                 remove_from_cart(item['id'])
-                st.experimental_rerun()
+                st.rerun()
     
     st.sidebar.markdown(f"**Totale Prodotti:** {len(st.session_state['cart_items'])}")
     total_profit = sum(p["profit"] for p in st.session_state["cart_items"])
     st.sidebar.markdown(f"**Profitto Potenziale:** €{total_profit:.2f}")
     
-    if st.sidebar.button("🗑️ Svuota Carrello"):
+    if st.sidebar.button("🗑️ Svuota Carrello", key="empty_cart"):
         st.session_state["cart_items"] = []
-        st.experimental_rerun()
+        st.rerun()
         
     # Export cart
-    csv_cart = pd.DataFrame(st.session_state["cart_items"]).to_csv(index=False).encode('utf-8')
-    st.sidebar.download_button(
-        "📥 Esporta Carrello",
-        csv_cart,
-        "amazon_arbitrage_cart.csv",
-        "text/csv",
-        key='download-csv-cart'
-    )
+    if st.session_state["cart_items"]:  # Check again to avoid errors
+        csv_cart = pd.DataFrame(st.session_state["cart_items"]).to_csv(index=False).encode('utf-8')
+        st.sidebar.download_button(
+            "📥 Esporta Carrello",
+            csv_cart,
+            "amazon_arbitrage_cart.csv",
+            "text/csv",
+            key='download-csv-cart'
+        )
 else:
     st.sidebar.info("Nessun prodotto selezionato. Usa la tabella dettagliata per aggiungere prodotti al carrello.")
 
