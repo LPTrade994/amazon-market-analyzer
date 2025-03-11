@@ -1,6 +1,3 @@
-Ecco la versione modificata del codice che dovrebbe essere completamente compatibile con le versioni più recenti di Streamlit:
-
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
