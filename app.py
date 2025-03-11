@@ -3,13 +3,11 @@ import pandas as pd
 import numpy as np
 import math
 import matplotlib.pyplot as plt
-import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
-from st_aggrid import AgGrid, GridOptionsBuilder
-from st_aggrid.shared import JsCode
 import base64
 from io import BytesIO
+import uuid
 
 # Set page configuration
 st.set_page_config(
@@ -102,6 +100,32 @@ st.markdown("""
         background-color: #FF9900;
         color: white;
     }
+    .dataframe {
+        font-size: 0.9rem !important;
+    }
+    .dataframe th {
+        background-color: #f0f0f0;
+        padding: 8px !important;
+    }
+    .dataframe td {
+        padding: 8px !important;
+    }
+    .cart-item {
+        margin-bottom: 10px; 
+        padding: 8px; 
+        background-color: #f0f0f0; 
+        border-radius: 5px;
+    }
+    .remove-btn {
+        font-size: 10px; 
+        padding: 2px 5px; 
+        float: right;
+        background-color: #ff6b6b;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -129,6 +153,8 @@ if 'selected_products' not in st.session_state:
     st.session_state['selected_products'] = []
 if 'calculation_history' not in st.session_state:
     st.session_state['calculation_history'] = []
+if 'cart_items' not in st.session_state:
+    st.session_state['cart_items'] = []
 
 #################################
 # CONSTANTS AND MAPPINGS
@@ -203,9 +229,6 @@ with st.sidebar:
     st.image("https://m.media-amazon.com/images/G/01/sell/images/prime-boxes/prime-boxes-2._CB1198675309_.svg", width=200)
     st.markdown("### Impostazioni Analisi")
     
-    # File Upload Section
-    st.markdown("#### 📤 Caricamento file")
-    
     # Base market selection
     base_market = st.selectbox(
         "Mercato di Origine (Acquisto)",
@@ -227,6 +250,7 @@ with st.sidebar:
         st.warning(f"Rimosso {MARKETS[base_market]['name']} dai mercati di confronto perché è già il mercato di origine.")
     
     # File uploaders
+    st.markdown("#### 📤 Caricamento file")
     files_base = st.file_uploader(
         f"Lista di Origine ({MARKETS[base_market]['flag']} {base_market.upper()})",
         type=["csv", "xlsx"],
@@ -523,6 +547,36 @@ def calc_revenue_metrics(row, shipping_cost, market_type, vat_rates, include_fba
         "Margine_Percentuale": round(margin_pct, 2),
         "ROI": round(roi, 2)
     })
+
+# Cart management functions
+def add_to_cart(asin, title, profit, origin, destination, price_origin, price_dest):
+    """Add product to cart"""
+    if 'cart_items' not in st.session_state:
+        st.session_state['cart_items'] = []
+    
+    # Check if product is already in cart
+    for item in st.session_state['cart_items']:
+        if item['asin'] == asin and item['destination'] == destination:
+            st.warning(f"Prodotto {asin} per il mercato {destination} già presente nel carrello.")
+            return
+    
+    # Add to cart
+    st.session_state['cart_items'].append({
+        'id': str(uuid.uuid4()),
+        'asin': asin,
+        'title': title,
+        'profit': profit,
+        'origin': origin,
+        'destination': destination,
+        'price_origin': price_origin,
+        'price_dest': price_dest
+    })
+    st.success(f"Prodotto {asin} aggiunto al carrello per il mercato {destination}.")
+
+def remove_from_cart(item_id):
+    """Remove product from cart"""
+    if 'cart_items' in st.session_state:
+        st.session_state['cart_items'] = [item for item in st.session_state['cart_items'] if item['id'] != item_id]
 
 #################################
 # DATA PROCESSING EXECUTION
@@ -874,29 +928,42 @@ if st.session_state["results_available"]:
         if "Categories: Root (base)" in filtered_opps.columns:
             display_columns.insert(2, "Categories: Root (base)")
         
-        # Create links for ASINs
-        def make_clickable(asin, locale_base, locale_comp):
-            base_url = f"https://www.{MARKETS[locale_base]}/dp/{asin}"
-            comp_url = f"https://www.{MARKETS[locale_comp]}/dp/{asin}"
-            return f'<a href="{base_url}" target="_blank">{asin}</a> | <a href="{comp_url}" target="_blank">🔗</a>'
-        
+        # Create a copy for display
         df_display = filtered_opps[display_columns].copy()
-        df_display["ASIN"] = df_display.apply(
-            lambda x: make_clickable(x["ASIN"], x["Mercato_Origine"].split()[-1].lower(), x["Mercato_Destinazione"].split()[-1].lower()),
-            axis=1
-        )
         
-        # Custom CSS for dataframe
-        st.markdown("""
-        <style>
-        .dataframe {
-            font-size: 0.9rem;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        # Format the DataFrame for display
+        for col in ["Price_Base", "Price_Comp", "Acquisto_Netto", "Total_Fees_Confronto", "Profitto_Arbitraggio"]:
+            if col in df_display.columns:
+                df_display[col] = df_display[col].apply(lambda x: f"€{x:.2f}" if not pd.isna(x) else "")
+                
+        for col in ["Profitto_Percentuale", "ROI_Arbitraggio"]:
+            if col in df_display.columns:
+                df_display[col] = df_display[col].apply(lambda x: f"{x:.1f}%" if not pd.isna(x) else "")
         
-        # Display the table with interactive links
-        st.write(df_display.to_html(escape=False, index=False), unsafe_allow_html=True)
+        # Add buttons to each row for "Add to Cart"
+        if not filtered_opps.empty:
+            st.write("Seleziona le opportunità da aggiungere al carrello:")
+            for idx, row in filtered_opps.iterrows():
+                col1, col2 = st.columns([5, 1])
+                with col1:
+                    st.write(f"**{row['ASIN']}** - {row['Title (base)'][:80]}... | Profitto: €{row['Profitto_Arbitraggio']:.2f}")
+                with col2:
+                    if st.button(f"➕ Aggiungi", key=f"add_{idx}"):
+                        add_to_cart(
+                            row['ASIN'], 
+                            row['Title (base)'], 
+                            row['Profitto_Arbitraggio'],
+                            row['Mercato_Origine'],
+                            row['Mercato_Destinazione'],
+                            row['Price_Base'],
+                            row['Price_Comp']
+                        )
+            
+            # Display the table
+            st.write("#### Elenco completo delle opportunità")
+            st.dataframe(df_display)
+        else:
+            st.warning("Nessuna opportunità trovata con i filtri selezionati.")
         
         # Download buttons
         col1, col2 = st.columns(2)
@@ -1382,34 +1449,46 @@ if st.session_state["results_available"]:
                 """, unsafe_allow_html=True)
 
 #################################
-# ADD TO CART FUNCTIONALITY
+# CART SECTION IN SIDEBAR
 #################################
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🛒 Carrello Opportunità")
 
-# Initialize selected products if not exists
-if "selected_products" not in st.session_state:
-    st.session_state["selected_products"] = []
-
 # Display cart items if any
-if st.session_state["selected_products"]:
-    for i, product in enumerate(st.session_state["selected_products"]):
-        st.sidebar.markdown(f"""
-        <div style="margin-bottom: 10px; padding: 8px; background-color: #f0f0f0; border-radius: 5px;">
-            <small>{product["asin"]} - {product["title"][:30]}...</small><br/>
-            <small>Profitto: €{product["profit"]:.2f}</small>
-            <button style="font-size: 10px; padding: 2px 5px; float: right;">❌</button>
-        </div>
-        """, unsafe_allow_html=True)
+if st.session_state["cart_items"]:
+    for item in st.session_state["cart_items"]:
+        cols = st.sidebar.columns([4, 1])
+        with cols[0]:
+            st.markdown(f"""
+            <div class="cart-item">
+                <small>{item["asin"]} - {item["title"][:20]}...</small><br/>
+                <small>{item["origin"]} → {item["destination"]}</small><br/>
+                <small>Profitto: €{item["profit"]:.2f}</small>
+            </div>
+            """, unsafe_allow_html=True)
+        with cols[1]:
+            if st.button("❌", key=f"remove_{item['id']}"):
+                remove_from_cart(item['id'])
+                st.experimental_rerun()
     
-    st.sidebar.markdown(f"**Totale Prodotti:** {len(st.session_state['selected_products'])}")
-    total_profit = sum(p["profit"] for p in st.session_state["selected_products"])
+    st.sidebar.markdown(f"**Totale Prodotti:** {len(st.session_state['cart_items'])}")
+    total_profit = sum(p["profit"] for p in st.session_state["cart_items"])
     st.sidebar.markdown(f"**Profitto Potenziale:** €{total_profit:.2f}")
     
     if st.sidebar.button("🗑️ Svuota Carrello"):
-        st.session_state["selected_products"] = []
+        st.session_state["cart_items"] = []
         st.experimental_rerun()
+        
+    # Export cart
+    csv_cart = pd.DataFrame(st.session_state["cart_items"]).to_csv(index=False).encode('utf-8')
+    st.sidebar.download_button(
+        "📥 Esporta Carrello",
+        csv_cart,
+        "amazon_arbitrage_cart.csv",
+        "text/csv",
+        key='download-csv-cart'
+    )
 else:
     st.sidebar.info("Nessun prodotto selezionato. Usa la tabella dettagliata per aggiungere prodotti al carrello.")
 
@@ -1449,3 +1528,8 @@ if not st.session_state["results_available"]:
         </ol>
     </div>
     """, unsafe_allow_html=True)
+
+# Main execution
+if __name__ == "__main__":
+    # This will prevent unnecessary reloading in some Streamlit versions
+    pass
