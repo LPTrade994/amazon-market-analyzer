@@ -2,105 +2,34 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import math
-import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.express as px
-import plotly.graph_objects as go
-from st_aggrid import AgGrid, GridOptionsBuilder
-from st_aggrid.shared import JsCode
-import base64
 from io import BytesIO
 
 # Set page configuration
 st.set_page_config(
-    page_title="Amazon Market Analyzer Pro - Multi-Market Arbitrage",
+    page_title="Amazon Market Analyzer - Arbitraggio Multi-Mercato",
     page_icon="🛒",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# Custom CSS for better UI
+# Custom CSS for better UI (versione semplificata)
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #232F3E;
-        font-weight: 700;
-        margin-bottom: 1rem;
-        background: linear-gradient(90deg, #FF9900, #232F3E);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #232F3E;
-        font-weight: 600;
-        margin-top: 1.5rem;
-        margin-bottom: 0.5rem;
-    }
-    .card {
-        background-color: #FFFFFF;
-        border-radius: 0.5rem;
-        padding: 1.5rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        margin-bottom: 1rem;
-    }
-    .metric-card {
-        background-color: #FFFFFF;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        text-align: center;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    .metric-value {
+    .header {
         font-size: 2rem;
         font-weight: 700;
-        color: #232F3E;
+        margin-bottom: 1rem;
     }
-    .metric-label {
-        font-size: 0.9rem;
-        color: #666;
-    }
-    .stButton button {
-        background-color: #FF9900;
-        color: white;
+    .subheader {
+        font-size: 1.5rem;
         font-weight: 600;
-        border: none;
-        padding: 0.5rem 1rem;
-        border-radius: 0.3rem;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
     }
-    .stButton button:hover {
-        background-color: #E88A00;
-    }
-    .market-flag {
-        font-size: 1.2rem;
-        margin-right: 0.5rem;
-    }
-    .footer {
-        margin-top: 3rem;
-        text-align: center;
-        color: #666;
-        font-size: 0.8rem;
-    }
-    div[data-testid="stSidebarNav"] {
-        background-color: #232F3E;
-        padding-top: 2rem;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: #FAFAFA;
-        border-radius: 4px 4px 0 0;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #FF9900;
-        color: white;
+    .info-box {
+        background-color: #f0f2f6;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -117,16 +46,14 @@ def get_market_flag(locale):
     return flags.get(locale.lower(), "🌍")
 
 # Title and introduction
-st.markdown('<h1 class="main-header">Amazon Market Analyzer Pro</h1>', unsafe_allow_html=True)
-st.markdown('<div class="card">Strumento avanzato per identificare opportunità di arbitraggio tra i marketplace Amazon europei. Analizza prezzi, calcola commissioni e individua i prodotti più redditizi da acquistare in un mercato e rivendere in un altro.</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">Amazon Market Analyzer</div>', unsafe_allow_html=True)
+st.markdown('<div class="info-box">Strumento per identificare opportunità di arbitraggio tra i marketplace Amazon europei. Analizza prezzi, calcola commissioni e individua prodotti redditizi.</div>', unsafe_allow_html=True)
 
 # Initialize session state
 if 'opportunities' not in st.session_state:
     st.session_state['opportunities'] = None
 if 'results_available' not in st.session_state:
     st.session_state['results_available'] = False
-if 'selected_products' not in st.session_state:
-    st.session_state['selected_products'] = []
 if 'calculation_history' not in st.session_state:
     st.session_state['calculation_history'] = []
 
@@ -146,9 +73,7 @@ VAT_RATES = {
 # Amazon commission rates by category
 COMMISSION_RATES = {
     "Elettronica": 0.08,
-    "Elettronica di consumo": 0.08,
     "Informatica": 0.07,
-    "Computer": 0.07,
     "Grandi elettrodomestici": 0.08,
     "Giardino e giardinaggio": 0.15,
     "Casa e cucina": 0.15,
@@ -168,15 +93,12 @@ COMMISSION_RATES = {
     # German categories
     "Elektronik": 0.08,
     "Computer & Zubehör": 0.07,
-    "Küche, Haushalt & Wohnen": 0.15,
     # French categories
     "Électronique": 0.08,
     "Informatique": 0.07,
-    "Cuisine & Maison": 0.15,
     # Spanish categories
     "Electrónica": 0.08,
-    "Informática": 0.07,
-    "Hogar y cocina": 0.15
+    "Informática": 0.07
 }
 
 # Default category commission if not found
@@ -285,7 +207,6 @@ def calc_referral_fee(category, price):
 def calc_fba_fee(row, locale):
     """Calculate estimated FBA fee based on category and market"""
     # This is a simplified estimation
-    # For a more accurate calculation, would need product dimensions and weight
     category = row.get("Categories: Root (base)", "Other")
     
     # Base FBA fee (simplified model)
@@ -394,7 +315,6 @@ def calc_revenue_metrics(row, shipping_cost, market_type, vat_rates, include_fba
 #################################
 
 with st.sidebar:
-    st.image("https://m.media-amazon.com/images/G/01/sell/images/prime-boxes/prime-boxes-2._CB1198675309_.svg", width=200)
     st.markdown("### Impostazioni Analisi")
     
     # File Upload Section
@@ -748,13 +668,6 @@ if avvia:
             # Store in session state
             st.session_state["opportunities"] = final_opportunities
             st.session_state["results_available"] = True
-            st.session_state["calculation_history"].append({
-                "timestamp": pd.Timestamp.now(),
-                "base_market": base_market,
-                "comparison_markets": comparison_markets,
-                "discount": discount_percent,
-                "num_opportunities": len(final_opportunities)
-            })
             
             # Success message
             st.success(f"✅ Analisi completata! Trovate {len(final_opportunities)} opportunità di arbitraggio redditizie.")
@@ -770,44 +683,32 @@ if st.session_state["results_available"]:
     opportunities = st.session_state["opportunities"]
     
     # Create tabs for different views
-    tabs = st.tabs(["📊 Dashboard", "📋 Tabella Dettagliata", "📈 Grafici", "🔍 Analisi Prodotto", "📝 Note"])
+    tabs = st.tabs(["📊 Dashboard", "📋 Tabella Dettagliata", "🔍 Analisi Prodotto"])
     
     # DASHBOARD TAB
     with tabs[0]:
         # Summary metrics
-        st.markdown('<h2 class="sub-header">Riepilogo Opportunità</h2>', unsafe_allow_html=True)
+        st.markdown('<div class="subheader">Riepilogo Opportunità</div>', unsafe_allow_html=True)
         
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-value">{len(opportunities)}</div>', unsafe_allow_html=True)
-            st.markdown('<div class="metric-label">Opportunità Totali</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.metric("Opportunità Totali", len(opportunities))
         
         with col2:
             avg_profit = opportunities["Profitto_Arbitraggio"].mean()
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-value">€{avg_profit:.2f}</div>', unsafe_allow_html=True)
-            st.markdown('<div class="metric-label">Profitto Medio</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.metric("Profitto Medio", f"€{avg_profit:.2f}")
         
         with col3:
             avg_roi = opportunities["ROI_Arbitraggio"].mean()
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-value">{avg_roi:.1f}%</div>', unsafe_allow_html=True)
-            st.markdown('<div class="metric-label">ROI Medio</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.metric("ROI Medio", f"{avg_roi:.1f}%")
         
         with col4:
             total_potential = opportunities["Profitto_Arbitraggio"].sum()
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown(f'<div class="metric-value">€{total_potential:.2f}</div>', unsafe_allow_html=True)
-            st.markdown('<div class="metric-label">Potenziale Totale</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.metric("Potenziale Totale", f"€{total_potential:.2f}")
         
         # Top opportunities
-        st.markdown('<h3 class="sub-header">Top 10 Migliori Opportunità</h3>', unsafe_allow_html=True)
+        st.markdown('<div class="subheader">Top 10 Migliori Opportunità</div>', unsafe_allow_html=True)
         
         top_opportunities = opportunities.head(10)
         
@@ -832,43 +733,23 @@ if st.session_state["results_available"]:
                 st.markdown("---")
         
         # Market distribution
-        st.markdown('<h3 class="sub-header">Distribuzione per Mercato</h3>', unsafe_allow_html=True)
+        st.markdown('<div class="subheader">Distribuzione per Mercato</div>', unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
         
         with col1:
             market_counts = opportunities["Mercato_Destinazione"].value_counts().reset_index()
             market_counts.columns = ["Mercato", "Conteggio"]
-            
-            fig = px.bar(
-                market_counts,
-                x="Mercato",
-                y="Conteggio",
-                color="Conteggio",
-                color_continuous_scale="Oranges",
-                title="Opportunità per Mercato di Destinazione"
-            )
-            fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(market_counts)
         
         with col2:
             profit_by_market = opportunities.groupby("Mercato_Destinazione")["Profitto_Arbitraggio"].mean().reset_index()
             profit_by_market.columns = ["Mercato", "Profitto Medio"]
-            
-            fig = px.bar(
-                profit_by_market,
-                x="Mercato",
-                y="Profitto Medio",
-                color="Profitto Medio",
-                color_continuous_scale="Greens",
-                title="Profitto Medio per Mercato di Destinazione"
-            )
-            fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(profit_by_market)
     
     # DETAILED TABLE TAB
     with tabs[1]:
-        st.markdown('<h2 class="sub-header">Tabella Dettagliata delle Opportunità</h2>', unsafe_allow_html=True)
+        st.markdown('<div class="subheader">Tabella Dettagliata delle Opportunità</div>', unsafe_allow_html=True)
         
         # Filter options
         col1, col2, col3 = st.columns(3)
@@ -924,29 +805,8 @@ if st.session_state["results_available"]:
             "Margine %", "ROI %", "Score"
         ]
         
-        # Configure the grid
-        gb = GridOptionsBuilder.from_dataframe(display_df)
-        gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
-        gb.configure_column("ASIN", width=120)
-        gb.configure_column("Titolo", width=300)
-        gb.configure_column("Prezzo Acquisto", type=["numericColumn", "numberColumnFilter"], precision=2, width=130)
-        gb.configure_column("Prezzo Vendita", type=["numericColumn", "numberColumnFilter"], precision=2, width=130)
-        gb.configure_column("Acquisto Netto", type=["numericColumn", "numberColumnFilter"], precision=2, width=130)
-        gb.configure_column("Profitto", type=["numericColumn", "numberColumnFilter"], precision=2, width=120)
-        gb.configure_column("Margine %", type=["numericColumn", "numberColumnFilter"], precision=1, width=120)
-        gb.configure_column("ROI %", type=["numericColumn", "numberColumnFilter"], precision=1, width=120)
-        gb.configure_column("Score", type=["numericColumn", "numberColumnFilter"], precision=1, width=100)
-        
-        grid_options = gb.build()
-        
-        # Display the grid
-        AgGrid(
-            display_df,
-            gridOptions=grid_options,
-            enable_enterprise_modules=False,
-            height=600,
-            fit_columns_on_grid_load=False
-        )
+        # Display dataframe using native Streamlit
+        st.dataframe(display_df)
         
         # Export options
         col1, col2 = st.columns(2)
@@ -974,181 +834,9 @@ if st.session_state["results_available"]:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     
-    # CHARTS TAB
-    with tabs[2]:
-        st.markdown('<h2 class="sub-header">Grafici e Visualizzazioni</h2>', unsafe_allow_html=True)
-        
-        chart_type = st.selectbox(
-            "Seleziona il tipo di grafico",
-            [
-                "Distribuzione dei Profitti", 
-                "Confronto Mercati", 
-                "ROI vs Profitto", 
-                "Prezzo Acquisto vs Vendita"
-            ]
-        )
-        
-        if chart_type == "Distribuzione dei Profitti":
-            fig = px.histogram(
-                opportunities,
-                x="Profitto_Arbitraggio",
-                nbins=30,
-                color_discrete_sequence=["#FF9900"],
-                title="Distribuzione dei Profitti"
-            )
-            fig.update_layout(
-                xaxis_title="Profitto (€)",
-                yaxis_title="Numero di Opportunità",
-                height=500
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Summary statistics
-            st.markdown("### Statistiche di Profitto")
-            stats_df = pd.DataFrame({
-                "Statistica": ["Minimo", "1° Quartile", "Mediana", "Media", "3° Quartile", "Massimo"],
-                "Valore": [
-                    f"€{opportunities['Profitto_Arbitraggio'].min():.2f}",
-                    f"€{opportunities['Profitto_Arbitraggio'].quantile(0.25):.2f}",
-                    f"€{opportunities['Profitto_Arbitraggio'].median():.2f}",
-                    f"€{opportunities['Profitto_Arbitraggio'].mean():.2f}",
-                    f"€{opportunities['Profitto_Arbitraggio'].quantile(0.75):.2f}",
-                    f"€{opportunities['Profitto_Arbitraggio'].max():.2f}"
-                ]
-            })
-            st.table(stats_df)
-        
-        elif chart_type == "Confronto Mercati":
-            pivot_data = opportunities.pivot_table(
-                index="Mercato_Destinazione",
-                values=["Profitto_Arbitraggio", "ROI_Arbitraggio", "Opportunità_Score"],
-                aggfunc="mean"
-            ).reset_index()
-            
-            fig = go.Figure()
-            
-            fig.add_trace(go.Bar(
-                x=pivot_data["Mercato_Destinazione"],
-                y=pivot_data["Profitto_Arbitraggio"],
-                name="Profitto Medio",
-                marker_color="#FF9900"
-            ))
-            
-            fig.add_trace(go.Bar(
-                x=pivot_data["Mercato_Destinazione"],
-                y=pivot_data["ROI_Arbitraggio"],
-                name="ROI Medio",
-                marker_color="#232F3E",
-                yaxis="y2"
-            ))
-            
-            fig.update_layout(
-                title="Confronto Mercati: Profitto vs ROI",
-                xaxis_title="Mercato di Destinazione",
-                yaxis=dict(
-                    title="Profitto Medio (€)",
-                    side="left"
-                ),
-                yaxis2=dict(
-                    title="ROI Medio (%)",
-                    side="right",
-                    overlaying="y"
-                ),
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1
-                ),
-                height=500
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Table with detailed stats
-            st.markdown("### Statistiche per Mercato")
-            
-            detailed_stats = opportunities.groupby("Mercato_Destinazione").agg({
-                "ASIN": "count",
-                "Profitto_Arbitraggio": ["mean", "min", "max"],
-                "ROI_Arbitraggio": ["mean", "min", "max"]
-            }).reset_index()
-            
-            detailed_stats.columns = [
-                "Mercato", "Conteggio", 
-                "Profitto Medio", "Profitto Min", "Profitto Max",
-                "ROI Medio", "ROI Min", "ROI Max"
-            ]
-            
-            st.dataframe(detailed_stats, height=300)
-        
-        elif chart_type == "ROI vs Profitto":
-            fig = px.scatter(
-                opportunities,
-                x="Profitto_Arbitraggio",
-                y="ROI_Arbitraggio",
-                color="Mercato_Destinazione",
-                size="Opportunità_Score",
-                hover_name="Title (base)",
-                hover_data=["ASIN", "Price_Base", "Price_Comp", "Acquisto_Netto"],
-                title="ROI vs Profitto per Opportunità",
-                height=600,
-                color_discrete_sequence=px.colors.qualitative.Set1
-            )
-            
-            fig.update_layout(
-                xaxis_title="Profitto (€)",
-                yaxis_title="ROI (%)"
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Correlation
-            corr = opportunities["Profitto_Arbitraggio"].corr(opportunities["ROI_Arbitraggio"])
-            st.info(f"Correlazione tra Profitto e ROI: {corr:.2f}")
-        
-        elif chart_type == "Prezzo Acquisto vs Vendita":
-            fig = px.scatter(
-                opportunities,
-                x="Price_Base",
-                y="Price_Comp",
-                color="Profitto_Arbitraggio",
-                size="Opportunità_Score",
-                hover_name="Title (base)",
-                hover_data=["ASIN", "Mercato_Destinazione", "Acquisto_Netto", "Profitto_Arbitraggio", "ROI_Arbitraggio"],
-                title="Prezzo di Acquisto vs Prezzo di Vendita",
-                height=600,
-                color_continuous_scale="Viridis"
-            )
-            
-            # Add reference line (y = x)
-            fig.add_trace(
-                go.Scatter(
-                    x=[0, opportunities["Price_Base"].max() * 1.1],
-                    y=[0, opportunities["Price_Base"].max() * 1.1],
-                    mode="lines",
-                    line=dict(dash="dash", color="gray"),
-                    name="Prezzo Uguale"
-                )
-            )
-            
-            fig.update_layout(
-                xaxis_title="Prezzo di Acquisto (€)",
-                yaxis_title="Prezzo di Vendita (€)"
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Average price difference
-            avg_diff = (opportunities["Price_Comp"] - opportunities["Price_Base"]).mean()
-            avg_diff_pct = (opportunities["Differenza_Percentuale"]).mean()
-            
-            st.info(f"Differenza Media di Prezzo: {avg_diff:.2f}€ ({avg_diff_pct:.1f}%)")
-    
     # PRODUCT ANALYSIS TAB
-    with tabs[3]:
-        st.markdown('<h2 class="sub-header">Analisi Prodotto Dettagliata</h2>', unsafe_allow_html=True)
+    with tabs[2]:
+        st.markdown('<div class="subheader">Analisi Prodotto Dettagliata</div>', unsafe_allow_html=True)
         
         # Product selector
         selected_asin = st.selectbox(
@@ -1172,35 +860,8 @@ if st.session_state["results_available"]:
                     st.markdown(f"**Categoria:** {product_data['Categories: Root (base)'].values[0]}")
             
             with col2:
-                st.markdown("### Punteggio Opportunità")
-                
-                # Calculate average score
                 avg_score = product_data["Opportunità_Score"].mean()
-                
-                # Display gauge chart
-                fig = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=avg_score,
-                    domain={"x": [0, 1], "y": [0, 1]},
-                    title={"text": "Score"},
-                    gauge={
-                        "axis": {"range": [0, 100]},
-                        "bar": {"color": "#FF9900"},
-                        "steps": [
-                            {"range": [0, 30], "color": "#f2f2f2"},
-                            {"range": [30, 70], "color": "#e6e6e6"},
-                            {"range": [70, 100], "color": "#d9d9d9"}
-                        ],
-                        "threshold": {
-                            "line": {"color": "green", "width": 4},
-                            "thickness": 0.75,
-                            "value": avg_score
-                        }
-                    }
-                ))
-                
-                fig.update_layout(height=200, margin=dict(l=20, r=20, t=30, b=20))
-                st.plotly_chart(fig, use_container_width=True)
+                st.markdown(f"### Punteggio: {avg_score:.1f}/100")
             
             # Market comparison
             st.markdown("### Confronto tra i mercati")
@@ -1277,18 +938,6 @@ if st.session_state["results_available"]:
                 
                 # Format as table
                 st.table(costs_df)
-                
-                # Pie chart of costs
-                fig = px.pie(
-                    costs_df[:-1],  # Exclude total
-                    values="Importo",
-                    names="Voce",
-                    title="Ripartizione dei Costi",
-                    color_discrete_sequence=px.colors.sequential.Oranges
-                )
-                
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
             
             with col2:
                 st.markdown("#### Ricavi e Profitto")
@@ -1315,64 +964,6 @@ if st.session_state["results_available"]:
                 
                 # Format as table
                 st.table(revenue_df)
-                
-                # Waterfall chart
-                waterfall_data = {
-                    "Voce": [
-                        "Prezzo di Vendita Netto",
-                        "Acquisto Prodotto",
-                        "Referral Fee",
-                        "Digital Services Tax",
-                        "FBA Fee",
-                        "Fee Fissa per Unità",
-                        "Spedizione",
-                        "Profitto Netto"
-                    ],
-                    "Importo": [
-                        market_product["Prezzo_Netto_Confronto"],
-                        -market_product["Acquisto_Netto"],
-                        -market_product["Referral_Fee_Confronto"],
-                        -market_product["Digital_Tax_Confronto"],
-                        -market_product["FBA_Fee_Confronto"],
-                        -market_product["Fixed_Fee_Confronto"],
-                        -shipping_cost_rev,
-                        market_product["Margine_Netto_Confronto"]
-                    ],
-                    "Tipo": [
-                        "Ricavo",
-                        "Costo",
-                        "Costo",
-                        "Costo",
-                        "Costo",
-                        "Costo",
-                        "Costo",
-                        "Profitto"
-                    ]
-                }
-                
-                waterfall_df = pd.DataFrame(waterfall_data)
-                
-                # Create waterfall chart
-                fig = go.Figure(go.Waterfall(
-                    name="Profitto",
-                    orientation="v",
-                    measure=["absolute"] + ["relative"] * 6 + ["total"],
-                    x=waterfall_df["Voce"],
-                    y=waterfall_df["Importo"],
-                    connector={"line": {"color": "rgb(63, 63, 63)"}},
-                    decreasing={"marker": {"color": "#FF9900"}},
-                    increasing={"marker": {"color": "#232F3E"}},
-                    totals={"marker": {"color": "green"}}
-                ))
-                
-                fig.update_layout(
-                    title="Analisi Profitto",
-                    height=400,
-                    xaxis_title="Componente",
-                    yaxis_title="€"
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
             
             # ROI Analysis
             st.markdown("### Analisi ROI e Redditività")
@@ -1381,10 +972,7 @@ if st.session_state["results_available"]:
             
             with col1:
                 roi = market_product["ROI_Arbitraggio"]
-                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                st.markdown(f'<div class="metric-value">{roi:.1f}%</div>', unsafe_allow_html=True)
-                st.markdown('<div class="metric-label">Return on Investment</div>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+                st.metric("Return on Investment", f"{roi:.1f}%")
                 
                 if roi < 20:
                     roi_comment = "ROI basso, opportunità con margine di sicurezza ridotto."
@@ -1397,10 +985,7 @@ if st.session_state["results_available"]:
             
             with col2:
                 margin_pct = market_product["Margine_Percentuale_Confronto"]
-                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                st.markdown(f'<div class="metric-value">{margin_pct:.1f}%</div>', unsafe_allow_html=True)
-                st.markdown('<div class="metric-label">Margine Percentuale</div>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+                st.metric("Margine Percentuale", f"{margin_pct:.1f}%")
                 
                 if margin_pct < 10:
                     margin_comment = "Margine basso, attenzione ai costi imprevisti."
@@ -1413,10 +998,7 @@ if st.session_state["results_available"]:
             
             with col3:
                 profit = market_product["Profitto_Arbitraggio"]
-                st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                st.markdown(f'<div class="metric-value">€{profit:.2f}</div>', unsafe_allow_html=True)
-                st.markdown('<div class="metric-label">Profitto Netto</div>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+                st.metric("Profitto Netto", f"€{profit:.2f}")
                 
                 if profit < 5:
                     profit_comment = "Profitto basso, considerare quantità maggiori."
@@ -1439,87 +1021,9 @@ if st.session_state["results_available"]:
             with col2:
                 comp_url = f"https://www.{MARKETS[market_product['Locale (comp)'].lower()]['domain']}/dp/{selected_asin}"
                 st.markdown(f"[🔗 Visualizza su {market_product['Mercato_Destinazione']}]({comp_url})")
-    
-    # NOTES TAB
-    with tabs[4]:
-        st.markdown('<h2 class="sub-header">Note e Considerazioni</h2>', unsafe_allow_html=True)
-        
-        # Input for notes
-        if "notes" not in st.session_state:
-            st.session_state["notes"] = ""
-        
-        notes = st.text_area(
-            "Aggiungi note o appunti su questa analisi",
-            value=st.session_state["notes"],
-            height=300
-        )
-        
-        st.session_state["notes"] = notes
-        
-        if st.button("Salva Note"):
-            st.success("✅ Note salvate correttamente.")
-        
-        # Calculation history
-        st.markdown("### Cronologia Calcoli")
-        
-        history = st.session_state["calculation_history"]
-        
-        if history:
-            history_df = pd.DataFrame([
-                {
-                    "Data e Ora": h["timestamp"].strftime("%d-%m-%Y %H:%M"),
-                    "Mercato Origine": h["base_market"].upper(),
-                    "Mercati Destinazione": ", ".join([m.upper() for m in h["comparison_markets"]]),
-                    "Sconto": f"{h['discount']:.1f}%",
-                    "Opportunità Trovate": h["num_opportunities"]
-                }
-                for h in history
-            ])
-            
-            st.dataframe(history_df, height=200)
-        else:
-            st.info("Nessun calcolo precedente trovato.")
-        
-        # Disclaimer and help
-        st.markdown("---")
-        st.markdown("### Informazioni e Aiuto")
-        
-        with st.expander("Informazioni sul calcolo del Revenue"):
-            st.markdown("""
-            **Come vengono calcolati i profitti:**
-            
-            1. **Prezzo Netto**: Il prezzo di vendita al netto dell'IVA del mercato di destinazione
-            2. **Costo di Acquisto**: Il prezzo di acquisto al netto dell'IVA con lo sconto applicato
-            3. **Amazon Fees**:
-                - Referral Fee: Commissione basata sulla categoria del prodotto
-                - Digital Services Tax: 3% sulla Referral Fee
-                - FBA Fee (opzionale): Stimata in base alla categoria del prodotto
-                - Fee Fissa (opzionale): €0.99 per ogni vendita
-            4. **Costi di Spedizione**: Costi fissi per unità specificati nelle impostazioni
-            5. **Profitto Netto**: Prezzo Netto - Costi Amazon - Costo di Acquisto - Spedizione
-            
-            L'app calcola automaticamente tutte queste componenti per identificare le migliori opportunità di arbitraggio.
-            """)
-        
-        with st.expander("Consigli per ottimizzare le analisi"):
-            st.markdown("""
-            **Suggerimenti per trovare le migliori opportunità:**
-            
-            1. **Utilizzare i filtri** per concentrarsi su prodotti con margini e ROI più alti
-            2. **Confrontare più mercati** per identificare le migliori destinazioni per specifiche categorie
-            3. **Considerare il volume potenziale** oltre al margine unitario
-            4. **Analizzare regolarmente** per catturare opportunità temporanee
-            5. **Iniziare con prodotti noti** per ridurre i rischi nelle prime operazioni
-            
-            Ricorda che i calcoli sono basati sui prezzi attuali, che potrebbero cambiare rapidamente su Amazon.
-            """)
-        
-        # Footer
-        st.markdown("---")
-        st.markdown('<div class="footer">Amazon Market Analyzer Pro - Versione 2.0</div>', unsafe_allow_html=True)
 else:
     # Welcome screen when no results are available
-    st.markdown('<h2 class="sub-header">Benvenuto in Amazon Market Analyzer Pro</h2>', unsafe_allow_html=True)
+    st.markdown('<div class="subheader">Benvenuto in Amazon Market Analyzer</div>', unsafe_allow_html=True)
     
     st.markdown("""
     ### 🚀 Inizia la tua analisi di arbitraggio cross-border su Amazon!
@@ -1538,7 +1042,7 @@ else:
     3. **Ottieni risultati dettagliati**:
        - Prodotti con le migliori opportunità di arbitraggio
        - Calcoli precisi di costi e profitti
-       - Visualizzazioni e grafici esplicativi
+       - Analisi dettagliate per prodotto
     
     #### I file devono includere:
     - Colonna **ASIN** (obbligatoria)
@@ -1548,26 +1052,8 @@ else:
     **Compatibile con file CSV ed Excel (.csv, .xlsx)**
     """)
     
-    # Sample files section
+    # Footer
     st.markdown("---")
-    st.markdown("### 📊 Esempio di File Compatibili")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        **Esempio di colonne necessarie:**
-        - ASIN
-        - Title
-        - Buy Box: Current
-        - Amazon: Current
-        - New: Current
-        - Categories: Root
-        
-        I file devono essere in formato CSV o Excel.
-        """)
-    
-    with col2:
-        st.image("https://m.media-amazon.com/images/G/01/sell/images/Capture-tools-Seller-app-2._CB1198675309_.png", width=300)
+    st.markdown("Amazon Market Analyzer - Versione 1.0")
 
 # End of the application
