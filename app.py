@@ -332,6 +332,28 @@ with st.sidebar:
             accept_multiple_files=True
         )
     
+    # Pulsante per estrarre ASIN dopo caricamento dei file
+    if files_base:
+        extract_asins_btn = st.button("Estrai ASIN dai file di origine", use_container_width=True)
+        
+        if extract_asins_btn:
+            with st.spinner("Estrazione ASIN in corso..."):
+                # Carica e combina i file base solo per estrarre gli ASIN
+                base_files_data = [load_data(f) for f in files_base if load_data(f) is not None and not load_data(f).empty]
+                
+                if not base_files_data:
+                    st.error("Nessun file di origine valido caricato.")
+                else:
+                    df_base_asins = pd.concat(base_files_data, ignore_index=True)
+                    
+                    if "ASIN" not in df_base_asins.columns:
+                        st.error("La colonna ASIN non è presente nei file di origine.")
+                    else:
+                        # Estrai gli ASIN
+                        asins_list = df_base_asins["ASIN"].dropna().unique().tolist()
+                        st.session_state['base_asins'] = asins_list
+                        st.success(f"Estratti {len(asins_list)} ASIN unici.")
+    
     with st.expander("Configurazione Prezzi", expanded=True):
         ref_price_base = st.selectbox(
             "Prezzo di riferimento (Origine)",
@@ -368,6 +390,54 @@ with st.sidebar:
         )
     
     calcola_btn = st.button("Calcola Opportunity Score", use_container_width=True)
+
+# Mostra la sezione ASIN se sono stati estratti
+if 'base_asins' in st.session_state and st.session_state['base_asins']:
+    with st.expander("📑 ASIN Estratti dai File di Origine", expanded=True):
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        
+        asins = st.session_state['base_asins']
+        st.markdown(f"**{len(asins)} ASIN unici estratti**")
+        
+        # Opzioni di formattazione
+        format_options = st.radio(
+            "Formato visualizzazione:",
+            ["Uno per riga", "Separati da virgola", "Separati da tab", "Formato JSON"],
+            horizontal=True
+        )
+        
+        if format_options == "Uno per riga":
+            formatted_asins = "\n".join(asins)
+        elif format_options == "Separati da virgola":
+            formatted_asins = ", ".join(asins)
+        elif format_options == "Separati da tab":
+            formatted_asins = "\t".join(asins)
+        elif format_options == "Formato JSON":
+            import json
+            formatted_asins = json.dumps(asins)
+        
+        # Mostra gli ASIN nel formato scelto
+        st.markdown(f"<div class='asin-list'>{formatted_asins}</div>", unsafe_allow_html=True)
+        
+        # Pulsanti per copiare e scaricare
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                label="📋 Copia ASIN",
+                data=formatted_asins,
+                file_name=f"asin_list.txt",
+                mime="text/plain",
+            )
+        with col2:
+            st.download_button(
+                label="💾 Scarica ASIN",
+                data=formatted_asins,
+                file_name=f"asin_list_{datetime.now().strftime('%Y%m%d')}.txt",
+                mime="text/plain",
+                key="download_asins"
+            )
+        
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # Funzione principale per l'elaborazione dei dati
 def process_data():
@@ -600,6 +670,8 @@ if st.session_state['processed_data'] is not None:
                 )
                 st.plotly_chart(fig, use_container_width=True)
             else:
+                st.plotly_chart(fig, use_container_width=True)
+            else:
                 st.warning("Nessuna opportunità positiva trovata per generare il grafico.")
             
             st.markdown("</div>", unsafe_allow_html=True)
@@ -659,62 +731,53 @@ if st.session_state['processed_data'] is not None:
             asins = st.session_state['base_asins']
             asins_text = "\n".join(asins)
             
-            # Visualizza la lista ASIN
-            st.markdown("**ASIN dalla Lista di Origine:**")
-            st.markdown(f"<div class='asin-list'>{asins_text}</div>", unsafe_allow_html=True)
-            
-            # Pulsante per copiare tutti gli ASIN
-            st.download_button(
-                label="📋 Copia tutti gli ASIN",
-                data="\n".join(asins),
-                file_name="asin_list.txt",
-                mime="text/plain",
-            )
-            
             # Opzione per filtrare gli ASIN
-            search_asin_filter = st.text_input("Filtra ASIN", "")
+            search_asin_filter = st.text_input("Filtra ASIN (nella tab)", "")
             if search_asin_filter:
                 filtered_asins = [asin for asin in asins if search_asin_filter.upper() in asin]
-                filtered_text = "\n".join(filtered_asins)
-                st.markdown("**ASIN filtrati:**")
-                st.markdown(f"<div class='asin-list'>{filtered_text}</div>", unsafe_allow_html=True)
-                
-                # Pulsante per copiare gli ASIN filtrati
-                st.download_button(
-                    label="📋 Copia ASIN filtrati",
-                    data="\n".join(filtered_asins),
-                    file_name="filtered_asin_list.txt",
-                    mime="text/plain",
-                    key="filtered_asins"
-                )
+                asins_for_display = filtered_asins
+            else:
+                asins_for_display = asins
             
-            # Opzione per formattare gli ASIN in diversi modi
-            format_options = st.selectbox(
+            # Opzione per formattazione
+            format_options = st.radio(
                 "Formato visualizzazione:",
-                ["Uno per riga", "Separati da virgola", "Separati da tab", "Formato JSON"]
+                ["Uno per riga", "Separati da virgola", "Separati da tab", "Formato JSON"],
+                horizontal=True
             )
             
             if format_options == "Uno per riga":
-                formatted_asins = "\n".join(asins)
+                formatted_asins = "\n".join(asins_for_display)
             elif format_options == "Separati da virgola":
-                formatted_asins = ", ".join(asins)
+                formatted_asins = ", ".join(asins_for_display)
             elif format_options == "Separati da tab":
-                formatted_asins = "\t".join(asins)
+                formatted_asins = "\t".join(asins_for_display)
             elif format_options == "Formato JSON":
                 import json
-                formatted_asins = json.dumps(asins)
+                formatted_asins = json.dumps(asins_for_display)
             
-            st.markdown("**ASIN nel formato selezionato:**")
+            # Visualizza gli ASIN
+            st.markdown(f"**{len(asins_for_display)} ASIN:**")
             st.markdown(f"<div class='asin-list'>{formatted_asins}</div>", unsafe_allow_html=True)
             
-            # Pulsante per copiare gli ASIN nel formato selezionato
-            st.download_button(
-                label=f"📋 Copia ASIN ({format_options})",
-                data=formatted_asins,
-                file_name=f"formatted_asin_list.txt",
-                mime="text/plain",
-                key="formatted_asins"
-            )
+            # Pulsanti per copiare e scaricare
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    label="📋 Copia ASIN",
+                    data=formatted_asins,
+                    file_name="asin_list.txt",
+                    mime="text/plain",
+                    key="copy_asin_tab"
+                )
+            with col2:
+                st.download_button(
+                    label="💾 Scarica ASIN",
+                    data=formatted_asins,
+                    file_name=f"asin_list_{datetime.now().strftime('%Y%m%d')}.txt",
+                    mime="text/plain",
+                    key="download_asin_tab"
+                )
             
             st.markdown("</div>", unsafe_allow_html=True)
         else:
@@ -733,21 +796,25 @@ else:
        - Lista di Origine: file CSV/Excel del mercato base (es. Amazon.it)
        - Liste di Confronto: file CSV/Excel dei mercati di confronto (es. Amazon.de, Amazon.fr)
     
-    2. **Configura i parametri**:
+    2. **Estrai ASIN** per l'analisi con Keepa o altri strumenti
+       - Utilizza il pulsante "Estrai ASIN" nella barra laterale
+       - Copia gli ASIN estratti per ottenere le liste di confronto
+    
+    3. **Configura i parametri**:
        - Seleziona i prezzi di riferimento per origine e confronto
        - Imposta lo sconto per gli acquisti
        - Definisci il costo di spedizione
        - Stabilisci il margine minimo desiderato
     
-    3. **Calcola le opportunità** e visualizza i risultati.
+    4. **Calcola le opportunità** e visualizza i risultati.
     
     #### Funzionalità principali:
     
+    - **Estrazione ASIN**: Ottieni facilmente la lista di ASIN dai file di origine
     - **Analisi Revenue Calculator**: Calcolo preciso di costi e margini secondo il modello ufficiale Amazon
     - **Opportunity Score**: Ranking intelligente delle migliori opportunità di arbitraggio
     - **Visualizzazioni grafiche**: Analisi visiva della distribuzione dei margini e delle opportunità
     - **Esportazione dati**: Scarica i risultati in formato CSV per ulteriori analisi
-    - **Gestione ASIN**: Visualizza e copia facilmente la lista degli ASIN per ulteriori analisi
     
     #### Tips per massimizzare i risultati:
     
@@ -813,6 +880,13 @@ with st.expander("❓ Domande Frequenti"):
     
     #### Cosa significa "Opportunity Score"?
     È un valore calcolato che combina la differenza di margine tra i mercati e il margine percentuale nel mercato di confronto. Un punteggio più alto indica un'opportunità di arbitraggio più vantaggiosa.
+    
+    #### Come utilizzo la funzione di estrazione ASIN?
+    1. Carica i file di origine
+    2. Clicca sul pulsante "Estrai ASIN dai file di origine"
+    3. Copia gli ASIN estratti
+    4. Incollali in strumenti come Keepa per ottenere i dati degli altri marketplace
+    5. Scarica i risultati da Keepa e caricali come Liste di Confronto
     
     #### Posso aggiungere altri marketplace oltre a quelli predefiniti?
     Sì, puoi aggiungere altri marketplace europei nei file di input. Assicurati solo che il codice del marketplace (locale) sia corretto.
