@@ -71,13 +71,21 @@ st.markdown("""
         background-color: #e88e00;
     }
     .asin-list {
-        max-height: 300px;
+        max-height: 150px;
         overflow-y: auto;
         border: 1px solid #ddd;
         padding: 10px;
         background-color: #f5f5f5;
         border-radius: 5px;
         font-family: monospace;
+        color: #333;
+    }
+    .asin-header {
+        background-color: #232F3E;
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -100,12 +108,18 @@ if 'all_opportunities' not in st.session_state:
     st.session_state['all_opportunities'] = None
 
 # Inizializzazione degli stati per i widget
-if 'ref_price_type' not in st.session_state:
-    st.session_state['ref_price_type'] = "Buy Box: Current"
+if 'italy_price_type' not in st.session_state:
+    st.session_state['italy_price_type'] = "Buy Box: Current"
+if 'foreign_price_type' not in st.session_state:
+    st.session_state['foreign_price_type'] = "Amazon: Current"
+if 'sell_price_type' not in st.session_state:
+    st.session_state['sell_price_type'] = "Buy Box: Current"
 if 'discount_percent' not in st.session_state:
     st.session_state['discount_percent'] = 20.0
-if 'shipping_cost_rev' not in st.session_state:
-    st.session_state['shipping_cost_rev'] = 5.13
+if 'shipping_cost_italy' not in st.session_state:
+    st.session_state['shipping_cost_italy'] = 5.13
+if 'shipping_cost_europe' not in st.session_state:
+    st.session_state['shipping_cost_europe'] = 8.50
 if 'min_margin_percent' not in st.session_state:
     st.session_state['min_margin_percent'] = 10.0
 
@@ -400,10 +414,26 @@ with st.sidebar:
                     st.info(f"Marketplace {locale.upper()}: {len(df)} prodotti")
     
     with st.expander("Configurazione Prezzi", expanded=True):
-        ref_price_type = st.selectbox(
-            "Prezzo di riferimento",
+        # Per acquisti dall'Italia
+        st.subheader("Prezzi di acquisto")
+        italy_price_type = st.selectbox(
+            "Prezzo di riferimento per acquisti dall'Italia",
+            ["Buy Box: Current", "Amazon: Current"],
+            key="italy_price_type"
+        )
+        
+        # Per acquisti dall'estero
+        foreign_price_type = st.selectbox(
+            "Prezzo di riferimento per acquisti dall'estero",
+            ["Amazon: Current"],
+            key="foreign_price_type"
+        )
+        
+        # Per vendita (uguale per tutti)
+        sell_price_type = st.selectbox(
+            "Prezzo di riferimento per vendita",
             ["Buy Box: Current", "Amazon: Current", "New: Current"],
-            key="ref_price_type"
+            key="sell_price_type"
         )
     
     with st.expander("Parametri Finanziari", expanded=True):
@@ -417,13 +447,23 @@ with st.sidebar:
         )
         discount = discount_percent / 100.0
         
-        shipping_cost_rev = st.number_input(
-            "Costo di Spedizione (€)",
-            min_value=0.0,
-            value=5.13,
-            step=0.1,
-            key="shipping_cost_rev"
-        )
+        col1, col2 = st.columns(2)
+        with col1:
+            shipping_cost_italy = st.number_input(
+                "Costo di Spedizione Italia (€)",
+                min_value=0.0,
+                value=5.13,
+                step=0.1,
+                key="shipping_cost_italy"
+            )
+        with col2:
+            shipping_cost_europe = st.number_input(
+                "Costo di Spedizione Europa (€)",
+                min_value=0.0,
+                value=8.50,
+                step=0.1,
+                key="shipping_cost_europe"
+            )
         
         min_margin_percent = st.slider(
             "Margine minimo (%)",
@@ -438,16 +478,19 @@ with st.sidebar:
 
 # Mostra ASIN estratti se disponibili
 if 'all_asins' in st.session_state and st.session_state['all_asins']:
-    with st.expander("📑 ASIN Estratti", expanded=True):
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
+    with st.expander("📑 ASIN Estratti", expanded=False):
+        st.markdown(f"""
+        <div class="asin-header">
+            <strong>{len(st.session_state['all_asins'])} ASIN unici estratti</strong>
+        </div>
+        """, unsafe_allow_html=True)
         
         asins = st.session_state['all_asins']
-        st.markdown(f"**{len(asins)} ASIN unici estratti**")
         
         # Opzioni di formattazione
         format_options = st.radio(
             "Formato visualizzazione:",
-            ["Uno per riga", "Separati da virgola", "Separati da tab", "Formato JSON"],
+            ["Uno per riga", "Separati da virgola", "Separati da tab"],
             horizontal=True
         )
         
@@ -457,22 +500,40 @@ if 'all_asins' in st.session_state and st.session_state['all_asins']:
             formatted_asins = ", ".join(asins)
         elif format_options == "Separati da tab":
             formatted_asins = "\t".join(asins)
-        elif format_options == "Formato JSON":
-            import json
-            formatted_asins = json.dumps(asins)
         
-        # Mostra gli ASIN nel formato scelto
-        st.markdown(f"<div class='asin-list'>{formatted_asins}</div>", unsafe_allow_html=True)
+        # Mostra gli ASIN nel formato scelto in un box più piccolo
+        st.markdown(f"""
+        <div class="asin-list">
+            <pre style="margin: 0; white-space: pre-wrap;">{formatted_asins}</pre>
+        </div>
+        """, unsafe_allow_html=True)
         
         # Pulsanti per copiare e scaricare
         col1, col2 = st.columns(2)
+        
+        # Aggiungere JavaScript per copiare negli appunti
+        js_code = f"""
+        <script>
+        function copyToClipboard() {{
+            const text = `{formatted_asins}`;
+            navigator.clipboard.writeText(text).then(() => {{
+                // Feedback visivo
+                const button = document.getElementById('copy-button');
+                button.textContent = '✓ Copiato!';
+                setTimeout(() => {{
+                    button.textContent = '📋 Copia negli appunti';
+                }}, 2000);
+            }});
+        }}
+        </script>
+        <button id="copy-button" onclick="copyToClipboard()" style="background-color: #FF9900; color: white; border: none; border-radius: 4px; padding: 0.5rem 1rem; cursor: pointer; width: 100%;">
+            📋 Copia negli appunti
+        </button>
+        """
+        
         with col1:
-            st.download_button(
-                label="📋 Copia ASIN",
-                data=formatted_asins,
-                file_name=f"asin_list.txt",
-                mime="text/plain",
-            )
+            st.components.v1.html(js_code, height=50)
+            
         with col2:
             st.download_button(
                 label="💾 Scarica ASIN",
@@ -481,8 +542,6 @@ if 'all_asins' in st.session_state and st.session_state['all_asins']:
                 mime="text/plain",
                 key="download_asins"
             )
-        
-        st.markdown("</div>", unsafe_allow_html=True)
 
 # Funzione principale per l'elaborazione dei dati
 def process_arbitrage_opportunities():
@@ -495,7 +554,6 @@ def process_arbitrage_opportunities():
     
     # Lista di opportunità
     all_opportunities = []
-    price_col = ref_price_type  # Usa il tipo di prezzo selezionato
     
     # Itera su tutte le coppie di marketplace (source, target)
     for source_locale, source_df in st.session_state['marketplace_data'].items():
@@ -503,6 +561,15 @@ def process_arbitrage_opportunities():
             # Salta se source e target sono lo stesso marketplace
             if source_locale == target_locale:
                 continue
+            
+            # Determina il tipo di prezzo corretto per l'acquisto in base al locale
+            if source_locale.lower() == "it":
+                source_price_col = italy_price_type
+            else:
+                source_price_col = foreign_price_type
+                
+            # Tipo di prezzo per la vendita è sempre lo stesso
+            target_price_col = sell_price_type
             
             # Crea un DataFrame con i prodotti presenti in entrambi i marketplace
             # Prima standardizziamo i dati
@@ -514,13 +581,13 @@ def process_arbitrage_opportunities():
                 continue
                 
             # Prepara i prezzi
-            if price_col in source_df_clean.columns:
-                source_df_clean["Price"] = source_df_clean[price_col].apply(parse_float)
+            if source_price_col in source_df_clean.columns:
+                source_df_clean["Price"] = source_df_clean[source_price_col].apply(parse_float)
             else:
                 continue
                 
-            if price_col in target_df_clean.columns:
-                target_df_clean["Price"] = target_df_clean[price_col].apply(parse_float)
+            if target_price_col in target_df_clean.columns:
+                target_df_clean["Price"] = target_df_clean[target_price_col].apply(parse_float)
             else:
                 continue
             
@@ -552,13 +619,16 @@ def process_arbitrage_opportunities():
             for _, row in merged_df.iterrows():
                 category = row.get("Categories: Root", "Altri prodotti")
                 
+                # Determina il costo di spedizione in base al marketplace
+                shipping_cost = shipping_cost_italy if row["Locale_target"].lower() == "it" else shipping_cost_europe
+                
                 # Calcola il margine di tenere il prodotto nello stesso marketplace (source)
                 source_metrics = rev_calc_revenue_metrics(
                     row["Price_source"],
                     row["Buy_Price"],
                     category,
                     row["Locale_source"],
-                    shipping_cost_rev,
+                    shipping_cost,
                     IVA_RATES
                 )
                 
@@ -568,7 +638,7 @@ def process_arbitrage_opportunities():
                     row["Buy_Price"],
                     category,
                     row["Locale_target"],
-                    shipping_cost_rev,
+                    shipping_cost,
                     IVA_RATES
                 )
                 
@@ -586,14 +656,17 @@ def process_arbitrage_opportunities():
                     "Source_Marketplace": row["Locale_source"].upper(),
                     "Target_Marketplace": row["Locale_target"].upper(),
                     "Source_Price": row["Price_source"],
+                    "Source_Price_Type": source_price_col,
                     "Target_Price": row["Price_target"],
+                    "Target_Price_Type": target_price_col,
                     "Buy_Price": row["Buy_Price"],
                     "Category": category,
                     "Source_Margin": source_metrics["Margine_Netto"],
                     "Source_Margin_Pct": source_metrics["Margine_Percentuale"],
                     "Target_Margin": target_metrics["Margine_Netto"],
                     "Target_Margin_Pct": target_metrics["Margine_Percentuale"],
-                    "Opportunity_Score": opportunity_score
+                    "Opportunity_Score": opportunity_score,
+                    "Shipping_Cost": shipping_cost
                 }
                 
                 opportunities.append(opportunity)
@@ -711,8 +784,8 @@ if 'all_opportunities' in st.session_state and st.session_state['all_opportuniti
                     
                     with col2:
                         st.markdown(f"**{row['Title']}**")
-                        source_info = f"🛒 Acquista da: {row['Source_Marketplace']} → €{row['Source_Price']:.2f} (Acquisto netto: €{row['Buy_Price']:.2f})"
-                        target_info = f"💰 Vendi su: {row['Target_Marketplace']} → €{row['Target_Price']:.2f} (Margine: {row['Target_Margin_Pct']:.2f}%)"
+                        source_info = f"🛒 Acquista da: {row['Source_Marketplace']} → €{row['Source_Price']:.2f} ({row['Source_Price_Type']}, Acquisto netto: €{row['Buy_Price']:.2f})"
+                        target_info = f"💰 Vendi su: {row['Target_Marketplace']} → €{row['Target_Price']:.2f} ({row['Target_Price_Type']}, Margine: {row['Target_Margin_Pct']:.2f}%)"
                         diff_info = f"📈 Differenza margine: €{(row['Target_Margin'] - row['Source_Margin']):.2f}"
                         
                         st.markdown(source_info)
@@ -847,9 +920,9 @@ else:
        - Dopo aver caricato i file, vedrai una lista completa di ASIN che puoi usare con Keepa o altri strumenti
     
     3. **Configura i parametri**:
-       - Seleziona il tipo di prezzo di riferimento (Buy Box, Amazon, ecc.)
+       - Seleziona i prezzi di riferimento per acquisti da Italia e dall'estero
        - Imposta lo sconto per gli acquisti
-       - Definisci il costo di spedizione
+       - Definisci i costi di spedizione per Italia ed Europa
        - Stabilisci il margine minimo desiderato
     
     4. **Calcola le opportunità** di arbitraggio tra tutti i possibili marketplace.
@@ -857,8 +930,8 @@ else:
     #### Cosa rende unica questa app:
     
     - **Analisi multi-direzionale**: Confronta tutte le combinazioni di marketplace, non solo da un mercato base verso altri
-    - **Flessibilità totale**: Puoi analizzare qualsiasi combinazione di marketplace (IT→DE, DE→FR, FR→IT, ecc.)
-    - **Visualizzazioni avanzate**: Analisi grafiche dettagliate per identificare i pattern più redditizi
+    - **Flessibilità nei prezzi**: Usa prezzi di Buy Box per l'Italia e prezzi Amazon per l'estero
+    - **Costi di spedizione differenziati**: Calcola i costi in base alla destinazione (Italia o altri paesi UE)
     - **Revenue Calculator preciso**: Calcoli basati sul modello ufficiale Amazon con IVA e commissioni specifiche per paese
     
     #### Tips per massimizzare i risultati:
@@ -879,7 +952,9 @@ else:
         
         - **ASIN**: codice prodotto Amazon (obbligatorio)
         - **Title**: titolo del prodotto
-        - **Buy Box: Current** o **Amazon: Current** o **New: Current**: almeno uno di questi prezzi
+        - **Buy Box: Current**: prezzo attuale nella Buy Box (per acquisti in Italia)
+        - **Amazon: Current**: prezzo attuale di Amazon (per acquisti dall'estero)
+        - **New: Current**: prezzo attuale del prodotto nuovo (opzionale)
         - **Locale**: codice del marketplace (it, de, fr, es, ecc.) - opzionale, può essere rilevato dal nome file
         - **Categories: Root**: categoria principale del prodotto (opzionale, ma utile per calcoli più precisi)
         
@@ -909,8 +984,11 @@ with st.expander("❓ Domande Frequenti"):
     2. Controllando la colonna "Locale" nel file, se presente
     Se non riesce a rilevare il marketplace, usa "it" (Italia) come default.
     
-    #### Posso confrontare più di due marketplace?
-    Sì, puoi caricare file di quanti marketplace desideri. L'app analizzerà tutte le combinazioni possibili di acquisto/vendita tra tutti i marketplace.
+    #### Perché ci sono prezzi diversi per Italia ed estero?
+    Per l'Italia, puoi acquistare sia dai venditori nella Buy Box che direttamente da Amazon. Per gli acquisti dall'estero, è più affidabile comprare solo direttamente da Amazon, quindi l'opzione è limitata a "Amazon: Current".
+    
+    #### Perché ci sono due costi di spedizione?
+    Le spedizioni verso l'Italia e verso altri paesi europei hanno costi diversi. Specificando entrambi i valori, ottieni calcoli di margine più precisi a seconda del marketplace di destinazione.
     
     #### Come vengono calcolate le commissioni Amazon?
     Le commissioni vengono calcolate in base alla categoria del prodotto, con percentuali che vanno dal 7% al 15%. Utilizziamo le stesse formule del Revenue Calculator ufficiale di Amazon, inclusa l'imposta sui servizi digitali del 3%.
@@ -920,9 +998,6 @@ with st.expander("❓ Domande Frequenti"):
     
     #### Cosa significa "Opportunity Score"?
     È un valore calcolato che combina la differenza di margine tra i mercati e il margine percentuale nel mercato target. Un punteggio più alto indica un'opportunità di arbitraggio più vantaggiosa.
-    
-    #### L'app considera i costi di spedizione internazionale?
-    Sì, puoi impostare un costo di spedizione che verrà incluso nel calcolo del margine. Per un calcolo più preciso, potresti voler regolare questo valore in base alle tue specifiche di spedizione tra paesi.
     """)
 
 # Aggiungi una sezione per i calcoli dettagliati
@@ -1033,13 +1108,15 @@ with st.expander("🔍 Analisi dettagliata per ASIN"):
                         st.markdown(f"Score: {row['Opportunity_Score']:.2f}")
                     
                     with col2:
-                        buy_info = f"🛒 Acquista a €{row['Source_Price']:.2f} (Netto: €{row['Buy_Price']:.2f})"
-                        sell_info = f"💰 Vendi a €{row['Target_Price']:.2f}"
+                        buy_info = f"🛒 Acquista a €{row['Source_Price']:.2f} ({row['Source_Price_Type']}, Netto: €{row['Buy_Price']:.2f})"
+                        sell_info = f"💰 Vendi a €{row['Target_Price']:.2f} ({row['Target_Price_Type']})"
                         margin_info = f"📊 Margine: €{row['Target_Margin']:.2f} ({row['Target_Margin_Pct']:.2f}%)"
+                        shipping_info = f"🚚 Spedizione: €{row['Shipping_Cost']:.2f}"
                         
                         st.markdown(buy_info)
                         st.markdown(sell_info)
                         st.markdown(margin_info)
+                        st.markdown(shipping_info)
                 
                 st.markdown("---")
             
