@@ -18,50 +18,67 @@ import io
 from streamlit_extras.colored_header import colored_header
 from streamlit_extras.metric_cards import style_metric_cards
 
-# CSS personalizzato con contrasto migliorato per garantire visibilità del testo
+# CSS personalizzato per tema dark
 st.markdown("""
 <style>
+    /* Tema dark globale */
     .stApp {
-        background-color: #f5f7f9;
+        background-color: #121212;
+        color: #e0e0e0;
     }
+    
+    /* Sidebar dark */
+    [data-testid="stSidebar"] {
+        background-color: #1a1a1a;
+        border-right: 1px solid #333;
+    }
+    
+    /* Titoli e intestazioni */
     .main-header {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        color: #2c3e50; /* Colore scuro per il testo */
+        color: #e0e0e0;
         font-size: 2.5rem;
         padding-bottom: 1rem;
-        border-bottom: 2px solid #3498db;
+        border-bottom: 2px solid #0d6efd;
         margin-bottom: 1.5rem;
     }
     .subheader {
-        color: #34495e; /* Colore scuro per il testo */
+        color: #cccccc;
         font-size: 1.5rem;
         padding-top: 1rem;
     }
+    
+    /* Cards e contenitori */
     .card {
         border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         padding: 1.5rem;
-        background-color: white;
+        background-color: #1e1e1e;
         margin-bottom: 1rem;
-        color: #333; /* Colore testo scuro dentro le card */
+        color: #e0e0e0;
+        border: 1px solid #333;
     }
     .result-container {
-        background-color: white;
+        background-color: #1e1e1e;
         border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         padding: 1.5rem;
         margin-top: 2rem;
-        color: #333; /* Colore testo scuro nei container */
+        color: #e0e0e0;
+        border: 1px solid #333;
     }
     .filter-group {
-        background-color: #f8f9fa;
+        background-color: #252525;
         border-radius: 8px;
         padding: 1rem;
         margin-bottom: 1rem;
-        color: #333; /* Colore testo scuro nei filtri */
+        color: #e0e0e0;
+        border: 1px solid #333;
     }
+    
+    /* Pulsanti e interazioni */
     .stButton>button {
-        background-color: #3498db;
+        background-color: #0d6efd;
         color: white;
         border-radius: 6px;
         font-weight: 500;
@@ -69,61 +86,154 @@ st.markdown("""
         border: none;
     }
     .stButton>button:hover {
-        background-color: #2980b9;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        background-color: #0b5ed7;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
     }
+    
+    /* Tag colorati */
     .success-tag {
-        background-color: #2ecc71;
+        background-color: #198754;
         color: white;
         padding: 0.2rem 0.5rem;
         border-radius: 5px;
         font-size: 0.8rem;
     }
     .warning-tag {
-        background-color: #f39c12;
+        background-color: #fd7e14;
         color: white;
         padding: 0.2rem 0.5rem;
         border-radius: 5px;
         font-size: 0.8rem;
     }
     .danger-tag {
-        background-color: #e74c3c;
+        background-color: #dc3545;
         color: white;
         padding: 0.2rem 0.5rem;
         border-radius: 5px;
         font-size: 0.8rem;
     }
-    /* Aggiunta regole per il testo normale */
-    p, div, span, label, .stMarkdown {
-        color: #333 !important; /* Colore testo scuro ovunque come fallback */
+    
+    /* Input e form controls */
+    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
+        background-color: #333;
+        color: #e0e0e0;
+        border: 1px solid #444;
     }
-    /* Miglioramento contrasto nelle schede */
+    .stTextInput>label, .stSelectbox>label, .stNumberInput>label, .stSlider>label {
+        color: #cccccc !important;
+    }
+    
+    /* Slider */
+    .stSlider>div>div {
+        background-color: #444;
+    }
+    .stSlider>div>div>div>div {
+        background-color: #0d6efd;
+    }
+    
+    /* Testo generale */
+    p, span, div, td, th, label {
+        color: #e0e0e0 !important;
+    }
+    
+    /* Links */
+    a {
+        color: #0d6efd !important;
+    }
+    a:hover {
+        color: #0b5ed7 !important;
+        text-decoration: underline;
+    }
+    
+    /* Schede */
     .stTabs [data-baseweb="tab-panel"] {
-        background-color: white;
+        background-color: #1e1e1e;
         padding: 15px;
         border-radius: 0 0 10px 10px;
-        color: #333;
+        color: #e0e0e0;
+        border-left: 1px solid #333;
+        border-right: 1px solid #333;
+        border-bottom: 1px solid #333;
     }
     .stTabs [data-baseweb="tab"] {
-        background-color: #f0f2f5;
-        color: #2c3e50;
+        background-color: #252525;
+        color: #cccccc;
         border-radius: 5px 5px 0 0;
         margin-right: 2px;
+        border: 1px solid #333;
     }
     .stTabs [aria-selected="true"] {
-        background-color: white;
-        border-top: 2px solid #3498db;
+        background-color: #1e1e1e;
+        border-top: 2px solid #0d6efd;
+        border-bottom: none;
+        color: #e0e0e0;
     }
-    /* Miglioramento stile tabelle */
+    
+    /* DataFrames e tabelle */
     .stDataFrame {
-        border: 1px solid #eee;
+        border: 1px solid #333;
     }
     .stDataFrame th {
-        background-color: #eef2f5;
-        color: #2c3e50;
+        background-color: #252525 !important;
+        color: #e0e0e0 !important;
+        border-bottom: 1px solid #444 !important;
     }
     .stDataFrame td {
-        color: #333;
+        color: #e0e0e0 !important;
+        background-color: #1e1e1e !important;
+        border-bottom: 1px solid #333 !important;
+    }
+    .css-o1jpvw {
+        color: #e0e0e0 !important;
+    }
+    
+    /* Area di testo e input multilinea */
+    .stTextArea>div>div>textarea {
+        background-color: #333;
+        color: #e0e0e0;
+        border: 1px solid #444;
+    }
+    
+    /* Metriche */
+    [data-testid="stMetricValue"] {
+        background-color: #252525;
+        color: #e0e0e0 !important;
+        padding: 10px;
+        border-radius: 5px;
+        font-weight: bold;
+        border: 1px solid #333;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #aaaaaa !important;
+    }
+    [data-testid="stMetricDelta"] {
+        color: #0d6efd !important;
+    }
+    
+    /* Expander */
+    .streamlit-expanderHeader {
+        background-color: #252525 !important;
+        color: #e0e0e0 !important;
+        border: 1px solid #333 !important;
+    }
+    .streamlit-expanderContent {
+        background-color: #1e1e1e !important;
+        color: #e0e0e0 !important;
+        border: 1px solid #333 !important;
+    }
+    
+    /* File uploader */
+    [data-testid="stFileUploader"] {
+        background-color: #252525 !important;
+        border: 1px dashed #444 !important;
+    }
+    [data-testid="stFileUploader"] div {
+        color: #cccccc !important;
+    }
+    
+    /* Divisori */
+    hr {
+        border-color: #333 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -526,24 +636,52 @@ if avvia:
             with col4:
                 st.metric("Opportunity Score Massimo", f"{df_finale['Opportunity_Score'].max():.2f}")
             
+            # Configura i colori per il tema dark in Altair
+            dark_colors = {
+                "Eccellente": "#2ecc71",
+                "Buona": "#27ae60",
+                "Discreta": "#f39c12",
+                "Bassa": "#e74c3c"
+            }
+            dark_theme = {
+                "config": {
+                    "background": "#1e1e1e",
+                    "axis": {
+                        "labelColor": "#e0e0e0",
+                        "titleColor": "#e0e0e0",
+                        "gridColor": "#333333"
+                    },
+                    "legend": {
+                        "labelColor": "#e0e0e0",
+                        "titleColor": "#e0e0e0"
+                    },
+                    "title": {
+                        "color": "#e0e0e0"
+                    },
+                    "view": {
+                        "stroke": "#333333"
+                    }
+                }
+            }
+            
             # Grafico di distribuzione degli Opportunity Score
             st.subheader("Distribuzione Opportunity Score")
-            hist = alt.Chart(df_finale.reset_index()).mark_bar().encode(
+            hist = alt.Chart(df_finale.reset_index(), theme=dark_theme).mark_bar().encode(
                 alt.X("Opportunity_Score:Q", bin=alt.Bin(maxbins=20), title="Opportunity Score"),
                 alt.Y("count()", title="Numero di Prodotti"),
                 color=alt.Color("Opportunity_Class:N", 
-                               scale=alt.Scale(domain=["Eccellente", "Buona", "Discreta", "Bassa"],
-                                              range=["#2ecc71", "#27ae60", "#f39c12", "#e74c3c"]))
+                               scale=alt.Scale(domain=list(dark_colors.keys()),
+                                              range=list(dark_colors.values())))
             ).properties(height=250)
             st.altair_chart(hist, use_container_width=True)
             
             # Grafico Scatter: Margine (%) vs Opportunity Score con dimensione per Volume
             st.subheader("Analisi Multifattoriale")
-            chart = alt.Chart(df_finale.reset_index()).mark_circle().encode(
+            chart = alt.Chart(df_finale.reset_index(), theme=dark_theme).mark_circle().encode(
                 x=alt.X("Margine_%:Q", title="Margine (%)"),
                 y=alt.Y("Opportunity_Score:Q", title="Opportunity Score"),
                 size=alt.Size("Volume_Score:Q", title="Volume Stimato", scale=alt.Scale(range=[20, 200])),
-                color=alt.Color("Locale (comp):N", title="Mercato Confronto"),
+                color=alt.Color("Locale (comp):N", title="Mercato Confronto", scale=alt.Scale(scheme='category10')),
                 tooltip=["Title (base)", "ASIN", "Margine_%", "Margine_Stimato", "SalesRank_Comp", "Opportunity_Score", "Trend"]
             ).interactive()
             st.altair_chart(chart, use_container_width=True)
@@ -562,7 +700,7 @@ if avvia:
                 st.dataframe(market_analysis, use_container_width=True)
                 
                 # Grafico a barre per confronto mercati
-                market_chart = alt.Chart(market_analysis).mark_bar().encode(
+                market_chart = alt.Chart(market_analysis, theme=dark_theme).mark_bar().encode(
                     x="Mercato:N",
                     y="Opportunity Score Medio:Q",
                     color=alt.Color("Mercato:N", scale=alt.Scale(scheme='category10')),
@@ -635,16 +773,16 @@ if avvia:
             
             # Visualizzazione dei risultati filtrati
             if not filtered_df.empty:
-                # Formato personalizzato per la tabella dei risultati
+                # Formato personalizzato per la tabella dei risultati in tema dark
                 def highlight_opportunity(val):
                     if val == "Eccellente":
-                        return 'background-color: #d5f5e3; color: #27ae60; font-weight: bold'
+                        return 'background-color: #153d2e; color: #2ecc71; font-weight: bold'
                     elif val == "Buona":
-                        return 'background-color: #eafaf1; color: #2ecc71; font-weight: bold'
+                        return 'background-color: #14432d; color: #27ae60; font-weight: bold'
                     elif val == "Discreta":
-                        return 'background-color: #fef9e7; color: #f39c12; font-weight: bold'
+                        return 'background-color: #402d10; color: #f39c12; font-weight: bold'
                     else:
-                        return 'background-color: #fdedec; color: #e74c3c'
+                        return 'background-color: #3d1a15; color: #e74c3c; font-weight: bold'
                 
                 # Aggiungi la formattazione HTML per le classi di opportunity
                 def format_with_html(df):
@@ -778,7 +916,7 @@ with st.expander("ℹ️ Come funziona l'Opportunity Score"):
 
 # Footer
 st.markdown("""
-<div style="text-align: center; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ddd; color: #666;">
+<div style="text-align: center; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333; color: #aaa;">
     Amazon Market Analyzer - Arbitraggio Multi-Mercato © 2025<br>
     Versione 2.0
 </div>
