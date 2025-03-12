@@ -655,24 +655,22 @@ if st.session_state['processed_data'] is not None:
                 else:
                     st.warning("Dati insufficienti per generare il grafico.")
             
-            # Grafico istogramma delle opportunità
-            df_plot = filtered_data.dropna(subset=["Opportunity_Score"])
-            df_plot = df_plot[df_plot["Opportunity_Score"] > 0]
-            
-            if not df_plot.empty:
-                fig = px.histogram(
-                    df_plot,
-                    x="Opportunity_Score",
-                    color="Locale (comp)",
-                    nbins=20,
-                    title="Distribuzione delle Opportunità",
-                    labels={"Opportunity_Score": "Punteggio di Opportunità", "count": "Numero di Prodotti"}
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("Nessuna opportunità positiva trovata per generare il grafico.")
+          # Grafico istogramma delle opportunità
+df_plot = filtered_data.dropna(subset=["Opportunity_Score"])
+df_plot = df_plot[df_plot["Opportunity_Score"] > 0]
+
+if not df_plot.empty:
+    fig = px.histogram(
+        df_plot,
+        x="Opportunity_Score",
+        color="Locale (comp)",
+        nbins=20,
+        title="Distribuzione delle Opportunità",
+        labels={"Opportunity_Score": "Punteggio di Opportunità", "count": "Numero di Prodotti"}
+    )
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("Nessuna opportunità positiva trovata per generare il grafico.")
             
             st.markdown("</div>", unsafe_allow_html=True)
         else:
