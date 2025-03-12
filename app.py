@@ -3,11 +3,11 @@ import pandas as pd
 import numpy as np
 import re
 import altair as alt
+import io
 from streamlit_extras.colored_header import colored_header
 from streamlit_extras.metric_cards import style_metric_cards
-import streamlit_shadcn_ui as ui
 
-# Tema e stile personalizzato
+# IMPORTANTE: st.set_page_config DEVE essere il primo comando Streamlit
 st.set_page_config(
     page_title="Amazon Market Analyzer - Arbitraggio Multi-Mercato",
     page_icon="🔎",
@@ -526,7 +526,6 @@ if avvia:
                 }).reset_index()
                 market_analysis.columns = ["Mercato", "Prodotti", "Margine Medio (%)", "Margine Medio (€)", "Opportunity Score Medio"]
                 market_analysis = market_analysis.round(2)
-                market_analysis = market_analysis.round(2)
                 st.dataframe(market_analysis, use_container_width=True)
                 
                 # Grafico a barre per confronto mercati
@@ -616,7 +615,7 @@ if avvia:
                 
                 # Aggiungi la formattazione HTML per le classi di opportunity
                 def format_with_html(df):
-                    styled = df.style.applymap(
+                    styled = df.style.map(  # Cambiato da applymap a map (deprecato)
                         lambda x: highlight_opportunity(x) if x in ["Eccellente", "Buona", "Discreta", "Bassa"] else '',
                         subset=["Opportunity_Class"]
                     )
