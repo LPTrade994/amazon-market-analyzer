@@ -1,5 +1,15 @@
-# Importazioni devono venire prima di qualsiasi comando Streamlit
 import streamlit as st
+
+# QUESTO DEVE ESSERE IL PRIMO COMANDO STREAMLIT
+# Prima di qualsiasi altra importazione che potrebbe contenere comandi Streamlit
+st.set_page_config(
+    page_title="Amazon Market Analyzer - Arbitraggio Multi-Mercato",
+    page_icon="🔎",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Ora possiamo importare altri moduli
 import pandas as pd
 import numpy as np
 import re
@@ -8,16 +18,7 @@ import io
 from streamlit_extras.colored_header import colored_header
 from streamlit_extras.metric_cards import style_metric_cards
 
-# QUESTO DEVE ESSERE IL PRIMO COMANDO STREAMLIT 
-# Non ci devono essere altri comandi st.* prima di questo
-st.set_page_config(
-    page_title="Amazon Market Analyzer - Arbitraggio Multi-Mercato",
-    page_icon="🔎",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# CSS personalizzato per migliorare l'aspetto
+# CSS personalizzato con contrasto migliorato per garantire visibilità del testo
 st.markdown("""
 <style>
     .stApp {
@@ -25,14 +26,14 @@ st.markdown("""
     }
     .main-header {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        color: #2c3e50;
+        color: #2c3e50; /* Colore scuro per il testo */
         font-size: 2.5rem;
         padding-bottom: 1rem;
         border-bottom: 2px solid #3498db;
         margin-bottom: 1.5rem;
     }
     .subheader {
-        color: #34495e;
+        color: #34495e; /* Colore scuro per il testo */
         font-size: 1.5rem;
         padding-top: 1rem;
     }
@@ -42,6 +43,7 @@ st.markdown("""
         padding: 1.5rem;
         background-color: white;
         margin-bottom: 1rem;
+        color: #333; /* Colore testo scuro dentro le card */
     }
     .result-container {
         background-color: white;
@@ -49,12 +51,14 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         padding: 1.5rem;
         margin-top: 2rem;
+        color: #333; /* Colore testo scuro nei container */
     }
     .filter-group {
         background-color: #f8f9fa;
         border-radius: 8px;
         padding: 1rem;
         margin-bottom: 1rem;
+        color: #333; /* Colore testo scuro nei filtri */
     }
     .stButton>button {
         background-color: #3498db;
@@ -88,6 +92,38 @@ st.markdown("""
         padding: 0.2rem 0.5rem;
         border-radius: 5px;
         font-size: 0.8rem;
+    }
+    /* Aggiunta regole per il testo normale */
+    p, div, span, label, .stMarkdown {
+        color: #333 !important; /* Colore testo scuro ovunque come fallback */
+    }
+    /* Miglioramento contrasto nelle schede */
+    .stTabs [data-baseweb="tab-panel"] {
+        background-color: white;
+        padding: 15px;
+        border-radius: 0 0 10px 10px;
+        color: #333;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #f0f2f5;
+        color: #2c3e50;
+        border-radius: 5px 5px 0 0;
+        margin-right: 2px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: white;
+        border-top: 2px solid #3498db;
+    }
+    /* Miglioramento stile tabelle */
+    .stDataFrame {
+        border: 1px solid #eee;
+    }
+    .stDataFrame th {
+        background-color: #eef2f5;
+        color: #2c3e50;
+    }
+    .stDataFrame td {
+        color: #333;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -409,15 +445,6 @@ if avvia:
     df_merged["Trend"] = df_merged["Trend_Bonus"].apply(format_trend)
     
     # NUOVA FORMULA per l'Opportunity Score
-    # Opportunity_Score = 
-    #   ε * Margine_% +
-    #   θ * Margine_Stimato +
-    #   β * log(1 + Bought_Comp) -
-    #   δ * min(NewOffer_Comp, 10) -  # cap su NewOffer_Comp
-    #   α * log(SalesRank_Comp + 1) +
-    #   ζ * Trend_Bonus +
-    #   γ * (1 / log(SalesRank_Comp + 10))  # nuovo fattore per volume vendite
-    
     # Normalizzazione rank per evitare divisioni per zero o valori negativi
     df_merged["Norm_Rank"] = np.log(df_merged["SalesRank_Comp"].fillna(999999) + 10)
     
