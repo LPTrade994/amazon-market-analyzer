@@ -5,6 +5,7 @@ import math
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+from itertools import permutations
 
 # Configurazione della pagina
 st.set_page_config(
@@ -89,10 +90,24 @@ if 'processed_data' not in st.session_state:
     st.session_state['processed_data'] = None
 if 'opportunity_scores' not in st.session_state:
     st.session_state['opportunity_scores'] = None
+if 'marketplace_data' not in st.session_state:
+    st.session_state['marketplace_data'] = {}
 if 'last_update' not in st.session_state:
     st.session_state['last_update'] = None
-if 'base_asins' not in st.session_state:
-    st.session_state['base_asins'] = None
+if 'all_asins' not in st.session_state:
+    st.session_state['all_asins'] = None
+if 'all_opportunities' not in st.session_state:
+    st.session_state['all_opportunities'] = None
+
+# Inizializzazione degli stati per i widget
+if 'ref_price_type' not in st.session_state:
+    st.session_state['ref_price_type'] = "Buy Box: Current"
+if 'discount_percent' not in st.session_state:
+    st.session_state['discount_percent'] = 20.0
+if 'shipping_cost_rev' not in st.session_state:
+    st.session_state['shipping_cost_rev'] = 5.13
+if 'min_margin_percent' not in st.session_state:
+    st.session_state['min_margin_percent'] = 10.0
 
 # Configurazione dei tassi IVA per mercato
 IVA_RATES = {
@@ -169,24 +184,22 @@ def parse_float(value):
     except:
         return np.nan
 
-def calc_final_purchase_price(row, discount, iva_rates):
+def calc_final_purchase_price(price, locale, discount, iva_rates):
     """
     Calcola il prezzo d'acquisto netto considerando lo sconto e l'IVA.
     Formula differente per mercato italiano rispetto agli altri.
     """
-    locale = row.get("Locale (base)", "it").lower()
-    gross_price = row["Price_Base"]
-    
-    if pd.isna(gross_price):
+    if pd.isna(price):
         return np.nan
     
+    locale = locale.lower()
     iva_rate = iva_rates.get(locale, 0.22)  # Default all'IVA italiana se non trovata
-    net_price = gross_price / (1 + iva_rate)
+    net_price = price / (1 + iva_rate)
     
     # Logica differente per l'Italia rispetto agli altri paesi
     if locale == "it":
         # Per Italia: lo sconto si applica al prezzo lordo, poi si toglie dal netto
-        discount_amount = gross_price * discount
+        discount_amount = price * discount
         final_price = net_price - discount_amount
     else:
         # Per altri paesi: lo sconto si applica direttamente al prezzo netto
@@ -232,76 +245,59 @@ def rev_calc_fees(category, price):
         "total_fees": total_fees
     }
 
-def rev_calc_revenue_metrics(row, shipping_cost_rev, market_type, iva_rates):
+def rev_calc_revenue_metrics(sell_price, purchase_price, category, locale, shipping_cost_rev, iva_rates):
     """
     Calcola le metriche di redditività per un prodotto.
     """
-    # Ottiene la categoria del prodotto
-    category = row.get("Categories: Root (base)", "Altri prodotti")
-    
-    # Ottiene il prezzo e la località in base al tipo di mercato (base o confronto)
-    if market_type == "base":
-        price = row["Price_Base"]
-        locale = row.get("Locale (base)", "it").lower()
-    else:
-        price = row["Price_Comp"]
-        locale = row.get("Locale (comp)", "de").lower()
-    
     # Se il prezzo non è disponibile, restituisce valori nulli
-    if pd.isna(price):
-        return pd.Series({
-            "Margine_Netto (€)": np.nan,
-            "Margine_Netto (%)": np.nan,
+    if pd.isna(sell_price) or pd.isna(purchase_price):
+        return {
+            "Margine_Netto": np.nan,
+            "Margine_Percentuale": np.nan,
             "Commissioni": np.nan,
             "Prezzo_Netto": np.nan
-        })
+        }
     
     # Ottiene l'aliquota IVA per la località
-    iva_rate = iva_rates.get(locale, 0.22)
+    iva_rate = iva_rates.get(locale.lower(), 0.22)
     
     # Calcola il prezzo al netto dell'IVA
-    price_net = price / (1 + iva_rate)
+    price_net = sell_price / (1 + iva_rate)
     
     # Calcola le commissioni
-    fees = rev_calc_fees(category, price)
+    fees = rev_calc_fees(category, sell_price)
     total_fees = fees["total_fees"]
     
     # Calcola i costi totali (commissioni + spedizione)
     total_costs = total_fees + shipping_cost_rev
     
-    # Ottiene il prezzo d'acquisto netto
-    purchase_net = row["Acquisto_Netto"]
-    
     # Calcola il margine netto
-    margin_net = price_net - total_costs - purchase_net
+    margin_net = price_net - total_costs - purchase_price
     
     # Calcola il margine in percentuale
-    margin_pct = (margin_net / price) * 100 if price != 0 else np.nan
+    margin_pct = (margin_net / sell_price) * 100 if sell_price != 0 else np.nan
     
-    return pd.Series({
-        "Margine_Netto (€)": round(margin_net, 2),
-        "Margine_Netto (%)": round(margin_pct, 2),
+    return {
+        "Margine_Netto": round(margin_net, 2),
+        "Margine_Percentuale": round(margin_pct, 2),
         "Commissioni": round(total_fees, 2),
         "Prezzo_Netto": round(price_net, 2)
-    })
+    }
 
-def calculate_opportunity_score(row):
+def calculate_opportunity_score(margin_source, margin_target, margin_pct_target):
     """
-    Calcola un punteggio di opportunità per ogni prodotto.
+    Calcola un punteggio di opportunità tra due mercati.
     """
     try:
-        margin_base = row["Margine_Netto (€)_Origine"]
-        margin_comp = row["Margine_Netto (€)_Confronto"]
-        
-        if pd.isna(margin_base) or pd.isna(margin_comp):
+        if pd.isna(margin_source) or pd.isna(margin_target):
             return 0
         
         # Calcola la differenza di margine tra i mercati
-        margin_diff = margin_comp - margin_base
+        margin_diff = margin_target - margin_source
         
         # Calcola il punteggio di opportunità
-        # Formula: Differenza di margine * Margine % nel mercato di confronto
-        opportunity_score = margin_diff * row["Margine_Netto (%)_Confronto"] / 100
+        # Formula: Differenza di margine * Margine % nel mercato target
+        opportunity_score = margin_diff * margin_pct_target / 100
         
         return round(opportunity_score, 2)
     except:
@@ -316,52 +312,98 @@ def extract_asins(df):
     
     return df["ASIN"].dropna().unique().tolist()
 
+def detect_locale_from_filename(filename):
+    """
+    Rileva il marketplace dal nome del file.
+    """
+    locale_markers = {
+        "it": ["it", "ita", "italy", "italia"],
+        "de": ["de", "deu", "germany", "germania"],
+        "fr": ["fr", "fra", "france", "francia"],
+        "es": ["es", "esp", "spain", "spagna"],
+        "uk": ["uk", "gbr", "united kingdom", "regno unito"],
+        "nl": ["nl", "nld", "netherlands", "paesi bassi"],
+        "pl": ["pl", "pol", "poland", "polonia"],
+        "se": ["se", "swe", "sweden", "svezia"]
+    }
+    
+    filename_lower = filename.lower()
+    
+    for locale, markers in locale_markers.items():
+        for marker in markers:
+            if marker in filename_lower:
+                return locale
+    
+    # Default a "it" se non rilevato
+    return "it"
+
 # Layout sidebar per i parametri di input
 with st.sidebar:
     st.markdown("<h2 style='color:#FF9900'>Impostazioni</h2>", unsafe_allow_html=True)
     
     with st.expander("Caricamento File", expanded=True):
-        files_base = st.file_uploader(
-            "Lista di Origine (Mercato Base)",
+        uploaded_files = st.file_uploader(
+            "Carica file dei marketplace (CSV/Excel)",
             type=["csv", "xlsx"],
-            accept_multiple_files=True
-        )
-        comparison_files = st.file_uploader(
-            "Liste di Confronto (Mercati di Confronto)",
-            type=["csv", "xlsx"],
-            accept_multiple_files=True
+            accept_multiple_files=True,
+            help="Carica uno o più file CSV/Excel contenenti dati di prodotti Amazon. Il sistema cercherà di rilevare automaticamente il marketplace dal nome del file."
         )
     
-    # Pulsante per estrarre ASIN dopo caricamento dei file
-    if files_base:
-        extract_asins_btn = st.button("Estrai ASIN dai file di origine", use_container_width=True)
+    if uploaded_files:
+        analyze_files_btn = st.button("Analizza i file caricati", use_container_width=True)
         
-        if extract_asins_btn:
-            with st.spinner("Estrazione ASIN in corso..."):
-                # Carica e combina i file base solo per estrarre gli ASIN
-                base_files_data = [load_data(f) for f in files_base if load_data(f) is not None and not load_data(f).empty]
+        if analyze_files_btn:
+            with st.spinner("Analisi dei file in corso..."):
+                marketplace_data = {}
+                all_asins = set()
                 
-                if not base_files_data:
-                    st.error("Nessun file di origine valido caricato.")
-                else:
-                    df_base_asins = pd.concat(base_files_data, ignore_index=True)
-                    
-                    if "ASIN" not in df_base_asins.columns:
-                        st.error("La colonna ASIN non è presente nei file di origine.")
-                    else:
-                        # Estrai gli ASIN
-                        asins_list = df_base_asins["ASIN"].dropna().unique().tolist()
-                        st.session_state['base_asins'] = asins_list
-                        st.success(f"Estratti {len(asins_list)} ASIN unici.")
+                for file in uploaded_files:
+                    df = load_data(file)
+                    if df is not None and not df.empty:
+                        # Rileva il marketplace dal nome del file
+                        detected_locale = detect_locale_from_filename(file.name)
+                        
+                        # Se c'è già una colonna Locale, usa quella
+                        if "Locale" in df.columns:
+                            # Verifica se tutti i valori sono uguali
+                            unique_locales = df["Locale"].dropna().unique()
+                            if len(unique_locales) == 1:
+                                locale = unique_locales[0].lower()
+                            else:
+                                locale = detected_locale
+                        else:
+                            locale = detected_locale
+                        
+                        # Aggiunge la colonna Locale se non esiste
+                        if "Locale" not in df.columns:
+                            df["Locale"] = locale
+                        
+                        # Estrai gli ASIN e aggiungi al set principale
+                        file_asins = extract_asins(df)
+                        all_asins.update(file_asins)
+                        
+                        # Prepara i dati del marketplace
+                        if locale not in marketplace_data:
+                            marketplace_data[locale] = df
+                        else:
+                            # Concatena con i dati esistenti per quel marketplace
+                            marketplace_data[locale] = pd.concat([marketplace_data[locale], df], ignore_index=True)
+                
+                # Salva i dati nei session_state
+                st.session_state['marketplace_data'] = marketplace_data
+                st.session_state['all_asins'] = list(all_asins)
+                
+                # Mostra un riepilogo
+                st.success(f"Caricati dati per {len(marketplace_data)} marketplace con un totale di {len(all_asins)} ASIN unici.")
+                
+                for locale, df in marketplace_data.items():
+                    st.info(f"Marketplace {locale.upper()}: {len(df)} prodotti")
     
     with st.expander("Configurazione Prezzi", expanded=True):
-        ref_price_base = st.selectbox(
-            "Prezzo di riferimento (Origine)",
-            ["Buy Box: Current", "Amazon: Current", "New: Current"]
-        )
-        ref_price_comp = st.selectbox(
-            "Prezzo di riferimento (Confronto)",
-            ["Buy Box: Current", "Amazon: Current", "New: Current"]
+        ref_price_type = st.selectbox(
+            "Prezzo di riferimento",
+            ["Buy Box: Current", "Amazon: Current", "New: Current"],
+            key="ref_price_type"
         )
     
     with st.expander("Parametri Finanziari", expanded=True):
@@ -370,7 +412,8 @@ with st.sidebar:
             min_value=0.0,
             max_value=50.0,
             value=20.0,
-            step=0.5
+            step=0.5,
+            key="discount_percent"
         )
         discount = discount_percent / 100.0
         
@@ -378,7 +421,8 @@ with st.sidebar:
             "Costo di Spedizione (€)",
             min_value=0.0,
             value=5.13,
-            step=0.1
+            step=0.1,
+            key="shipping_cost_rev"
         )
         
         min_margin_percent = st.slider(
@@ -386,17 +430,18 @@ with st.sidebar:
             min_value=0.0,
             max_value=50.0,
             value=10.0,
-            step=1.0
+            step=1.0,
+            key="min_margin_percent"
         )
     
-    calcola_btn = st.button("Calcola Opportunity Score", use_container_width=True)
+    calcola_btn = st.button("Calcola Opportunità di Arbitraggio", use_container_width=True)
 
-# Mostra la sezione ASIN se sono stati estratti
-if 'base_asins' in st.session_state and st.session_state['base_asins']:
-    with st.expander("📑 ASIN Estratti dai File di Origine", expanded=True):
+# Mostra ASIN estratti se disponibili
+if 'all_asins' in st.session_state and st.session_state['all_asins']:
+    with st.expander("📑 ASIN Estratti", expanded=True):
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         
-        asins = st.session_state['base_asins']
+        asins = st.session_state['all_asins']
         st.markdown(f"**{len(asins)} ASIN unici estratti**")
         
         # Opzioni di formattazione
@@ -440,117 +485,178 @@ if 'base_asins' in st.session_state and st.session_state['base_asins']:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # Funzione principale per l'elaborazione dei dati
-def process_data():
-    if not files_base or not comparison_files:
-        st.warning("Carica almeno un file per la Lista di Origine e uno per le Liste di Confronto.")
-        return None, None, None
+def process_arbitrage_opportunities():
+    """
+    Elabora tutte le possibili opportunità di arbitraggio tra i diversi marketplace.
+    """
+    if not st.session_state['marketplace_data'] or len(st.session_state['marketplace_data']) < 2:
+        st.warning("Carica dati per almeno due marketplace diversi per calcolare le opportunità di arbitraggio.")
+        return None
     
-    # Carica e combina i file base
-    base_list = [load_data(f) for f in files_base if load_data(f) is not None and not load_data(f).empty]
-    if not base_list:
-        st.error("Nessun file di origine valido caricato.")
-        return None, None, None
-    df_base = pd.concat(base_list, ignore_index=True)
+    # Lista di opportunità
+    all_opportunities = []
+    price_col = ref_price_type  # Usa il tipo di prezzo selezionato
     
-    # Estrai gli ASIN dal file base
-    base_asins = extract_asins(df_base)
+    # Itera su tutte le coppie di marketplace (source, target)
+    for source_locale, source_df in st.session_state['marketplace_data'].items():
+        for target_locale, target_df in st.session_state['marketplace_data'].items():
+            # Salta se source e target sono lo stesso marketplace
+            if source_locale == target_locale:
+                continue
+            
+            # Crea un DataFrame con i prodotti presenti in entrambi i marketplace
+            # Prima standardizziamo i dati
+            source_df_clean = source_df.copy()
+            target_df_clean = target_df.copy()
+            
+            # Assicurati che entrambi abbiano la colonna ASIN
+            if "ASIN" not in source_df_clean.columns or "ASIN" not in target_df_clean.columns:
+                continue
+                
+            # Prepara i prezzi
+            if price_col in source_df_clean.columns:
+                source_df_clean["Price"] = source_df_clean[price_col].apply(parse_float)
+            else:
+                continue
+                
+            if price_col in target_df_clean.columns:
+                target_df_clean["Price"] = target_df_clean[price_col].apply(parse_float)
+            else:
+                continue
+            
+            # Merge sui prodotti comuni
+            merged_df = pd.merge(
+                source_df_clean[["ASIN", "Title", "Price", "Locale", "Categories: Root"]],
+                target_df_clean[["ASIN", "Price", "Locale"]],
+                on="ASIN",
+                suffixes=("_source", "_target")
+            )
+            
+            if merged_df.empty:
+                continue
+            
+            # Calcola i prezzi di acquisto netti
+            merged_df["Buy_Price"] = merged_df.apply(
+                lambda row: calc_final_purchase_price(
+                    row["Price_source"], 
+                    row["Locale_source"], 
+                    discount, 
+                    IVA_RATES
+                ), 
+                axis=1
+            )
+            
+            # Calcola le metriche per ogni prodotto
+            opportunities = []
+            
+            for _, row in merged_df.iterrows():
+                category = row.get("Categories: Root", "Altri prodotti")
+                
+                # Calcola il margine di tenere il prodotto nello stesso marketplace (source)
+                source_metrics = rev_calc_revenue_metrics(
+                    row["Price_source"],
+                    row["Buy_Price"],
+                    category,
+                    row["Locale_source"],
+                    shipping_cost_rev,
+                    IVA_RATES
+                )
+                
+                # Calcola il margine di vendere il prodotto nel marketplace target
+                target_metrics = rev_calc_revenue_metrics(
+                    row["Price_target"],
+                    row["Buy_Price"],
+                    category,
+                    row["Locale_target"],
+                    shipping_cost_rev,
+                    IVA_RATES
+                )
+                
+                # Calcola l'opportunity score
+                opportunity_score = calculate_opportunity_score(
+                    source_metrics["Margine_Netto"],
+                    target_metrics["Margine_Netto"],
+                    target_metrics["Margine_Percentuale"]
+                )
+                
+                # Crea un dict con i dati dell'opportunità
+                opportunity = {
+                    "ASIN": row["ASIN"],
+                    "Title": row["Title"],
+                    "Source_Marketplace": row["Locale_source"].upper(),
+                    "Target_Marketplace": row["Locale_target"].upper(),
+                    "Source_Price": row["Price_source"],
+                    "Target_Price": row["Price_target"],
+                    "Buy_Price": row["Buy_Price"],
+                    "Category": category,
+                    "Source_Margin": source_metrics["Margine_Netto"],
+                    "Source_Margin_Pct": source_metrics["Margine_Percentuale"],
+                    "Target_Margin": target_metrics["Margine_Netto"],
+                    "Target_Margin_Pct": target_metrics["Margine_Percentuale"],
+                    "Opportunity_Score": opportunity_score
+                }
+                
+                opportunities.append(opportunity)
+            
+            # Aggiungi le opportunità alla lista principale
+            all_opportunities.extend(opportunities)
     
-    # Carica e combina i file di confronto
-    comp_list = [load_data(f) for f in comparison_files if load_data(f) is not None and not load_data(f).empty]
-    if not comp_list:
-        st.error("Nessun file di confronto valido caricato.")
-        return None, None, base_asins
-    df_comp = pd.concat(comp_list, ignore_index=True)
-    
-    # Verifica la presenza della colonna ASIN
-    if "ASIN" not in df_base.columns or "ASIN" not in df_comp.columns:
-        st.error("Assicurati che entrambi i file contengano la colonna ASIN.")
-        return None, None, base_asins
-    
-    # Unisci i dataset sulla base degli ASIN
-    df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner", suffixes=(" (base)", " (comp)"))
-    if df_merged.empty:
-        st.error("Nessuna corrispondenza trovata tra la Lista di Origine e le Liste di Confronto.")
-        return None, None, base_asins
-    
-    # Estrai e prepara le colonne dei prezzi
-    price_col_base = f"{ref_price_base} (base)"
-    price_col_comp = f"{ref_price_comp} (comp)"
-    df_merged["Price_Base"] = df_merged.get(price_col_base, pd.Series(np.nan)).apply(parse_float)
-    df_merged["Price_Comp"] = df_merged.get(price_col_comp, pd.Series(np.nan)).apply(parse_float)
-    
-    # Calcola il prezzo d'acquisto netto
-    df_merged["Acquisto_Netto"] = df_merged.apply(
-        lambda row: calc_final_purchase_price(row, discount, IVA_RATES), 
-        axis=1
-    )
-    
-    # Calcola le metriche di revenue per il mercato base
-    df_revenue_base = df_merged.apply(
-        lambda row: rev_calc_revenue_metrics(row, shipping_cost_rev, "base", IVA_RATES), 
-        axis=1
-    )
-    df_revenue_base = df_revenue_base.add_suffix("_Origine")
-    
-    # Calcola le metriche di revenue per il mercato di confronto
-    df_revenue_comp = df_merged.apply(
-        lambda row: rev_calc_revenue_metrics(row, shipping_cost_rev, "comp", IVA_RATES), 
-        axis=1
-    )
-    df_revenue_comp = df_revenue_comp.add_suffix("_Confronto")
-    
-    # Crea il dataframe finale
-    df_finale = pd.concat([
-        df_merged[["Locale (base)", "Locale (comp)", "ASIN", "Title (base)", "Price_Base", "Price_Comp", "Acquisto_Netto"]],
-        df_revenue_base,
-        df_revenue_comp
-    ], axis=1)
-    
-    # Calcola l'opportunity score
-    df_finale["Opportunity_Score"] = df_finale.apply(calculate_opportunity_score, axis=1)
-    
-    # Filtra per opportunità positive
-    df_opportunities = df_finale[df_finale["Margine_Netto (%)_Confronto"] >= min_margin_percent].copy()
-    df_opportunities.sort_values("Opportunity_Score", ascending=False, inplace=True)
-    
-    return df_finale, df_opportunities, base_asins
+    # Converti in DataFrame
+    if all_opportunities:
+        df_opportunities = pd.DataFrame(all_opportunities)
+        
+        # Filtra per margine minimo
+        df_opportunities = df_opportunities[df_opportunities["Target_Margin_Pct"] >= min_margin_percent]
+        
+        # Ordina per opportunity score
+        df_opportunities.sort_values("Opportunity_Score", ascending=False, inplace=True)
+        
+        return df_opportunities
+    else:
+        return None
 
 # Esegui l'elaborazione quando il pulsante viene premuto
 if calcola_btn:
-    with st.spinner("Elaborazione in corso..."):
-        df_finale, df_opportunities, base_asins = process_data()
-        if df_finale is not None:
-            st.session_state['processed_data'] = df_finale
-            st.session_state['opportunity_scores'] = df_opportunities
-            st.session_state['base_asins'] = base_asins
+    with st.spinner("Calcolo delle opportunità in corso..."):
+        df_opportunities = process_arbitrage_opportunities()
+        if df_opportunities is not None and not df_opportunities.empty:
+            st.session_state['all_opportunities'] = df_opportunities
             st.session_state['last_update'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            st.success("Elaborazione completata!")
+            st.success(f"Trovate {len(df_opportunities)} opportunità di arbitraggio!")
+        else:
+            st.warning("Nessuna opportunità di arbitraggio trovata con i criteri specificati.")
 
 # Visualizza i risultati
-if st.session_state['processed_data'] is not None:
-    st.markdown("<h2 class='sub-header'>Risultati dell'Analisi</h2>", unsafe_allow_html=True)
+if 'all_opportunities' in st.session_state and st.session_state['all_opportunities'] is not None:
+    df_opps = st.session_state['all_opportunities']
+    
+    st.markdown("<h2 class='sub-header'>Opportunità di Arbitraggio</h2>", unsafe_allow_html=True)
     
     # Metriche principali
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
-        st.metric("Prodotti Analizzati", len(st.session_state['processed_data']))
+        st.metric("Opportunità Trovate", len(df_opps))
         st.markdown("</div>", unsafe_allow_html=True)
     
     with col2:
         st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
-        st.metric("Opportunità Trovate", len(st.session_state['opportunity_scores']) if st.session_state['opportunity_scores'] is not None else 0)
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
-        if st.session_state['opportunity_scores'] is not None and not st.session_state['opportunity_scores'].empty:
-            top_margin = st.session_state['opportunity_scores']["Margine_Netto (%)_Confronto"].max()
+        if not df_opps.empty:
+            top_margin = df_opps["Target_Margin_Pct"].max()
             top_margin_str = f"{top_margin:.2f}%" if not pd.isna(top_margin) else "N/A"
         else:
             top_margin_str = "N/A"
         st.metric("Miglior Margine", top_margin_str)
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
+        if not df_opps.empty:
+            marketplace_pairs = df_opps[["Source_Marketplace", "Target_Marketplace"]].value_counts().count()
+        else:
+            marketplace_pairs = 0
+        st.metric("Combinazioni Marketplace", marketplace_pairs)
         st.markdown("</div>", unsafe_allow_html=True)
     
     with col4:
@@ -559,36 +665,64 @@ if st.session_state['processed_data'] is not None:
         st.markdown("</div>", unsafe_allow_html=True)
     
     # Tabs per i diversi tipi di visualizzazione
-    tab1, tab2, tab3, tab4 = st.tabs(["🔝 Migliori Opportunità", "📊 Analisi Grafica", "📋 Tutti i Risultati", "📑 Lista ASIN"])
+    tab1, tab2, tab3 = st.tabs(["🔝 Migliori Opportunità", "📊 Analisi Grafica", "📋 Tutti i Risultati"])
     
     with tab1:
-        if st.session_state['opportunity_scores'] is not None and not st.session_state['opportunity_scores'].empty:
+        if not df_opps.empty:
             st.markdown("<div class='card'>", unsafe_allow_html=True)
+            
+            # Filtri per marketplace source e target
+            col1, col2 = st.columns(2)
+            with col1:
+                source_markets = sorted(df_opps["Source_Marketplace"].unique())
+                selected_sources = st.multiselect(
+                    "Filtra per Marketplace di Origine",
+                    options=source_markets,
+                    default=source_markets
+                )
+            
+            with col2:
+                target_markets = sorted(df_opps["Target_Marketplace"].unique())
+                selected_targets = st.multiselect(
+                    "Filtra per Marketplace di Destinazione",
+                    options=target_markets,
+                    default=target_markets
+                )
+            
+            # Applica filtri
+            filtered_opps = df_opps.copy()
+            if selected_sources:
+                filtered_opps = filtered_opps[filtered_opps["Source_Marketplace"].isin(selected_sources)]
+            if selected_targets:
+                filtered_opps = filtered_opps[filtered_opps["Target_Marketplace"].isin(selected_targets)]
+            
+            # Visualizza le top opportunità
             st.markdown("### Top Prodotti per Opportunità")
             
-            top_opportunities = st.session_state['opportunity_scores'].head(10)
+            top_opportunities = filtered_opps.head(10)
             
-            # Visualizzazione migliorata delle opportunità
             for index, row in top_opportunities.iterrows():
                 with st.container():
                     col1, col2 = st.columns([1, 3])
                     
                     with col1:
-                        st.markdown(f"**ASIN**: [{row['ASIN']}](https://www.amazon.{row['Locale (comp)']}/dp/{row['ASIN']})")
+                        st.markdown(f"**ASIN**: [{row['ASIN']}](https://www.amazon.{row['Target_Marketplace'].lower()}/dp/{row['ASIN']})")
                         st.markdown(f"**Score**: {row['Opportunity_Score']:.2f}")
                     
                     with col2:
-                        st.markdown(f"**{row['Title (base)']}**")
-                        origin_market = f"🏠 Origine ({row['Locale (base)'].upper()}): €{row['Price_Base']:.2f} → Margine: {row['Margine_Netto (%)_Origine']:.2f}%"
-                        dest_market = f"🚀 Destinazione ({row['Locale (comp)'].upper()}): €{row['Price_Comp']:.2f} → Margine: {row['Margine_Netto (%)_Confronto']:.2f}%"
+                        st.markdown(f"**{row['Title']}**")
+                        source_info = f"🛒 Acquista da: {row['Source_Marketplace']} → €{row['Source_Price']:.2f} (Acquisto netto: €{row['Buy_Price']:.2f})"
+                        target_info = f"💰 Vendi su: {row['Target_Marketplace']} → €{row['Target_Price']:.2f} (Margine: {row['Target_Margin_Pct']:.2f}%)"
+                        diff_info = f"📈 Differenza margine: €{(row['Target_Margin'] - row['Source_Margin']):.2f}"
                         
-                        st.markdown(origin_market)
-                        st.markdown(dest_market)
+                        st.markdown(source_info)
+                        st.markdown(target_info)
+                        st.markdown(diff_info)
                     
                     st.markdown("---")
             
             # Pulsante per scaricare i risultati
-            csv_data = st.session_state['opportunity_scores'].to_csv(index=False, sep=";").encode("utf-8")
+            csv_data = filtered_opps.to_csv(index=False, sep=";").encode("utf-8")
             st.download_button(
                 label="📥 Scarica Opportunità (CSV)",
                 data=csv_data,
@@ -601,83 +735,58 @@ if st.session_state['processed_data'] is not None:
             st.info("Nessuna opportunità trovata che soddisfi i criteri di margine minimo.")
     
     with tab2:
-        if st.session_state['processed_data'] is not None and not st.session_state['processed_data'].empty:
+        if not df_opps.empty:
             st.markdown("<div class='card'>", unsafe_allow_html=True)
             
-            # Filtro per mercato di destinazione
-            all_dest_markets = st.session_state['processed_data']["Locale (comp)"].unique()
-            selected_markets = st.multiselect(
-                "Filtra per Mercato di Destinazione",
-                options=all_dest_markets,
-                default=all_dest_markets
+            # Crea grafici informativi
+            # 1. Grafico a barre per il numero di opportunità per combinazione di marketplace
+            marketplace_counts = df_opps.groupby(["Source_Marketplace", "Target_Marketplace"]).size().reset_index(name="Count")
+            marketplace_counts["Market_Pair"] = marketplace_counts["Source_Marketplace"] + " → " + marketplace_counts["Target_Marketplace"]
+            
+            fig1 = px.bar(
+                marketplace_counts.sort_values("Count", ascending=False),
+                x="Market_Pair",
+                y="Count",
+                title="Numero di Opportunità per Combinazione di Marketplace",
+                labels={"Market_Pair": "Combinazione Marketplace", "Count": "Numero di Opportunità"},
+                color="Count",
+                color_continuous_scale="Blues"
             )
+            fig1.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig1, use_container_width=True)
             
-            filtered_data = st.session_state['processed_data']
-            if selected_markets:
-                filtered_data = filtered_data[filtered_data["Locale (comp)"].isin(selected_markets)]
+            # 2. Grafico a dispersione per Prezzo vs Margine
+            fig2 = px.scatter(
+                df_opps,
+                x="Target_Price",
+                y="Target_Margin_Pct",
+                color="Source_Marketplace",
+                hover_name="Title",
+                hover_data=["ASIN", "Target_Marketplace", "Opportunity_Score"],
+                title="Relazione tra Prezzo di Vendita e Margine",
+                labels={"Target_Price": "Prezzo di Vendita (€)", "Target_Margin_Pct": "Margine (%)"},
+                size="Opportunity_Score",
+                size_max=20
+            )
+            st.plotly_chart(fig2, use_container_width=True)
             
-            # Crea due grafici affiancati
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Grafico distribuzione margini per mercato
-                df_plot = filtered_data.dropna(subset=["Margine_Netto (%)_Confronto"])
-                
-                if not df_plot.empty:
-                    fig = px.box(
-                        df_plot,
-                        x="Locale (comp)",
-                        y="Margine_Netto (%)_Confronto",
-                        color="Locale (comp)",
-                        title="Distribuzione dei Margini per Mercato",
-                        labels={"Locale (comp)": "Mercato di Destinazione", "Margine_Netto (%)_Confronto": "Margine (%)"}
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning("Dati insufficienti per generare il grafico.")
-            
-            with col2:
-                # Grafico a dispersione Prezzo vs Margine
-                df_plot = filtered_data.dropna(subset=["Price_Comp", "Margine_Netto (%)_Confronto"])
-                
-                if not df_plot.empty:
-                    fig = px.scatter(
-                        df_plot,
-                        x="Price_Comp",
-                        y="Margine_Netto (%)_Confronto",
-                        color="Locale (comp)",
-                        hover_name="Title (base)",
-                        hover_data=["ASIN", "Opportunity_Score"],
-                        title="Relazione tra Prezzo e Margine",
-                        labels={"Price_Comp": "Prezzo di Vendita (€)", "Margine_Netto (%)_Confronto": "Margine (%)"}
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning("Dati insufficienti per generare il grafico.")
-            
-            # Grafico istogramma delle opportunità
-            df_plot = filtered_data.dropna(subset=["Opportunity_Score"])
-            df_plot = df_plot[df_plot["Opportunity_Score"] > 0]
-            
-            if not df_plot.empty:
-                fig = px.histogram(
-                    df_plot,
-                    x="Opportunity_Score",
-                    color="Locale (comp)",
-                    nbins=20,
-                    title="Distribuzione delle Opportunità",
-                    labels={"Opportunity_Score": "Punteggio di Opportunità", "count": "Numero di Prodotti"}
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("Nessuna opportunità positiva trovata per generare il grafico.")
+            # 3. Grafico a box per la distribuzione dei margini per marketplace di destinazione
+            fig3 = px.box(
+                df_opps,
+                x="Target_Marketplace",
+                y="Target_Margin_Pct",
+                color="Target_Marketplace",
+                title="Distribuzione dei Margini per Marketplace di Destinazione",
+                labels={"Target_Marketplace": "Marketplace di Destinazione", "Target_Margin_Pct": "Margine (%)"}
+            )
+            st.plotly_chart(fig3, use_container_width=True)
             
             st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.info("Nessun dato disponibile per l'analisi grafica.")
     
     with tab3:
-        if st.session_state['processed_data'] is not None and not st.session_state['processed_data'].empty:
+        if not df_opps.empty:
             st.markdown("<div class='card'>", unsafe_allow_html=True)
             st.markdown("### Tutti i Risultati")
             
@@ -688,21 +797,22 @@ if st.session_state['processed_data'] is not None:
             with col2:
                 max_price = st.number_input("Prezzo Max (€)", value=1000.0)
             with col3:
-                search_asin = st.text_input("Cerca ASIN", "")
+                search_asin = st.text_input("Cerca ASIN o Titolo", "")
             
             # Applica filtri
-            df_display = st.session_state['processed_data'].copy()
-            df_display = df_display[df_display["Price_Comp"] >= min_price]
-            df_display = df_display[df_display["Price_Comp"] <= max_price]
+            df_display = df_opps.copy()
+            df_display = df_display[df_display["Target_Price"] >= min_price]
+            df_display = df_display[df_display["Target_Price"] <= max_price]
             
             if search_asin:
-                df_display = df_display[df_display["ASIN"].str.contains(search_asin, case=False)]
+                df_display = df_display[(df_display["ASIN"].str.contains(search_asin, case=False)) | 
+                                       (df_display["Title"].str.contains(search_asin, case=False))]
             
             # Mostra l'intero dataframe con colori condizionali
             st.dataframe(
                 df_display.style.applymap(
                     lambda x: "color: green" if isinstance(x, (int, float)) and x > 0 else "color: red" if isinstance(x, (int, float)) and x < 0 else "",
-                    subset=["Margine_Netto (€)_Origine", "Margine_Netto (€)_Confronto", "Opportunity_Score"]
+                    subset=["Target_Margin", "Source_Margin", "Opportunity_Score"]
                 ),
                 height=600
             )
@@ -719,107 +829,44 @@ if st.session_state['processed_data'] is not None:
             st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.info("Nessun dato disponibile.")
-    
-    with tab4:
-        if st.session_state['base_asins'] is not None and len(st.session_state['base_asins']) > 0:
-            st.markdown("<div class='card'>", unsafe_allow_html=True)
-            st.markdown("### Lista ASIN")
-            
-            # Formatta la lista ASIN
-            asins = st.session_state['base_asins']
-            asins_text = "\n".join(asins)
-            
-            # Opzione per filtrare gli ASIN
-            search_asin_filter = st.text_input("Filtra ASIN (nella tab)", "")
-            if search_asin_filter:
-                filtered_asins = [asin for asin in asins if search_asin_filter.upper() in asin]
-                asins_for_display = filtered_asins
-            else:
-                asins_for_display = asins
-            
-            # Opzione per formattazione
-            format_options = st.radio(
-                "Formato visualizzazione:",
-                ["Uno per riga", "Separati da virgola", "Separati da tab", "Formato JSON"],
-                horizontal=True
-            )
-            
-            if format_options == "Uno per riga":
-                formatted_asins = "\n".join(asins_for_display)
-            elif format_options == "Separati da virgola":
-                formatted_asins = ", ".join(asins_for_display)
-            elif format_options == "Separati da tab":
-                formatted_asins = "\t".join(asins_for_display)
-            elif format_options == "Formato JSON":
-                import json
-                formatted_asins = json.dumps(asins_for_display)
-            
-            # Visualizza gli ASIN
-            st.markdown(f"**{len(asins_for_display)} ASIN:**")
-            st.markdown(f"<div class='asin-list'>{formatted_asins}</div>", unsafe_allow_html=True)
-            
-            # Pulsanti per copiare e scaricare
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button(
-                    label="📋 Copia ASIN",
-                    data=formatted_asins,
-                    file_name="asin_list.txt",
-                    mime="text/plain",
-                    key="copy_asin_tab"
-                )
-            with col2:
-                st.download_button(
-                    label="💾 Scarica ASIN",
-                    data=formatted_asins,
-                    file_name=f"asin_list_{datetime.now().strftime('%Y%m%d')}.txt",
-                    mime="text/plain",
-                    key="download_asin_tab"
-                )
-            
-            st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.info("Nessun ASIN disponibile. Carica prima i file di origine.")
 else:
     # Pagina iniziale quando non ci sono dati
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.markdown("""
     ### 👋 Benvenuto nell'Amazon European Marketplace Arbitrage Calculator!
     
-    Questa applicazione ti aiuta a identificare opportunità di arbitraggio tra i diversi marketplace Amazon europei.
+    Questa applicazione ti aiuta a identificare opportunità di arbitraggio tra tutti i marketplace Amazon europei, consentendoti di acquistare prodotti dove costano meno e venderli dove hanno prezzi più alti.
     
     #### Come utilizzare l'app:
     
     1. **Carica i file** nella barra laterale:
-       - Lista di Origine: file CSV/Excel del mercato base (es. Amazon.it)
-       - Liste di Confronto: file CSV/Excel dei mercati di confronto (es. Amazon.de, Amazon.fr)
+       - Carica file CSV/Excel di tutti i marketplace che vuoi analizzare
+       - Il sistema identificherà automaticamente il marketplace dal nome del file o dai dati interni
     
-    2. **Estrai ASIN** per l'analisi con Keepa o altri strumenti
-       - Utilizza il pulsante "Estrai ASIN" nella barra laterale
-       - Copia gli ASIN estratti per ottenere le liste di confronto
+    2. **Estrai ASIN** per ulteriori analisi
+       - Dopo aver caricato i file, vedrai una lista completa di ASIN che puoi usare con Keepa o altri strumenti
     
     3. **Configura i parametri**:
-       - Seleziona i prezzi di riferimento per origine e confronto
+       - Seleziona il tipo di prezzo di riferimento (Buy Box, Amazon, ecc.)
        - Imposta lo sconto per gli acquisti
        - Definisci il costo di spedizione
        - Stabilisci il margine minimo desiderato
     
-    4. **Calcola le opportunità** e visualizza i risultati.
+    4. **Calcola le opportunità** di arbitraggio tra tutti i possibili marketplace.
     
-    #### Funzionalità principali:
+    #### Cosa rende unica questa app:
     
-    - **Estrazione ASIN**: Ottieni facilmente la lista di ASIN dai file di origine
-    - **Analisi Revenue Calculator**: Calcolo preciso di costi e margini secondo il modello ufficiale Amazon
-    - **Opportunity Score**: Ranking intelligente delle migliori opportunità di arbitraggio
-    - **Visualizzazioni grafiche**: Analisi visiva della distribuzione dei margini e delle opportunità
-    - **Esportazione dati**: Scarica i risultati in formato CSV per ulteriori analisi
+    - **Analisi multi-direzionale**: Confronta tutte le combinazioni di marketplace, non solo da un mercato base verso altri
+    - **Flessibilità totale**: Puoi analizzare qualsiasi combinazione di marketplace (IT→DE, DE→FR, FR→IT, ecc.)
+    - **Visualizzazioni avanzate**: Analisi grafiche dettagliate per identificare i pattern più redditizi
+    - **Revenue Calculator preciso**: Calcoli basati sul modello ufficiale Amazon con IVA e commissioni specifiche per paese
     
     #### Tips per massimizzare i risultati:
     
-    - Usa i file più recenti dai marketplace Amazon
-    - Confronta lo stesso tipo di prezzo (es. Buy Box vs Buy Box)
-    - Considera i costi aggiuntivi per mercati specifici
-    - Filtra per un margine minimo adeguato per coprire i rischi
+    - Carica file recenti con prezzi aggiornati
+    - Assicurati che i file contengano la colonna ASIN e i prezzi nel formato corretto
+    - Considera i costi di spedizione internazionale per un calcolo più preciso
+    - Filtra per un margine minimo che copra i rischi dell'arbitraggio
     """)
     st.markdown("</div>", unsafe_allow_html=True)
     
@@ -830,15 +877,13 @@ else:
         
         I file CSV/Excel devono contenere almeno le seguenti colonne:
         
-        - **ASIN**: codice prodotto Amazon (obbligatorio per il matching)
+        - **ASIN**: codice prodotto Amazon (obbligatorio)
         - **Title**: titolo del prodotto
-        - **Buy Box: Current**: prezzo attuale nella Buy Box
-        - **Amazon: Current**: prezzo attuale di Amazon
-        - **New: Current**: prezzo attuale del prodotto nuovo
-        - **Locale**: codice del marketplace (it, de, fr, es, ecc.)
-        - **Categories: Root**: categoria principale del prodotto
+        - **Buy Box: Current** o **Amazon: Current** o **New: Current**: almeno uno di questi prezzi
+        - **Locale**: codice del marketplace (it, de, fr, es, ecc.) - opzionale, può essere rilevato dal nome file
+        - **Categories: Root**: categoria principale del prodotto (opzionale, ma utile per calcoli più precisi)
         
-        **Nota**: Puoi ottenere questi file utilizzando strumenti di scraping o API Amazon.
+        **Consiglio**: Includi nel nome del file un'indicazione del marketplace (es. "amazon_it.csv", "prodotti_de.xlsx") per facilitare il rilevamento automatico.
         """)
         
         # Mostra esempio di formato file
@@ -855,21 +900,18 @@ else:
         example_df = pd.DataFrame(example_data)
         st.dataframe(example_df)
 
-# Funzione Helper per applicare colori condizionali ai margini
-def color_negative_red(val):
-    """
-    Prende un valore scalare e restituisce un colore rosso se negativo, verde se positivo.
-    """
-    if isinstance(val, (int, float)) and not pd.isna(val):
-        if val < 0:
-            return 'color: red'
-        elif val > 0:
-            return 'color: green'
-    return ''
-
 # Aggiungi una sezione FAQ
 with st.expander("❓ Domande Frequenti"):
     st.markdown("""
+    #### Come funziona il rilevamento del marketplace?
+    L'app cerca di rilevare automaticamente il marketplace in due modi:
+    1. Cercando un codice paese nel nome del file (it, de, fr, ecc.)
+    2. Controllando la colonna "Locale" nel file, se presente
+    Se non riesce a rilevare il marketplace, usa "it" (Italia) come default.
+    
+    #### Posso confrontare più di due marketplace?
+    Sì, puoi caricare file di quanti marketplace desideri. L'app analizzerà tutte le combinazioni possibili di acquisto/vendita tra tutti i marketplace.
+    
     #### Come vengono calcolate le commissioni Amazon?
     Le commissioni vengono calcolate in base alla categoria del prodotto, con percentuali che vanno dal 7% al 15%. Utilizziamo le stesse formule del Revenue Calculator ufficiale di Amazon, inclusa l'imposta sui servizi digitali del 3%.
     
@@ -877,25 +919,10 @@ with st.expander("❓ Domande Frequenti"):
     Per i prodotti su Amazon.it, lo sconto viene applicato al prezzo lordo e poi sottratto dal prezzo netto. Per gli altri marketplace, lo sconto viene applicato direttamente al prezzo netto.
     
     #### Cosa significa "Opportunity Score"?
-    È un valore calcolato che combina la differenza di margine tra i mercati e il margine percentuale nel mercato di confronto. Un punteggio più alto indica un'opportunità di arbitraggio più vantaggiosa.
+    È un valore calcolato che combina la differenza di margine tra i mercati e il margine percentuale nel mercato target. Un punteggio più alto indica un'opportunità di arbitraggio più vantaggiosa.
     
-    #### Come utilizzo la funzione di estrazione ASIN?
-    1. Carica i file di origine
-    2. Clicca sul pulsante "Estrai ASIN dai file di origine"
-    3. Copia gli ASIN estratti
-    4. Incollali in strumenti come Keepa per ottenere i dati degli altri marketplace
-    5. Scarica i risultati da Keepa e caricali come Liste di Confronto
-    
-    #### Posso aggiungere altri marketplace oltre a quelli predefiniti?
-    Sì, puoi aggiungere altri marketplace europei nei file di input. Assicurati solo che il codice del marketplace (locale) sia corretto.
-    
-    #### Quali costi vengono considerati nel calcolo?
-    Vengono considerati:
-    - Prezzo d'acquisto (con sconto applicato)
-    - Commissioni Amazon per categoria
-    - Imposta sui servizi digitali
-    - Costi di spedizione
-    - IVA specifica per ogni marketplace
+    #### L'app considera i costi di spedizione internazionale?
+    Sì, puoi impostare un costo di spedizione che verrà incluso nel calcolo del margine. Per un calcolo più preciso, potresti voler regolare questo valore in base alle tue specifiche di spedizione tra paesi.
     """)
 
 # Aggiungi una sezione per i calcoli dettagliati
@@ -934,140 +961,101 @@ with st.expander("📝 Dettagli sui Calcoli"):
     
     #### Formula per l'Opportunity Score
     ```
-    differenza_margine = margine_confronto - margine_origine
-    opportunity_score = differenza_margine * (margine_percentuale_confronto / 100)
+    differenza_margine = margine_target - margine_source
+    opportunity_score = differenza_margine * (margine_percentuale_target / 100)
     ```
     """)
 
 # Aggiungi statistiche di utilizzo nella sidebar
-if 'processed_data' in st.session_state and st.session_state['processed_data'] is not None:
+if 'all_opportunities' in st.session_state and st.session_state['all_opportunities'] is not None:
     with st.sidebar:
         st.markdown("---")
         st.markdown("### 📊 Statistiche")
         
-        total_products = len(st.session_state['processed_data'])
-        opportunities_count = len(st.session_state['opportunity_scores']) if st.session_state['opportunity_scores'] is not None else 0
+        df_opps = st.session_state['all_opportunities']
         
-        st.markdown(f"**Prodotti analizzati:** {total_products}")
-        st.markdown(f"**Opportunità trovate:** {opportunities_count}")
+        st.markdown(f"**Opportunità analizzate:** {len(df_opps)}")
         
-        if opportunities_count > 0:
-            opportunity_rate = (opportunities_count / total_products) * 100
-            st.markdown(f"**Tasso di opportunità:** {opportunity_rate:.1f}%")
+        if not df_opps.empty:
+            # Migliori coppie di marketplace
+            market_pairs = df_opps.groupby(["Source_Marketplace", "Target_Marketplace"])["Opportunity_Score"].mean().sort_values(ascending=False)
             
-            # Mostra i mercati più profittevoli
-            if st.session_state['opportunity_scores'] is not None and not st.session_state['opportunity_scores'].empty:
-                market_stats = st.session_state['opportunity_scores'].groupby("Locale (comp)").agg({
-                    "Margine_Netto (%)_Confronto": "mean",
-                    "ASIN": "count"
-                }).rename(columns={"ASIN": "Count"})
+            st.markdown("**Migliori coppie di marketplace:**")
+            for (source, target), score in market_pairs.head(5).items():
+                st.markdown(f"- {source} → {target}: {score:.2f}")
+            
+            # Categorie più profittevoli
+            if "Category" in df_opps.columns:
+                top_categories = df_opps.groupby("Category")["Target_Margin_Pct"].mean().sort_values(ascending=False)
                 
-                st.markdown("**Mercati più profittevoli:**")
-                for locale, stats in market_stats.sort_values("Margine_Netto (%)_Confronto", ascending=False).iterrows():
-                    st.markdown(f"- {locale.upper()}: {stats['Margine_Netto (%)_Confronto']:.1f}% (n={stats['Count']})")
+                st.markdown("**Categorie più profittevoli:**")
+                for category, margin in top_categories.head(3).items():
+                    st.markdown(f"- {category}: {margin:.2f}%")
 
 # Aggiungi un footer
 st.markdown("""
 <div class="footer">
-    <p>Amazon EU Arbitrage Calculator v1.0</p>
-    <p>Sviluppato per l'arbitraggio tra marketplace Amazon europei</p>
+    <p>Amazon EU Multi-Marketplace Arbitrage Calculator v2.0</p>
+    <p>Sviluppato per l'arbitraggio tra tutti i marketplace Amazon europei</p>
     <p>Ultimo aggiornamento: Marzo 2025</p>
 </div>
 """, unsafe_allow_html=True)
 
 # Aggiungi funzionalità per visualizzare dettagli di un singolo prodotto
-if 'processed_data' in st.session_state and st.session_state['processed_data'] is not None:
-    with st.expander("🔍 Analisi dettagliata per ASIN"):
-        search_asin_detail = st.text_input("Inserisci ASIN da analizzare", "")
+with st.expander("🔍 Analisi dettagliata per ASIN"):
+    search_asin_detail = st.text_input("Inserisci ASIN da analizzare", "")
+    
+    if search_asin_detail and 'all_opportunities' in st.session_state and st.session_state['all_opportunities'] is not None:
+        df_opps = st.session_state['all_opportunities']
+        product_data = df_opps[df_opps["ASIN"] == search_asin_detail]
         
-        if search_asin_detail:
-            product_data = st.session_state['processed_data'][st.session_state['processed_data']["ASIN"] == search_asin_detail]
+        if not product_data.empty:
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
             
-            if not product_data.empty:
-                product = product_data.iloc[0]
-                
-                st.markdown(f"## {product['Title (base)']}")
-                st.markdown(f"**ASIN:** {product['ASIN']}")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown(f"### Mercato Origine: {product['Locale (base)'].upper()}")
-                    st.markdown(f"**Prezzo di vendita:** €{product['Price_Base']:.2f}")
-                    st.markdown(f"**Prezzo netto (IVA esclusa):** €{product['Prezzo_Netto_Origine']:.2f}")
-                    st.markdown(f"**Commissioni Amazon:** €{product['Commissioni_Origine']:.2f}")
-                    st.markdown(f"**Margine netto:** €{product['Margine_Netto (€)_Origine']:.2f}")
-                    st.markdown(f"**Margine percentuale:** {product['Margine_Netto (%)_Origine']:.2f}%")
-                
-                with col2:
-                    st.markdown(f"### Mercato Confronto: {product['Locale (comp)'].upper()}")
-                    st.markdown(f"**Prezzo di vendita:** €{product['Price_Comp']:.2f}")
-                    st.markdown(f"**Prezzo netto (IVA esclusa):** €{product['Prezzo_Netto_Confronto']:.2f}")
-                    st.markdown(f"**Commissioni Amazon:** €{product['Commissioni_Confronto']:.2f}")
-                    st.markdown(f"**Margine netto:** €{product['Margine_Netto (€)_Confronto']:.2f}")
-                    st.markdown(f"**Margine percentuale:** {product['Margine_Netto (%)_Confronto']:.2f}%")
+            # Prendi la prima riga per le informazioni generali
+            product = product_data.iloc[0]
+            
+            st.markdown(f"## {product['Title']}")
+            st.markdown(f"**ASIN:** {product['ASIN']}")
+            
+            # Mostra tutte le opportunità per questo ASIN
+            st.markdown("### Opportunità di arbitraggio per questo prodotto")
+            
+            # Ordina per opportunity score
+            product_data = product_data.sort_values("Opportunity_Score", ascending=False)
+            
+            for idx, row in product_data.iterrows():
+                with st.container():
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.markdown(f"**{row['Source_Marketplace']} → {row['Target_Marketplace']}**")
+                        st.markdown(f"Score: {row['Opportunity_Score']:.2f}")
+                    
+                    with col2:
+                        buy_info = f"🛒 Acquista a €{row['Source_Price']:.2f} (Netto: €{row['Buy_Price']:.2f})"
+                        sell_info = f"💰 Vendi a €{row['Target_Price']:.2f}"
+                        margin_info = f"📊 Margine: €{row['Target_Margin']:.2f} ({row['Target_Margin_Pct']:.2f}%)"
+                        
+                        st.markdown(buy_info)
+                        st.markdown(sell_info)
+                        st.markdown(margin_info)
                 
                 st.markdown("---")
-                st.markdown(f"**Prezzo d'acquisto netto:** €{product['Acquisto_Netto']:.2f}")
-                st.markdown(f"**Opportunity Score:** {product['Opportunity_Score']:.2f}")
-                
-                # Calcola e mostra la differenza di margine
-                margin_diff = product['Margine_Netto (€)_Confronto'] - product['Margine_Netto (€)_Origine']
-                margin_diff_pct = product['Margine_Netto (%)_Confronto'] - product['Margine_Netto (%)_Origine']
-                
-                st.markdown(f"**Differenza margine:** €{margin_diff:.2f} ({margin_diff_pct:.2f}%)")
-                
-                # Aggiungi link ad Amazon
-                st.markdown(f"[Vedi su Amazon.{product['Locale (base)'].lower()}](https://www.amazon.{product['Locale (base)'].lower()}/dp/{product['ASIN']})")
-                st.markdown(f"[Vedi su Amazon.{product['Locale (comp)'].lower()}](https://www.amazon.{product['Locale (comp)'].lower()}/dp/{product['ASIN']})")
-                
-                # Visualizza il breakdown dei costi in un grafico
-                data_origin = {
-                    'Componente': ['Prezzo Netto', 'IVA', 'Commissione', 'Imposta Servizi Digitali'],
-                    'Valore': [
-                        product['Prezzo_Netto_Origine'],
-                        product['Price_Base'] - product['Prezzo_Netto_Origine'],
-                        product['Commissioni_Origine'] * 0.97,  # Commissione esclusa imposta
-                        product['Commissioni_Origine'] * 0.03   # Imposta servizi digitali
-                    ]
-                }
-                
-                data_comp = {
-                    'Componente': ['Prezzo Netto', 'IVA', 'Commissione', 'Imposta Servizi Digitali'],
-                    'Valore': [
-                        product['Prezzo_Netto_Confronto'],
-                        product['Price_Comp'] - product['Prezzo_Netto_Confronto'],
-                        product['Commissioni_Confronto'] * 0.97,  # Commissione esclusa imposta
-                        product['Commissioni_Confronto'] * 0.03   # Imposta servizi digitali
-                    ]
-                }
-                
-                fig = go.Figure()
-                
-                fig.add_trace(go.Bar(
-                    name=f'Origine ({product["Locale (base)"].upper()})',
-                    x=data_origin['Componente'],
-                    y=data_origin['Valore'],
-                    marker_color='royalblue'
-                ))
-                
-                fig.add_trace(go.Bar(
-                    name=f'Confronto ({product["Locale (comp)"].upper()})',
-                    x=data_comp['Componente'],
-                    y=data_comp['Valore'],
-                    marker_color='indianred'
-                ))
-                
-                fig.update_layout(
-                    title='Breakdown dei Costi',
-                    xaxis_title='Componente',
-                    yaxis_title='Euro (€)',
-                    barmode='group'
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning(f"ASIN {search_asin_detail} non trovato nei dati analizzati.")
+            
+            # Aggiungi link ad Amazon per i vari marketplace
+            st.markdown("### Visualizza su Amazon")
+            
+            marketplace_links = []
+            for marketplace in product_data["Source_Marketplace"].unique():
+                marketplace_code = marketplace.lower()
+                marketplace_links.append(f"[Amazon {marketplace}](https://www.amazon.{marketplace_code}/dp/{product['ASIN']})")
+            
+            st.markdown(" | ".join(marketplace_links))
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.warning(f"ASIN {search_asin_detail} non trovato nei dati analizzati.")
 
 # Aggiungi un pulsante per ripristinare le impostazioni predefinite
 with st.sidebar:
@@ -1075,8 +1063,8 @@ with st.sidebar:
     reset_btn = st.button("Ripristina Impostazioni", use_container_width=True)
     
     if reset_btn:
-        st.session_state['processed_data'] = None
-        st.session_state['opportunity_scores'] = None
+        st.session_state['marketplace_data'] = {}
+        st.session_state['all_asins'] = None
+        st.session_state['all_opportunities'] = None
         st.session_state['last_update'] = None
-        st.session_state['base_asins'] = None
         st.experimental_rerun()
