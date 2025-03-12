@@ -69,6 +69,15 @@ st.markdown("""
     .stButton>button:hover {
         background-color: #e88e00;
     }
+    .asin-list {
+        max-height: 300px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        padding: 10px;
+        background-color: #f5f5f5;
+        border-radius: 5px;
+        font-family: monospace;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -82,6 +91,8 @@ if 'opportunity_scores' not in st.session_state:
     st.session_state['opportunity_scores'] = None
 if 'last_update' not in st.session_state:
     st.session_state['last_update'] = None
+if 'base_asins' not in st.session_state:
+    st.session_state['base_asins'] = None
 
 # Configurazione dei tassi IVA per mercato
 IVA_RATES = {
@@ -296,6 +307,15 @@ def calculate_opportunity_score(row):
     except:
         return 0
 
+def extract_asins(df):
+    """
+    Estrae e formatta gli ASIN da un DataFrame.
+    """
+    if df is None or "ASIN" not in df.columns:
+        return []
+    
+    return df["ASIN"].dropna().unique().tolist()
+
 # Layout sidebar per i parametri di input
 with st.sidebar:
     st.markdown("<h2 style='color:#FF9900'>Impostazioni</h2>", unsafe_allow_html=True)
@@ -353,32 +373,35 @@ with st.sidebar:
 def process_data():
     if not files_base or not comparison_files:
         st.warning("Carica almeno un file per la Lista di Origine e uno per le Liste di Confronto.")
-        return None, None
+        return None, None, None
     
     # Carica e combina i file base
     base_list = [load_data(f) for f in files_base if load_data(f) is not None and not load_data(f).empty]
     if not base_list:
         st.error("Nessun file di origine valido caricato.")
-        return None, None
+        return None, None, None
     df_base = pd.concat(base_list, ignore_index=True)
+    
+    # Estrai gli ASIN dal file base
+    base_asins = extract_asins(df_base)
     
     # Carica e combina i file di confronto
     comp_list = [load_data(f) for f in comparison_files if load_data(f) is not None and not load_data(f).empty]
     if not comp_list:
         st.error("Nessun file di confronto valido caricato.")
-        return None, None
+        return None, None, base_asins
     df_comp = pd.concat(comp_list, ignore_index=True)
     
     # Verifica la presenza della colonna ASIN
     if "ASIN" not in df_base.columns or "ASIN" not in df_comp.columns:
         st.error("Assicurati che entrambi i file contengano la colonna ASIN.")
-        return None, None
+        return None, None, base_asins
     
     # Unisci i dataset sulla base degli ASIN
     df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner", suffixes=(" (base)", " (comp)"))
     if df_merged.empty:
         st.error("Nessuna corrispondenza trovata tra la Lista di Origine e le Liste di Confronto.")
-        return None, None
+        return None, None, base_asins
     
     # Estrai e prepara le colonne dei prezzi
     price_col_base = f"{ref_price_base} (base)"
@@ -420,15 +443,16 @@ def process_data():
     df_opportunities = df_finale[df_finale["Margine_Netto (%)_Confronto"] >= min_margin_percent].copy()
     df_opportunities.sort_values("Opportunity_Score", ascending=False, inplace=True)
     
-    return df_finale, df_opportunities
+    return df_finale, df_opportunities, base_asins
 
 # Esegui l'elaborazione quando il pulsante viene premuto
 if calcola_btn:
     with st.spinner("Elaborazione in corso..."):
-        df_finale, df_opportunities = process_data()
+        df_finale, df_opportunities, base_asins = process_data()
         if df_finale is not None:
             st.session_state['processed_data'] = df_finale
             st.session_state['opportunity_scores'] = df_opportunities
+            st.session_state['base_asins'] = base_asins
             st.session_state['last_update'] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             st.success("Elaborazione completata!")
 
@@ -465,7 +489,7 @@ if st.session_state['processed_data'] is not None:
         st.markdown("</div>", unsafe_allow_html=True)
     
     # Tabs per i diversi tipi di visualizzazione
-    tab1, tab2, tab3 = st.tabs(["🔝 Migliori Opportunità", "📊 Analisi Grafica", "📋 Tutti i Risultati"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🔝 Migliori Opportunità", "📊 Analisi Grafica", "📋 Tutti i Risultati", "📑 Lista ASIN"])
     
     with tab1:
         if st.session_state['opportunity_scores'] is not None and not st.session_state['opportunity_scores'].empty:
@@ -625,7 +649,76 @@ if st.session_state['processed_data'] is not None:
             st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.info("Nessun dato disponibile.")
-
+    
+    with tab4:
+        if st.session_state['base_asins'] is not None and len(st.session_state['base_asins']) > 0:
+            st.markdown("<div class='card'>", unsafe_allow_html=True)
+            st.markdown("### Lista ASIN")
+            
+            # Formatta la lista ASIN
+            asins = st.session_state['base_asins']
+            asins_text = "\n".join(asins)
+            
+            # Visualizza la lista ASIN
+            st.markdown("**ASIN dalla Lista di Origine:**")
+            st.markdown(f"<div class='asin-list'>{asins_text}</div>", unsafe_allow_html=True)
+            
+            # Pulsante per copiare tutti gli ASIN
+            st.download_button(
+                label="📋 Copia tutti gli ASIN",
+                data="\n".join(asins),
+                file_name="asin_list.txt",
+                mime="text/plain",
+            )
+            
+            # Opzione per filtrare gli ASIN
+            search_asin_filter = st.text_input("Filtra ASIN", "")
+            if search_asin_filter:
+                filtered_asins = [asin for asin in asins if search_asin_filter.upper() in asin]
+                filtered_text = "\n".join(filtered_asins)
+                st.markdown("**ASIN filtrati:**")
+                st.markdown(f"<div class='asin-list'>{filtered_text}</div>", unsafe_allow_html=True)
+                
+                # Pulsante per copiare gli ASIN filtrati
+                st.download_button(
+                    label="📋 Copia ASIN filtrati",
+                    data="\n".join(filtered_asins),
+                    file_name="filtered_asin_list.txt",
+                    mime="text/plain",
+                    key="filtered_asins"
+                )
+            
+            # Opzione per formattare gli ASIN in diversi modi
+            format_options = st.selectbox(
+                "Formato visualizzazione:",
+                ["Uno per riga", "Separati da virgola", "Separati da tab", "Formato JSON"]
+            )
+            
+            if format_options == "Uno per riga":
+                formatted_asins = "\n".join(asins)
+            elif format_options == "Separati da virgola":
+                formatted_asins = ", ".join(asins)
+            elif format_options == "Separati da tab":
+                formatted_asins = "\t".join(asins)
+            elif format_options == "Formato JSON":
+                import json
+                formatted_asins = json.dumps(asins)
+            
+            st.markdown("**ASIN nel formato selezionato:**")
+            st.markdown(f"<div class='asin-list'>{formatted_asins}</div>", unsafe_allow_html=True)
+            
+            # Pulsante per copiare gli ASIN nel formato selezionato
+            st.download_button(
+                label=f"📋 Copia ASIN ({format_options})",
+                data=formatted_asins,
+                file_name=f"formatted_asin_list.txt",
+                mime="text/plain",
+                key="formatted_asins"
+            )
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info("Nessun ASIN disponibile. Carica prima i file di origine.")
 else:
     # Pagina iniziale quando non ci sono dati
     st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -654,8 +747,9 @@ else:
     - **Opportunity Score**: Ranking intelligente delle migliori opportunità di arbitraggio
     - **Visualizzazioni grafiche**: Analisi visiva della distribuzione dei margini e delle opportunità
     - **Esportazione dati**: Scarica i risultati in formato CSV per ulteriori analisi
-
-#### Tips per massimizzare i risultati:
+    - **Gestione ASIN**: Visualizza e copia facilmente la lista degli ASIN per ulteriori analisi
+    
+    #### Tips per massimizzare i risultati:
     
     - Usa i file più recenti dai marketplace Amazon
     - Confronta lo stesso tipo di prezzo (es. Buy Box vs Buy Box)
@@ -912,4 +1006,5 @@ with st.sidebar:
         st.session_state['processed_data'] = None
         st.session_state['opportunity_scores'] = None
         st.session_state['last_update'] = None
+        st.session_state['base_asins'] = None
         st.experimental_rerun()
