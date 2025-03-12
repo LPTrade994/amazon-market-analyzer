@@ -235,7 +235,64 @@ st.markdown("""
     hr {
         border-color: #333 !important;
     }
+
+    /* Tooltip per il bottone di copia */
+    .tooltip {
+        position: relative;
+        display: inline-block;
+    }
+    .tooltip .tooltiptext {
+        visibility: hidden;
+        width: 140px;
+        background-color: #555;
+        color: #fff;
+        text-align: center;
+        border-radius: 6px;
+        padding: 5px;
+        position: absolute;
+        z-index: 1;
+        bottom: 150%;
+        left: 50%;
+        margin-left: -75px;
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+    .tooltip .tooltiptext::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -5px;
+        border-width: 5px;
+        border-style: solid;
+        border-color: #555 transparent transparent transparent;
+    }
+    .tooltip:hover .tooltiptext {
+        visibility: visible;
+        opacity: 1;
+    }
 </style>
+
+<!-- Script JavaScript per la funzionalità di copia negli appunti -->
+<script>
+function copyToClipboard(text) {
+    const elem = document.createElement('textarea');
+    elem.value = text;
+    document.body.appendChild(elem);
+    elem.select();
+    document.execCommand('copy');
+    document.body.removeChild(elem);
+    
+    // Mostra il messaggio di feedback
+    const tooltip = document.getElementById("myTooltip");
+    tooltip.innerHTML = "Copiato!";
+}
+
+function outFunc() {
+    const tooltip = document.getElementById("myTooltip");
+    tooltip.innerHTML = "Copia negli appunti";
+}
+</script>
 """, unsafe_allow_html=True)
 
 # Inizializzazione delle "ricette" in session_state
@@ -464,7 +521,18 @@ with tab_main1:
                 st.success(f"Lista unificata di ASIN dalla Lista di Origine: {len(unique_asins)} prodotti")
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.text_area("Copia qui:", "\n".join(unique_asins), height=200)
+                    asin_text = "\n".join(unique_asins)
+                    st.text_area("Copia qui:", asin_text, height=200)
+                    
+                    # Aggiungiamo il pulsante per copiare tutti gli ASIN negli appunti
+                    st.markdown(f"""
+                    <button 
+                        onclick="navigator.clipboard.writeText(`{asin_text}`).then(() => alert('ASINs copiati negli appunti!'))" 
+                        style="background-color: #0d6efd; color: white; border: none; border-radius: 4px; padding: 8px 15px; cursor: pointer; margin-top: 5px;"
+                    >
+                        📋 Copia tutti gli ASIN negli appunti
+                    </button>
+                    """, unsafe_allow_html=True)
                 with col2:
                     st.metric("Totale ASIN", len(unique_asins))
                     if "Brand (base)" in df_base.columns:
@@ -849,54 +917,18 @@ if avvia:
                         "Volume_Score": "{:.2f}"
                     })
                 
-                # Visualizzazione dei risultati con paginazione
+                # Visualizzazione dei risultati - SENZA PAGINAZIONE
                 st.markdown(f"**{len(filtered_df)} prodotti trovati**")
-                results_per_page = st.select_slider("Risultati per pagina", options=[10, 25, 50, 100], value=25)
                 
-                # Imposta la paginazione
-                if 'page_number' not in st.session_state:
-                    st.session_state.page_number = 0
-                
-                def next_page():
-                    st.session_state.page_number += 1
-                
-                def prev_page():
-                    st.session_state.page_number -= 1
-                
-                total_pages = len(filtered_df) // results_per_page + (1 if len(filtered_df) % results_per_page != 0 else 0)
-                
-                # Assicuriamoci che la pagina corrente sia valida
-                if st.session_state.page_number >= total_pages:
-                    st.session_state.page_number = total_pages - 1
-                if st.session_state.page_number < 0:
-                    st.session_state.page_number = 0
-                
-                # Selezione delle colonne da visualizzare (rimozione di alcune colonne per chiarezza)
+                # Selezione delle colonne da visualizzare
                 display_cols = [col for col in filtered_df.columns if col not in ["Opportunity_Tag", "SalesRank_90d"]]
                 
-                # Calcola gli indici per la pagina corrente
-                start_idx = st.session_state.page_number * results_per_page
-                end_idx = min(start_idx + results_per_page, len(filtered_df))
-                
-                # Mostra la tabella paginata
+                # Mostra la tabella completa (senza paginazione)
                 st.dataframe(
-                    format_with_html(filtered_df[display_cols].iloc[start_idx:end_idx]),
-                    height=min(53 * results_per_page, 600),
+                    format_with_html(filtered_df[display_cols]),
+                    height=600,  # Altezza fissa per visualizzare più righe
                     use_container_width=True
                 )
-                
-                # Controlli di paginazione
-                col1, col2, col3 = st.columns([1, 2, 1])
-                with col1:
-                    if st.session_state.page_number > 0:
-                        st.button("⬅️ Precedente", on_click=prev_page)
-                
-                with col2:
-                    st.write(f"Pagina {st.session_state.page_number + 1} di {total_pages}")
-                
-                with col3:
-                    if st.session_state.page_number < total_pages - 1:
-                        st.button("Successiva ➡️", on_click=next_page)
                 
                 # Esportazione dati
                 csv_data = filtered_df.to_csv(index=False, sep=";").encode("utf-8")
