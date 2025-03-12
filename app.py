@@ -279,14 +279,39 @@ with st.sidebar:
     discount_percent = st.number_input("Sconto sugli acquisti (%)", min_value=0.0, value=st.session_state.get("discount_percent", 20.0), step=0.1, key="discount_percent")
     discount = discount_percent / 100.0  # convertiamo in frazione
     
-    # Aggiunta del selettore per l'IVA di riferimento per i mercati di confronto
+    # Aggiunta del selettore per l'IVA di riferimento per entrambi i mercati
     st.markdown("**IVA per calcolo del margine**")
-    iva_comp = st.selectbox(
-        "IVA mercato di confronto",
-        [("Italia", 22), ("Germania", 19), ("Francia", 20), ("Spagna", 21), ("Regno Unito", 20)],
-        format_func=lambda x: f"{x[0]} ({x[1]}%)"
-    )
-    iva_comp_rate = iva_comp[1] / 100.0
+    
+    # Paesi e le loro aliquote IVA
+    paesi_iva = [
+        ("Italia", 22), 
+        ("Germania", 19), 
+        ("Francia", 20), 
+        ("Spagna", 21), 
+        ("Regno Unito", 20)
+    ]
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Mercato Origine**")
+        iva_base = st.selectbox(
+            "IVA mercato origine",
+            paesi_iva,
+            format_func=lambda x: f"{x[0]} ({x[1]}%)",
+            key="iva_base"
+        )
+        iva_base_rate = iva_base[1] / 100.0
+    
+    with col2:
+        st.markdown("**Mercato Confronto**")
+        iva_comp = st.selectbox(
+            "IVA mercato confronto",
+            paesi_iva,
+            format_func=lambda x: f"{x[0]} ({x[1]}%)",
+            key="iva_comp"
+        )
+        iva_comp_rate = iva_comp[1] / 100.0
     
     colored_header(label="📈 Opportunity Score", description="Pesi e parametri", color_name="blue-70")
     
@@ -325,6 +350,15 @@ with st.sidebar:
         st.session_state["theta"] = recipe.get("theta", 1.5)
         st.session_state["min_margin_multiplier"] = recipe.get("min_margin_multiplier", 1.2)
         st.session_state["discount_percent"] = recipe.get("discount_percent", 20.0)
+        # Caricamento delle impostazioni IVA se presenti
+        if "iva_base" in recipe:
+            country_name, rate = recipe["iva_base"]
+            idx = next((i for i, (name, _) in enumerate(paesi_iva) if name == country_name), 0)
+            st.session_state["iva_base"] = idx
+        if "iva_comp" in recipe:
+            country_name, rate = recipe["iva_comp"]
+            idx = next((i for i, (name, _) in enumerate(paesi_iva) if name == country_name), 0)
+            st.session_state["iva_comp"] = idx
     
     new_recipe_name = st.text_input("Nome Nuova Ricetta")
     if st.button("💾 Salva Ricetta"):
@@ -338,7 +372,9 @@ with st.sidebar:
                 "gamma": st.session_state.get("gamma", 2.0),
                 "theta": st.session_state.get("theta", 1.5),
                 "min_margin_multiplier": st.session_state.get("min_margin_multiplier", 1.2),
-                "discount_percent": st.session_state.get("discount_percent", 20.0)
+                "discount_percent": st.session_state.get("discount_percent", 20.0),
+                "iva_base": iva_base,
+                "iva_comp": iva_comp
             }
             st.success(f"Ricetta '{new_recipe_name}' salvata!")
         else:
@@ -443,28 +479,31 @@ with tab_main1:
     st.markdown('</div>', unsafe_allow_html=True)
 
 #################################
-# Funzione per Calcolare il Prezzo d'Acquisto Netto
+# Funzione per Calcolare il Prezzo d'Acquisto Netto - AGGIORNATA con IVA variabile
 #################################
-def calc_final_purchase_price(row, discount):
+def calc_final_purchase_price(row, discount, iva_base_rate):
     """
     Calcola il prezzo d'acquisto netto, IVA esclusa e scontato, in base al paese.
-    Se il prodotto è acquistato in Italia (Locale "it"):
-      final = (prezzo lordo / 1.22) - (prezzo lordo * discount)
-    Altrimenti (es. Germania, IVA 19%):
-      final = (prezzo lordo / 1.19) * (1 - discount)
+    
+    Params:
+      row: la riga del dataframe
+      discount: percentuale di sconto (in formato decimale, es. 0.2 per 20%)
+      iva_base_rate: aliquota IVA del mercato di origine (in formato decimale, es. 0.22 per 22%)
+    
+    Returns:
+      Il prezzo di acquisto netto (IVA esclusa e scontato)
     """
-    locale = row.get("Locale (base)", "it")
-    try:
-        locale = str(locale).strip().lower()
-    except:
-        locale = "it"
     gross = row["Price_Base"]
     if pd.isna(gross):
         return np.nan
-    if locale == "it":
-        return (gross / 1.22) - (gross * discount)
-    else:
-        return (gross / 1.19) * (1 - discount)
+    
+    # Calcolo prezzo netto (senza IVA)
+    net_price = gross / (1 + iva_base_rate)
+    
+    # Calcolo prezzo scontato
+    discounted_price = net_price * (1 - discount)
+    
+    return discounted_price
 
 #################################
 # Elaborazione Completa e Calcolo Opportunity Score
@@ -518,7 +557,8 @@ if avvia:
     df_merged["SalesRank_90d"] = df_merged.get("Sales Rank: 90 days avg. (comp)", pd.Series(np.nan)).apply(parse_int)
     
     # Calcolo del prezzo d'acquisto netto per ogni prodotto dalla lista di origine
-    df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount), axis=1)
+    # Utilizzo della funzione aggiornata con IVA variabile
+    df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount, iva_base_rate), axis=1)
     
     # NUOVA LOGICA: Calcolo del margine stimato considerando IVA correttamente
     # 1. Prezzo nel mercato di confronto (lordo IVA)
@@ -593,6 +633,10 @@ if avvia:
         lambda score: classify_opportunity(score)[1]  # Solo il secondo elemento della tupla
     )
     
+    # Aggiunta dell'informazione sulle aliquote IVA utilizzate
+    df_merged["IVA_Origine"] = f"{iva_base[0]} ({iva_base[1]}%)"
+    df_merged["IVA_Confronto"] = f"{iva_comp[0]} ({iva_comp[1]}%)"
+    
     # Ordiniamo i risultati per Opportunity Score decrescente
     df_merged = df_merged.sort_values("Opportunity_Score", ascending=False)
     
@@ -602,7 +646,8 @@ if avvia:
         "Price_Base", "Acquisto_Netto", "Price_Comp", "Vendita_Netto",
         "Margine_Stimato", "Margine_%", "SalesRank_Comp", "SalesRank_90d",
         "Trend", "Bought_Comp", "NewOffer_Comp", "Volume_Score",
-        "Opportunity_Score", "Opportunity_Class", "Brand (base)", "Package: Dimension (cm³) (base)"
+        "Opportunity_Score", "Opportunity_Class", "IVA_Origine", "IVA_Confronto",
+        "Brand (base)", "Package: Dimension (cm³) (base)"
     ]
     cols_final = [c for c in cols_final if c in df_merged.columns]
     df_finale = df_merged[cols_final].copy()
@@ -636,6 +681,9 @@ if avvia:
             with col4:
                 st.metric("Opportunity Score Massimo", f"{df_finale['Opportunity_Score'].max():.2f}")
             
+            # Riepilogo aliquote IVA utilizzate
+            st.info(f"IVA Mercato Origine: {iva_base[0]} ({iva_base[1]}%) | IVA Mercato Confronto: {iva_comp[0]} ({iva_comp[1]}%)")
+            
             # Configura i colori per il tema dark in Altair
             dark_colors = {
                 "Eccellente": "#2ecc71",
@@ -666,7 +714,7 @@ if avvia:
             
             # Grafico di distribuzione degli Opportunity Score
             st.subheader("Distribuzione Opportunity Score")
-            hist = alt.Chart(df_finale.reset_index(), theme=dark_theme).mark_bar().encode(
+            hist = alt.Chart(df_finale.reset_index()).mark_bar().encode(
                 alt.X("Opportunity_Score:Q", bin=alt.Bin(maxbins=20), title="Opportunity Score"),
                 alt.Y("count()", title="Numero di Prodotti"),
                 color=alt.Color("Opportunity_Class:N", 
@@ -677,7 +725,7 @@ if avvia:
             
             # Grafico Scatter: Margine (%) vs Opportunity Score con dimensione per Volume
             st.subheader("Analisi Multifattoriale")
-            chart = alt.Chart(df_finale.reset_index(), theme=dark_theme).mark_circle().encode(
+            chart = alt.Chart(df_finale.reset_index()).mark_circle().encode(
                 x=alt.X("Margine_%:Q", title="Margine (%)"),
                 y=alt.Y("Opportunity_Score:Q", title="Opportunity Score"),
                 size=alt.Size("Volume_Score:Q", title="Volume Stimato", scale=alt.Scale(range=[20, 200])),
@@ -700,7 +748,7 @@ if avvia:
                 st.dataframe(market_analysis, use_container_width=True)
                 
                 # Grafico a barre per confronto mercati
-                market_chart = alt.Chart(market_analysis, theme=dark_theme).mark_bar().encode(
+                market_chart = alt.Chart(market_analysis).mark_bar().encode(
                     x="Mercato:N",
                     y="Opportunity Score Medio:Q",
                     color=alt.Color("Mercato:N", scale=alt.Scale(scheme='category10')),
@@ -898,20 +946,20 @@ with st.expander("ℹ️ Come funziona l'Opportunity Score"):
     ### Calcolo del Margine
     
     Il margine viene calcolato considerando:
-    1. **Prezzo di acquisto netto**: Prezzo base scontato e senza IVA
-    2. **Prezzo di vendita netto**: Prezzo di confronto senza IVA
+    1. **Prezzo di acquisto netto**: Prezzo base scontato e senza IVA (usando l'aliquota IVA del mercato di origine)
+    2. **Prezzo di vendita netto**: Prezzo di confronto senza IVA (usando l'aliquota IVA del mercato di confronto)
     3. **Margine**: Differenza tra prezzo di vendita netto e prezzo di acquisto netto
     
     ### Note sull'IVA
     
-    L'applicazione gestisce correttamente l'IVA dei diversi paesi:
+    L'applicazione gestisce correttamente l'IVA dei diversi paesi, sia per il mercato di origine che per quello di confronto:
     - Italia: 22%
     - Germania: 19%
     - Francia: 20%
     - Spagna: 21%
     - Regno Unito: 20%
     
-    Il margine stimato tiene conto di queste differenze.
+    Il margine stimato tiene conto di queste differenze, permettendoti di calcolare correttamente il potenziale guadagno anche quando il mercato di origine è diverso da quello italiano.
     """)
 
 # Footer
