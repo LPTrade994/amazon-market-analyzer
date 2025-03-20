@@ -236,61 +236,101 @@ st.markdown("""
         border-color: #333 !important;
     }
 
-    /* Tooltip per il bottone di copia */
-    .tooltip {
-        position: relative;
-        display: inline-block;
-    }
-    .tooltip .tooltiptext {
-        visibility: hidden;
-        width: 140px;
-        background-color: #555;
-        color: #fff;
-        text-align: center;
+    /* Button personalizzato */
+    .copy-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #0d6efd;
+        color: white;
+        border: none;
         border-radius: 6px;
-        padding: 5px;
-        position: absolute;
-        z-index: 1;
-        bottom: 150%;
-        left: 50%;
-        margin-left: -75px;
+        padding: 10px 16px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        margin-top: 10px;
+        width: 100%;
+    }
+    
+    .copy-button:hover {
+        background-color: #0b5ed7;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        transform: translateY(-1px);
+    }
+    
+    .copy-button:active {
+        transform: translateY(1px);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    }
+    
+    .copy-button svg {
+        margin-right: 8px;
+    }
+    
+    /* Notifica di copia */
+    #copy-notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: #198754;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 6px;
+        z-index: 1000;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         opacity: 0;
-        transition: opacity 0.3s;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
     }
-    .tooltip .tooltiptext::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        margin-left: -5px;
-        border-width: 5px;
-        border-style: solid;
-        border-color: #555 transparent transparent transparent;
+    
+    .show-notification {
+        opacity: 1 !important;
     }
-    .tooltip:hover .tooltiptext {
-        visibility: visible;
-        opacity: 1;
+    
+    /* Shipping calculator card */
+    .shipping-card {
+        background-color: #252525;
+        border-radius: 8px;
+        padding: 15px;
+        border: 1px solid #444;
+        margin-bottom: 15px;
+    }
+    
+    .shipping-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: #e0e0e0;
     }
 </style>
 
-<!-- Script JavaScript per la funzionalità di copia negli appunti -->
-<script>
-function copyToClipboard(text) {
-    const elem = document.createElement('textarea');
-    elem.value = text;
-    document.body.appendChild(elem);
-    elem.select();
-    document.execCommand('copy');
-    document.body.removeChild(elem);
-    
-    // Mostra il messaggio di feedback
-    const tooltip = document.getElementById("myTooltip");
-    tooltip.innerHTML = "Copiato!";
-}
+<!-- Elementi extra UI -->
+<div id="copy-notification">ASINs copiati negli appunti! ✓</div>
 
-function outFunc() {
-    const tooltip = document.getElementById("myTooltip");
-    tooltip.innerHTML = "Copia negli appunti";
+<!-- Script per la copia negli appunti -->
+<script>
+function copyASINsToClipboard() {
+    const asinsText = document.getElementById('asins-content').value;
+    
+    // Usa l'API Clipboard moderna
+    navigator.clipboard.writeText(asinsText)
+        .then(() => {
+            // Mostra la notifica
+            const notification = document.getElementById('copy-notification');
+            notification.classList.add('show-notification');
+            
+            // Nascondi la notifica dopo 2 secondi
+            setTimeout(() => {
+                notification.classList.remove('show-notification');
+            }, 2000);
+        })
+        .catch(err => {
+            console.error('Errore nella copia: ', err);
+            alert('Non è stato possibile copiare gli ASIN. Prova a selezionarli manualmente.');
+        });
 }
 </script>
 """, unsafe_allow_html=True)
@@ -304,6 +344,39 @@ if 'filtered_data' not in st.session_state:
     st.session_state['filtered_data'] = None
 
 st.markdown('<h1 class="main-header">📊 Amazon Market Analyzer - Arbitraggio Multi-Mercato</h1>', unsafe_allow_html=True)
+
+# Definizione del listino costi di spedizione (Italia)
+SHIPPING_COSTS = {
+    3: 5.14,   # Fino a 3 kg
+    4: 6.41,   # Fino a 4 kg
+    5: 6.95,   # Fino a 5 kg
+    10: 8.54,  # Fino a 10 kg
+    25: 12.51, # Fino a 25 kg
+    50: 21.66, # Fino a 50 kg
+    100: 34.16 # Fino a 100 kg
+}
+
+# Funzione per calcolare il costo di spedizione in base al peso
+def calculate_shipping_cost(weight_kg):
+    """
+    Calcola il costo di spedizione in base al peso in kg
+    
+    Args:
+        weight_kg (float): Peso in kg
+        
+    Returns:
+        float: Costo di spedizione
+    """
+    if pd.isna(weight_kg) or weight_kg <= 0:
+        return 0.0
+    
+    # Trova la categoria di peso appropriata
+    for weight_limit, cost in sorted(SHIPPING_COSTS.items()):
+        if weight_kg <= weight_limit:
+            return cost
+    
+    # Se superiore al limite massimo, utilizza il costo massimo
+    return SHIPPING_COSTS[100]
 
 #################################
 # Sidebar: Caricamento file, Prezzo di riferimento, Sconto, Impostazioni e Ricette
@@ -369,6 +442,26 @@ with st.sidebar:
             key="iva_comp"
         )
         iva_comp_rate = iva_comp[1] / 100.0
+    
+    # Sezione per i costi di spedizione
+    colored_header(label="🚚 Spedizione", description="Calcolo costi di spedizione", color_name="blue-70")
+    
+    # Visualizzazione dei costi di spedizione
+    st.markdown('<div class="shipping-card">', unsafe_allow_html=True)
+    st.markdown('<div class="shipping-title">📦 Listino Costi di Spedizione (Italia)</div>', unsafe_allow_html=True)
+    
+    # Creare una tabella per il listino
+    shipping_table = pd.DataFrame({
+        "Peso (kg)": ["Fino a 3", "Fino a 4", "Fino a 5", "Fino a 10", "Fino a 25", "Fino a 50", "Fino a 100"],
+        "Costo (€)": [SHIPPING_COSTS[3], SHIPPING_COSTS[4], SHIPPING_COSTS[5], SHIPPING_COSTS[10], 
+                      SHIPPING_COSTS[25], SHIPPING_COSTS[50], SHIPPING_COSTS[100]]
+    })
+    st.dataframe(shipping_table, hide_index=True, use_container_width=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Includi costi di spedizione nel calcolo
+    include_shipping = st.checkbox("Calcola margine netto con spedizione", value=True)
     
     colored_header(label="📈 Opportunity Score", description="Pesi e parametri", color_name="blue-70")
     
@@ -476,6 +569,23 @@ def parse_int(x):
     except:
         return np.nan
 
+# Funzione per parsare il peso dagli attributi
+def parse_weight(x):
+    """Estrae il peso in kg dai campi di attributo."""
+    if not isinstance(x, str):
+        return np.nan
+    
+    # Cerca pattern come "0.5 kg" o "500 g"
+    kg_match = re.search(r'(\d+\.?\d*)\s*kg', x.lower())
+    g_match = re.search(r'(\d+\.?\d*)\s*g', x.lower())
+    
+    if kg_match:
+        return float(kg_match.group(1))
+    elif g_match:
+        return float(g_match.group(1)) / 1000  # converti grammi in kg
+    else:
+        return np.nan
+
 # Funzione per formattare il Trend in base al valore di Trend_Bonus
 def format_trend(trend):
     if pd.isna(trend):
@@ -522,15 +632,18 @@ with tab_main1:
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     asin_text = "\n".join(unique_asins)
-                    st.text_area("Copia qui:", asin_text, height=200)
+                    st.text_area("ASIN disponibili:", asin_text, height=200, key="asins-content", label_visibility="collapsed")
                     
-                    # Aggiungiamo il pulsante per copiare tutti gli ASIN negli appunti
+                    # Pulsante migliorato per copiare gli ASIN
                     st.markdown(f"""
                     <button 
-                        onclick="navigator.clipboard.writeText(`{asin_text}`).then(() => alert('ASINs copiati negli appunti!'))" 
-                        style="background-color: #0d6efd; color: white; border: none; border-radius: 4px; padding: 8px 15px; cursor: pointer; margin-top: 5px;"
-                    >
-                        📋 Copia tutti gli ASIN negli appunti
+                        onclick="copyASINsToClipboard()" 
+                        class="copy-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                            <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                        </svg>
+                        Copia ASINs negli appunti
                     </button>
                     """, unsafe_allow_html=True)
                 with col2:
@@ -624,6 +737,29 @@ if avvia:
     # Leggi anche il Sales Rank a 90 giorni, se presente
     df_merged["SalesRank_90d"] = df_merged.get("Sales Rank: 90 days avg. (comp)", pd.Series(np.nan)).apply(parse_int)
     
+    # Estrai informazioni sul peso
+    # Cerca in varie colonne che potrebbero contenere informazioni sul peso
+    possible_weight_cols = [
+        "Weight (base)", "Item Weight (base)", "Package: Weight (kg) (base)", 
+        "Product details (base)", "Features (base)"
+    ]
+    
+    # Inizializza colonna peso
+    df_merged["Weight_kg"] = np.nan
+    
+    # Cerca nelle possibili colonne di peso
+    for col in possible_weight_cols:
+        if col in df_merged.columns:
+            weight_data = df_merged[col].apply(parse_weight)
+            # Aggiorna solo i valori mancanti
+            df_merged.loc[df_merged["Weight_kg"].isna(), "Weight_kg"] = weight_data.loc[df_merged["Weight_kg"].isna()]
+    
+    # Se non ci sono informazioni sul peso, imposta un valore predefinito
+    df_merged["Weight_kg"] = df_merged["Weight_kg"].fillna(1.0)  # Assume 1kg come predefinito
+    
+    # Calcola il costo di spedizione per ogni prodotto
+    df_merged["Shipping_Cost"] = df_merged["Weight_kg"].apply(calculate_shipping_cost)
+    
     # Calcolo del prezzo d'acquisto netto per ogni prodotto dalla lista di origine
     # Utilizzo della funzione aggiornata con IVA variabile
     df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount, iva_base_rate), axis=1)
@@ -640,12 +776,20 @@ if avvia:
     df_merged["Margine_Stimato"] = df_merged["Vendita_Netto"] - df_merged["Acquisto_Netto"]
     df_merged["Margine_%"] = (df_merged["Margine_Stimato"] / df_merged["Acquisto_Netto"]) * 100
     
+    # Calcolo del margine netto con costi di spedizione
+    if include_shipping:
+        df_merged["Margine_Netto"] = df_merged["Margine_Stimato"] - df_merged["Shipping_Cost"]
+        df_merged["Margine_Netto_%"] = (df_merged["Margine_Netto"] / df_merged["Acquisto_Netto"]) * 100
+    else:
+        df_merged["Margine_Netto"] = df_merged["Margine_Stimato"]
+        df_merged["Margine_Netto_%"] = df_merged["Margine_%"]
+    
     # Nuovo calcolo del margine percentuale tra i prezzi lordi (solo per riferimento)
     df_merged["Margin_Pct_Lordo"] = (df_merged["Price_Comp"] - df_merged["Price_Base"]) / df_merged["Price_Base"] * 100
     
     # Filtro sui prodotti con margine positivo
-    df_merged = df_merged[df_merged["Margine_%"] > min_margin_pct]
-    df_merged = df_merged[df_merged["Margine_Stimato"] > min_margin_abs]
+    df_merged = df_merged[df_merged["Margine_Netto_%"] > min_margin_pct]
+    df_merged = df_merged[df_merged["Margine_Netto"] > min_margin_abs]
     
     # Applicazione dei filtri avanzati (sul mercato di confronto)
     df_merged["SalesRank_Comp"] = df_merged["SalesRank_Comp"].fillna(999999)
@@ -670,12 +814,12 @@ if avvia:
     df_merged["Volume_Score"] = 1000 / df_merged["Norm_Rank"]
     
     # Calcolo del fattore di ROI (Return on Investment)
-    df_merged["ROI_Factor"] = df_merged["Margine_Stimato"] / df_merged["Acquisto_Netto"]
+    df_merged["ROI_Factor"] = df_merged["Margine_Netto"] / df_merged["Acquisto_Netto"]
     
-    # Calcolo del nuovo Opportunity Score
+    # Calcolo del nuovo Opportunity Score (ora basato sul margine netto)
     df_merged["Opportunity_Score"] = (
-        epsilon * df_merged["Margine_%"] +
-        theta * df_merged["Margine_Stimato"] +
+        epsilon * df_merged["Margine_Netto_%"] +
+        theta * df_merged["Margine_Netto"] +
         beta * np.log(1 + df_merged["Bought_Comp"].fillna(0)) -
         delta * np.minimum(df_merged["NewOffer_Comp"].fillna(0), 10) -
         alpha * df_merged["Norm_Rank"] +
@@ -685,7 +829,7 @@ if avvia:
     
     # Fattore di penalizzazione per margini troppo bassi
     min_margin_threshold = min_margin_abs * min_margin_multiplier
-    df_merged.loc[df_merged["Margine_Stimato"] < min_margin_threshold, "Opportunity_Score"] *= (df_merged["Margine_Stimato"] / min_margin_threshold)
+    df_merged.loc[df_merged["Margine_Netto"] < min_margin_threshold, "Opportunity_Score"] *= (df_merged["Margine_Netto"] / min_margin_threshold)
     
     # Normalizzazione dei punteggi per renderli più leggibili (0-100 scala)
     max_score = df_merged["Opportunity_Score"].max()
@@ -712,7 +856,8 @@ if avvia:
     cols_final = [
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
         "Price_Base", "Acquisto_Netto", "Price_Comp", "Vendita_Netto",
-        "Margine_Stimato", "Margine_%", "SalesRank_Comp", "SalesRank_90d",
+        "Margine_Stimato", "Shipping_Cost", "Margine_Netto", "Margine_Netto_%", 
+        "Weight_kg", "SalesRank_Comp", "SalesRank_90d",
         "Trend", "Bought_Comp", "NewOffer_Comp", "Volume_Score",
         "Opportunity_Score", "Opportunity_Class", "IVA_Origine", "IVA_Confronto",
         "Brand (base)", "Package: Dimension (cm³) (base)"
@@ -722,7 +867,8 @@ if avvia:
     
     # Arrotonda i valori numerici principali a 2 decimali
     cols_to_round = ["Price_Base", "Acquisto_Netto", "Price_Comp", "Vendita_Netto", 
-                     "Margine_Stimato", "Margine_%", "Opportunity_Score", "Volume_Score"]
+                     "Margine_Stimato", "Shipping_Cost", "Margine_Netto", "Margine_Netto_%", 
+                     "Margine_%", "Opportunity_Score", "Volume_Score", "Weight_kg"]
     for col in cols_to_round:
         if col in df_finale.columns:
             df_finale[col] = df_finale[col].round(2)
@@ -743,14 +889,14 @@ if avvia:
             with col1:
                 st.metric("Prodotti Trovati", len(df_finale))
             with col2:
-                st.metric("Margine Medio (%)", f"{df_finale['Margine_%'].mean():.2f}%")
+                st.metric("Margine Netto Medio (%)", f"{df_finale['Margine_Netto_%'].mean():.2f}%")
             with col3:
-                st.metric("Margine Medio (€)", f"{df_finale['Margine_Stimato'].mean():.2f}€")
+                st.metric("Margine Netto Medio (€)", f"{df_finale['Margine_Netto'].mean():.2f}€")
             with col4:
                 st.metric("Opportunity Score Massimo", f"{df_finale['Opportunity_Score'].max():.2f}")
             
-            # Riepilogo aliquote IVA utilizzate
-            st.info(f"IVA Mercato Origine: {iva_base[0]} ({iva_base[1]}%) | IVA Mercato Confronto: {iva_comp[0]} ({iva_comp[1]}%)")
+            # Riepilogo impostazioni
+            st.info(f"IVA Origine: {iva_base[0]} ({iva_base[1]}%) | IVA Confronto: {iva_comp[0]} ({iva_comp[1]}%) | {'✅ Spedizione Inclusa' if include_shipping else '❌ Spedizione Esclusa'}")
             
             # Configura i colori per il tema dark in Altair
             dark_colors = {
@@ -758,26 +904,6 @@ if avvia:
                 "Buona": "#27ae60",
                 "Discreta": "#f39c12",
                 "Bassa": "#e74c3c"
-            }
-            dark_theme = {
-                "config": {
-                    "background": "#1e1e1e",
-                    "axis": {
-                        "labelColor": "#e0e0e0",
-                        "titleColor": "#e0e0e0",
-                        "gridColor": "#333333"
-                    },
-                    "legend": {
-                        "labelColor": "#e0e0e0",
-                        "titleColor": "#e0e0e0"
-                    },
-                    "title": {
-                        "color": "#e0e0e0"
-                    },
-                    "view": {
-                        "stroke": "#333333"
-                    }
-                }
             }
             
             # Grafico di distribuzione degli Opportunity Score
@@ -791,14 +917,14 @@ if avvia:
             ).properties(height=250)
             st.altair_chart(hist, use_container_width=True)
             
-            # Grafico Scatter: Margine (%) vs Opportunity Score con dimensione per Volume
+            # Grafico Scatter: Margine Netto (%) vs Opportunity Score con dimensione per Volume
             st.subheader("Analisi Multifattoriale")
             chart = alt.Chart(df_finale.reset_index()).mark_circle().encode(
-                x=alt.X("Margine_%:Q", title="Margine (%)"),
+                x=alt.X("Margine_Netto_%:Q", title="Margine Netto (%)"),
                 y=alt.Y("Opportunity_Score:Q", title="Opportunity Score"),
                 size=alt.Size("Volume_Score:Q", title="Volume Stimato", scale=alt.Scale(range=[20, 200])),
                 color=alt.Color("Locale (comp):N", title="Mercato Confronto", scale=alt.Scale(scheme='category10')),
-                tooltip=["Title (base)", "ASIN", "Margine_%", "Margine_Stimato", "SalesRank_Comp", "Opportunity_Score", "Trend"]
+                tooltip=["Title (base)", "ASIN", "Margine_Netto_%", "Margine_Netto", "Shipping_Cost", "SalesRank_Comp", "Opportunity_Score", "Trend"]
             ).interactive()
             st.altair_chart(chart, use_container_width=True)
             
@@ -807,11 +933,14 @@ if avvia:
             if "Locale (comp)" in df_finale.columns:
                 market_analysis = df_finale.groupby("Locale (comp)").agg({
                     "ASIN": "count",
-                    "Margine_%": "mean",
-                    "Margine_Stimato": "mean",
+                    "Margine_Netto_%": "mean",
+                    "Margine_Netto": "mean",
+                    "Shipping_Cost": "mean",
                     "Opportunity_Score": "mean"
                 }).reset_index()
-                market_analysis.columns = ["Mercato", "Prodotti", "Margine Medio (%)", "Margine Medio (€)", "Opportunity Score Medio"]
+                market_analysis.columns = ["Mercato", "Prodotti", "Margine Netto Medio (%)", 
+                                          "Margine Netto Medio (€)", "Costo Spedizione Medio (€)",
+                                          "Opportunity Score Medio"]
                 market_analysis = market_analysis.round(2)
                 st.dataframe(market_analysis, use_container_width=True)
                 
@@ -820,7 +949,9 @@ if avvia:
                     x="Mercato:N",
                     y="Opportunity Score Medio:Q",
                     color=alt.Color("Mercato:N", scale=alt.Scale(scheme='category10')),
-                    tooltip=["Mercato", "Prodotti", "Margine Medio (%)", "Margine Medio (€)", "Opportunity Score Medio"]
+                    tooltip=["Mercato", "Prodotti", "Margine Netto Medio (%)", 
+                            "Margine Netto Medio (€)", "Costo Spedizione Medio (€)", 
+                            "Opportunity Score Medio"]
                 ).properties(height=300)
                 st.altair_chart(market_chart, use_container_width=True)
         else:
@@ -870,11 +1001,11 @@ if avvia:
                 filtered_df = filtered_df[filtered_df["Opportunity_Score"] >= min_op_score]
             
             with col2:
-                min_margin = st.slider("Margine Minimo (€)", 
-                                      min_value=float(filtered_df["Margine_Stimato"].min()),
-                                      max_value=float(filtered_df["Margine_Stimato"].max()),
-                                      value=float(filtered_df["Margine_Stimato"].min()))
-                filtered_df = filtered_df[filtered_df["Margine_Stimato"] >= min_margin]
+                min_margin = st.slider("Margine Netto Minimo (€)", 
+                                      min_value=float(filtered_df["Margine_Netto"].min()),
+                                      max_value=float(filtered_df["Margine_Netto"].max()),
+                                      value=float(filtered_df["Margine_Netto"].min()))
+                filtered_df = filtered_df[filtered_df["Margine_Netto"] >= min_margin]
             
             # Cerca per ASIN o titolo
             search_term = st.text_input("Cerca per ASIN o Titolo")
@@ -912,9 +1043,12 @@ if avvia:
                         "Price_Comp": "€{:.2f}",
                         "Vendita_Netto": "€{:.2f}",
                         "Margine_Stimato": "€{:.2f}",
-                        "Margine_%": "{:.2f}%",
+                        "Shipping_Cost": "€{:.2f}",
+                        "Margine_Netto": "€{:.2f}",
+                        "Margine_Netto_%": "{:.2f}%",
                         "Opportunity_Score": "{:.2f}",
-                        "Volume_Score": "{:.2f}"
+                        "Volume_Score": "{:.2f}",
+                        "Weight_kg": "{:.2f} kg"
                     })
                 
                 # Visualizzazione dei risultati - SENZA PAGINAZIONE
@@ -968,8 +1102,8 @@ with st.expander("ℹ️ Come funziona l'Opportunity Score"):
     L'Opportunity Score è un punteggio che combina diversi fattori per identificare le migliori opportunità di arbitraggio. 
     La formula considera:
     
-    - **Margine percentuale**: Quanto margine percentuale ottieni 
-    - **Margine assoluto**: Quanto guadagno in euro ottieni per ogni vendita
+    - **Margine netto percentuale**: Quanto margine percentuale ottieni dopo aver sottratto i costi di spedizione
+    - **Margine netto assoluto**: Quanto guadagno in euro ottieni per ogni vendita dopo i costi di spedizione
     - **Volume di vendita**: Stimato tramite il Sales Rank (più basso = più vendite)
     - **Trend**: Se il prodotto sta migliorando o peggiorando nel ranking
     - **Competizione**: Quante altre offerte ci sono per lo stesso prodotto
@@ -980,7 +1114,20 @@ with st.expander("ℹ️ Come funziona l'Opportunity Score"):
     Il margine viene calcolato considerando:
     1. **Prezzo di acquisto netto**: Prezzo base scontato e senza IVA (usando l'aliquota IVA del mercato di origine)
     2. **Prezzo di vendita netto**: Prezzo di confronto senza IVA (usando l'aliquota IVA del mercato di confronto)
-    3. **Margine**: Differenza tra prezzo di vendita netto e prezzo di acquisto netto
+    3. **Margine stimato**: Differenza tra prezzo di vendita netto e prezzo di acquisto netto
+    4. **Costi di spedizione**: Calcolati in base al peso del prodotto secondo il listino
+    5. **Margine netto**: Margine stimato meno i costi di spedizione
+    
+    ### Calcolo dei Costi di Spedizione
+    
+    I costi di spedizione vengono calcolati in base al peso del prodotto secondo questo listino:
+    - Fino a 3 kg: €5.14
+    - Fino a 4 kg: €6.41
+    - Fino a 5 kg: €6.95
+    - Fino a 10 kg: €8.54
+    - Fino a 25 kg: €12.51
+    - Fino a 50 kg: €21.66
+    - Fino a 100 kg: €34.16
     
     ### Note sull'IVA
     
