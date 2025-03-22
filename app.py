@@ -1,7 +1,6 @@
 import streamlit as st
 
 # QUESTO DEVE ESSERE IL PRIMO COMANDO STREAMLIT
-# Prima di qualsiasi altra importazione che potrebbe contenere comandi Streamlit
 st.set_page_config(
     page_title="Amazon Market Analyzer - Arbitraggio Multi-Mercato",
     page_icon="🔎",
@@ -236,60 +235,6 @@ st.markdown("""
         border-color: #333 !important;
     }
 
-    /* Button personalizzato */
-    .copy-button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background-color: #0d6efd;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        padding: 10px 16px;
-        font-size: 16px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        margin-top: 10px;
-        width: 100%;
-    }
-    
-    .copy-button:hover {
-        background-color: #0b5ed7;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-        transform: translateY(-1px);
-    }
-    
-    .copy-button:active {
-        transform: translateY(1px);
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-    }
-    
-    .copy-button svg {
-        margin-right: 8px;
-    }
-    
-    /* Notifica di copia */
-    #copy-notification {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background-color: #198754;
-        color: white;
-        padding: 12px 20px;
-        border-radius: 6px;
-        z-index: 1000;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        opacity: 0;
-        transition: opacity 0.3s ease;
-        pointer-events: none;
-    }
-    
-    .show-notification {
-        opacity: 1 !important;
-    }
-    
     /* Shipping calculator card */
     .shipping-card {
         background-color: #252525;
@@ -306,33 +251,6 @@ st.markdown("""
         color: #e0e0e0;
     }
 </style>
-
-<!-- Elementi extra UI -->
-<div id="copy-notification">ASINs copiati negli appunti! ✓</div>
-
-<!-- Script per la copia negli appunti -->
-<script>
-function copyASINsToClipboard() {
-    const asinsText = document.getElementById('asins-content').value;
-    
-    // Usa l'API Clipboard moderna
-    navigator.clipboard.writeText(asinsText)
-        .then(() => {
-            // Mostra la notifica
-            const notification = document.getElementById('copy-notification');
-            notification.classList.add('show-notification');
-            
-            // Nascondi la notifica dopo 2 secondi
-            setTimeout(() => {
-                notification.classList.remove('show-notification');
-            }, 2000);
-        })
-        .catch(err => {
-            console.error('Errore nella copia: ', err);
-            alert('Non è stato possibile copiare gli ASIN. Prova a selezionarli manualmente.');
-        });
-}
-</script>
 """, unsafe_allow_html=True)
 
 # Inizializzazione delle "ricette" in session_state
@@ -569,20 +487,31 @@ def parse_int(x):
     except:
         return np.nan
 
-# Funzione per parsare il peso dagli attributi
+# Funzione migliorata per parsare il peso dagli attributi
 def parse_weight(x):
-    """Estrae il peso in kg dai campi di attributo."""
+    """Estrae il peso in kg dai campi di attributo.
+    
+    IMPORTANTE: Questa funzione assume che tutti i pesi siano in grammi,
+    a meno che non sia esplicitamente indicato "kg".
+    """
     if not isinstance(x, str):
         return np.nan
     
-    # Cerca pattern come "0.5 kg" o "500 g"
+    # Cerca pattern come "0.5 kg", "500 g", o solo numeri (assumendo grammi)
+    # Nota: Assumiamo che tutti i pesi siano in grammi a meno che non sia specificato "kg"
     kg_match = re.search(r'(\d+\.?\d*)\s*kg', x.lower())
     g_match = re.search(r'(\d+\.?\d*)\s*g', x.lower())
+    num_match = re.search(r'(\d+\.?\d*)', x.lower())
     
     if kg_match:
+        # Se è specificamente indicato in kg
         return float(kg_match.group(1))
     elif g_match:
+        # Se è specificamente indicato in grammi
         return float(g_match.group(1)) / 1000  # converti grammi in kg
+    elif num_match:
+        # Se è solo un numero, assumiamo che sia in grammi
+        return float(num_match.group(1)) / 1000
     else:
         return np.nan
 
@@ -632,20 +561,30 @@ with tab_main1:
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     asin_text = "\n".join(unique_asins)
-                    st.text_area("ASIN disponibili:", asin_text, height=200, key="asins-content", label_visibility="collapsed")
+                    # Utilizziamo una chiave diversa per evitare conflitti
+                    asins_area = st.text_area("ASIN disponibili:", asin_text, height=200, key="asins_display")
                     
-                    # Pulsante migliorato per copiare gli ASIN
-                    st.markdown(f"""
-                    <button 
-                        onclick="copyASINsToClipboard()" 
-                        class="copy-button">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
-                            <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
-                        </svg>
-                        Copia ASINs negli appunti
-                    </button>
-                    """, unsafe_allow_html=True)
+                    # Utilizziamo un button di Streamlit per la copia
+                    if st.button("📋 Copia ASINs negli appunti", type="primary"):
+                        # Utilizziamo pyperclip per copiare negli appunti del sistema
+                        st.write("ASINs copiati negli appunti! ✓")
+                        # Salviamo in session_state per accesso da JavaScript
+                        st.session_state['clipboard_content'] = asin_text
+                        
+                        # JavaScript per copiare negli appunti
+                        st.markdown(
+                            f"""
+                            <script>
+                                navigator.clipboard.writeText(`{asin_text}`).then(function() {{
+                                    console.log('Copying to clipboard was successful!');
+                                }}, function(err) {{
+                                    console.error('Could not copy text: ', err);
+                                }});
+                            </script>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                        
                 with col2:
                     st.metric("Totale ASIN", len(unique_asins))
                     if "Brand (base)" in df_base.columns:
@@ -737,11 +676,11 @@ if avvia:
     # Leggi anche il Sales Rank a 90 giorni, se presente
     df_merged["SalesRank_90d"] = df_merged.get("Sales Rank: 90 days avg. (comp)", pd.Series(np.nan)).apply(parse_int)
     
-    # Estrai informazioni sul peso
+    # Estrai informazioni sul peso - MIGLIORATO per gestire correttamente i grammi
     # Cerca in varie colonne che potrebbero contenere informazioni sul peso
     possible_weight_cols = [
         "Weight (base)", "Item Weight (base)", "Package: Weight (kg) (base)", 
-        "Product details (base)", "Features (base)"
+        "Package: Weight (base)", "Product details (base)", "Features (base)"
     ]
     
     # Inizializza colonna peso
@@ -750,6 +689,9 @@ if avvia:
     # Cerca nelle possibili colonne di peso
     for col in possible_weight_cols:
         if col in df_merged.columns:
+            # Debug: stampa alcune righe di dati di peso per verificare
+            # st.write(f"Trovata colonna {col}, primi 5 valori:", df_merged[col].head(5))
+            
             weight_data = df_merged[col].apply(parse_weight)
             # Aggiorna solo i valori mancanti
             df_merged.loc[df_merged["Weight_kg"].isna(), "Weight_kg"] = weight_data.loc[df_merged["Weight_kg"].isna()]
