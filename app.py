@@ -295,6 +295,28 @@ def calculate_shipping_cost(weight_kg):
     # Se superiore al limite massimo, utilizza il costo massimo
     return SHIPPING_COSTS[100]
 
+# Funzione per calcolare il fattore di penalizzazione del Return Rate
+def calculate_return_rate_factor(return_rate):
+    """
+    Converte il Return Rate in un fattore numerico per il calcolo dell'Opportunity Score.
+    
+    Args:
+        return_rate: Valore del Return Rate ("low", "high" o vuoto/None)
+        
+    Returns:
+        float: Fattore di penalizzazione (1.0 per "low", 0.7 per "high", 0.85 per valori mancanti)
+    """
+    if pd.isna(return_rate) or return_rate == "":
+        return 0.85  # Valore intermedio per dati mancanti
+    
+    return_rate_lower = str(return_rate).lower().strip()
+    if return_rate_lower == "low":
+        return 1.0  # Nessuna penalizzazione
+    elif return_rate_lower == "high":
+        return 0.7  # Forte penalizzazione
+    else:
+        return 0.85  # Default per valori non riconosciuti
+
 #################################
 # Sidebar: Caricamento file, Prezzo di riferimento, Sconto, Impostazioni e Ricette
 #################################
@@ -390,6 +412,9 @@ with st.sidebar:
         delta = st.slider("Peso penalizzante per Offer Count", 0.0, 5.0, st.session_state.get("delta", 1.0), step=0.1, key="delta")
         epsilon = st.slider("Peso per il Margine (%)", 0.0, 10.0, st.session_state.get("epsilon", 3.0), step=0.1, key="epsilon")  # Valore predefinito aumentato
         zeta = st.slider("Peso per Trend Sales Rank", 0.0, 5.0, st.session_state.get("zeta", 1.0), step=0.1, key="zeta")
+        return_rate_weight = st.slider("Peso penalizzante per Return Rate alto", 0.0, 5.0, 
+                                     st.session_state.get("return_rate_weight", 2.0), step=0.1, 
+                                     key="return_rate_weight")
     
     with tab2:
         gamma = st.slider("Peso per volume di vendita", 0.0, 5.0, st.session_state.get("gamma", 2.0), step=0.1, key="gamma")
@@ -417,6 +442,7 @@ with st.sidebar:
         st.session_state["theta"] = recipe.get("theta", 1.5)
         st.session_state["min_margin_multiplier"] = recipe.get("min_margin_multiplier", 1.2)
         st.session_state["discount_percent"] = recipe.get("discount_percent", 20.0)
+        st.session_state["return_rate_weight"] = recipe.get("return_rate_weight", 2.0)
         # Caricamento delle impostazioni IVA se presenti
         if "iva_base" in recipe:
             country_name, rate = recipe["iva_base"]
@@ -440,6 +466,7 @@ with st.sidebar:
                 "theta": st.session_state.get("theta", 1.5),
                 "min_margin_multiplier": st.session_state.get("min_margin_multiplier", 1.2),
                 "discount_percent": st.session_state.get("discount_percent", 20.0),
+                "return_rate_weight": st.session_state.get("return_rate_weight", 2.0),
                 "iva_base": iva_base,
                 "iva_comp": iva_comp
             }
@@ -490,29 +517,31 @@ def parse_int(x):
 def parse_weight(x):
     """Estrae il peso in kg dai campi di attributo.
     
-    IMPORTANTE: Questa funzione assume che tutti i pesi siano in grammi,
+    IMPORTANTE: Questa funzione assume che tutti i valori numerici siano in grammi
     a meno che non sia esplicitamente indicato "kg".
     """
     if not isinstance(x, str):
         return np.nan
     
-    # Cerca pattern come "0.5 kg", "500 g", o solo numeri (assumendo grammi)
-    # Nota: Assumiamo che tutti i pesi siano in grammi a meno che non sia specificato "kg"
+    # Controlla se è specificato "kg"
     kg_match = re.search(r'(\d+\.?\d*)\s*kg', x.lower())
-    g_match = re.search(r'(\d+\.?\d*)\s*g', x.lower())
-    num_match = re.search(r'(\d+\.?\d*)', x.lower())
-    
     if kg_match:
-        # Se è specificamente indicato in kg
+        # Già in kg
         return float(kg_match.group(1))
-    elif g_match:
-        # Se è specificamente indicato in grammi
-        return float(g_match.group(1)) / 1000  # converti grammi in kg
-    elif num_match:
-        # Se è solo un numero, assumiamo che sia in grammi
+    
+    # Controlla se è specificato "g" o "gr" per grammi
+    g_match = re.search(r'(\d+\.?\d*)\s*g[r]?', x.lower())
+    if g_match:
+        # Converti grammi in kg
+        return float(g_match.group(1)) / 1000
+    
+    # Se è solo un numero senza unità, assumiamo sia in grammi
+    num_match = re.search(r'(\d+\.?\d*)', x.lower())
+    if num_match:
+        # Converti grammi in kg
         return float(num_match.group(1)) / 1000
-    else:
-        return np.nan
+    
+    return np.nan
 
 # Funzione per formattare il Trend in base al valore di Trend_Bonus
 def format_trend(trend):
@@ -535,6 +564,18 @@ def classify_opportunity(score):
         return "Discreta", "warning-tag"
     else:
         return "Bassa", "danger-tag"
+
+# Funzione per formattare il Return Rate per la visualizzazione
+def format_return_rate(rate):
+    if pd.isna(rate) or rate == "":
+        return "N/D"
+    rate_lower = str(rate).lower().strip()
+    if rate_lower == "low":
+        return "Basso 🟢"
+    elif rate_lower == "high":
+        return "Alto 🔴"
+    else:
+        return str(rate)
 
 #################################
 # Visualizzazione Immediata degli ASIN dalla Lista di Origine
@@ -662,6 +703,11 @@ if avvia:
     df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["SalesRank_90d"] = df_merged.get("Sales Rank: 90 days avg. (comp)", pd.Series(np.nan)).apply(parse_int)
     
+    # Preprocessing per Return Rate
+    df_merged["Return_Rate"] = df_merged.get("Return Rate (comp)", pd.Series(""))
+    df_merged["Return_Rate_Display"] = df_merged["Return_Rate"].apply(format_return_rate)
+    df_merged["Return_Rate_Factor"] = df_merged["Return_Rate"].apply(calculate_return_rate_factor)
+    
     possible_weight_cols = [
         "Weight (base)", "Item Weight (base)", "Package: Weight (kg) (base)", 
         "Package: Weight (base)", "Product details (base)", "Features (base)"
@@ -673,7 +719,18 @@ if avvia:
             weight_data = df_merged[col].apply(parse_weight)
             df_merged.loc[df_merged["Weight_kg"].isna(), "Weight_kg"] = weight_data.loc[df_merged["Weight_kg"].isna()]
     
+    # Debug dei pesi
+    st.write("Rilevamento dei pesi dei prodotti:")
+    st.write(f"Pesi mancanti prima del riempimento: {df_merged['Weight_kg'].isna().sum()} su {len(df_merged)}")
+    
+    # Riempimento e controllo dei pesi
     df_merged["Weight_kg"] = df_merged["Weight_kg"].fillna(1.0)
+    # Assicuriamoci che non ci siano valori 0 che potrebbero causare problemi nel calcolo dei costi
+    df_merged.loc[df_merged["Weight_kg"] <= 0, "Weight_kg"] = 1.0
+    
+    st.write(f"Gamma dei pesi (kg): {df_merged['Weight_kg'].min()} - {df_merged['Weight_kg'].max()}")
+    st.write(f"Peso medio (kg): {df_merged['Weight_kg'].mean():.2f}")
+    
     df_merged["Shipping_Cost"] = df_merged["Weight_kg"].apply(calculate_shipping_cost)
     
     df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount, iva_base_rate), axis=1)
@@ -710,6 +767,7 @@ if avvia:
     df_merged["Volume_Score"] = 1000 / df_merged["Norm_Rank"]
     df_merged["ROI_Factor"] = df_merged["Margine_Netto"] / df_merged["Acquisto_Netto"]
     
+    # Applicazione del fattore Return Rate all'Opportunity Score
     df_merged["Opportunity_Score"] = (
         epsilon * df_merged["Margine_Netto_%"] +
         theta * df_merged["Margine_Netto"] +
@@ -718,6 +776,13 @@ if avvia:
         alpha * df_merged["Norm_Rank"] +
         zeta * df_merged["Trend_Bonus"] +
         gamma * df_merged["Volume_Score"]
+    )
+    
+    # Applicazione del fattore Return Rate - aggiunto peso regolabile
+    # Valori Return_Rate_Factor: Low = 1.0 (nessuna penalizzazione), High = 0.7 (30% penalizzazione)
+    # Applichiamo il peso solo quando il Return Rate è alto (penalizzazione)
+    df_merged.loc[df_merged["Return_Rate"].str.lower() == "high", "Opportunity_Score"] -= (
+        return_rate_weight * (1 - df_merged["Return_Rate_Factor"]) * df_merged["Opportunity_Score"]
     )
     
     min_margin_threshold = min_margin_abs * min_margin_multiplier
@@ -745,7 +810,7 @@ if avvia:
         "Margine_Stimato", "Shipping_Cost", "Margine_Netto", "Margine_Netto_%", 
         "Weight_kg", "SalesRank_Comp", "SalesRank_90d",
         "Trend", "Bought_Comp", "NewOffer_Comp", "Volume_Score",
-        "Opportunity_Score", "Opportunity_Class", "IVA_Origine", "IVA_Confronto",
+        "Return_Rate_Display", "Opportunity_Score", "Opportunity_Class", "IVA_Origine", "IVA_Confronto",
         "Brand (base)", "Package: Dimension (cm³) (base)"
     ]
     cols_final = [c for c in cols_final if c in df_merged.columns]
@@ -799,13 +864,34 @@ if avvia:
             ).properties(height=250)
             st.altair_chart(hist, use_container_width=True)
             
+            # Aggiunta di un grafico per la distribuzione del Return Rate
+            if "Return_Rate_Display" in df_finale.columns:
+                st.subheader("Distribuzione Return Rate")
+                return_counts = df_finale["Return_Rate_Display"].value_counts().reset_index()
+                return_counts.columns = ["Return Rate", "Conteggio"]
+                
+                return_colors = {
+                    "Basso 🟢": "#27ae60",  # Verde per basso return rate
+                    "Alto 🔴": "#e74c3c",    # Rosso per alto return rate
+                    "N/D": "#7f8c8d"        # Grigio per valori mancanti
+                }
+                
+                return_chart = alt.Chart(return_counts).mark_bar().encode(
+                    x=alt.X("Return Rate:N", title="Return Rate"),
+                    y=alt.Y("Conteggio:Q", title="Numero di Prodotti"),
+                    color=alt.Color("Return Rate:N", 
+                                   scale=alt.Scale(domain=list(return_colors.keys()),
+                                                  range=list(return_colors.values())))
+                ).properties(height=200)
+                st.altair_chart(return_chart, use_container_width=True)
+            
             st.subheader("Analisi Multifattoriale")
             chart = alt.Chart(df_finale.reset_index()).mark_circle().encode(
                 x=alt.X("Margine_Netto_%:Q", title="Margine Netto (%)"),
                 y=alt.Y("Opportunity_Score:Q", title="Opportunity Score"),
                 size=alt.Size("Volume_Score:Q", title="Volume Stimato", scale=alt.Scale(range=[20, 200])),
                 color=alt.Color("Locale (comp):N", title="Mercato Confronto", scale=alt.Scale(scheme='category10')),
-                tooltip=["Title (base)", "ASIN", "Brand (base)", "Margine_Netto_%", "Margine_Netto", "Shipping_Cost", "SalesRank_Comp", "Opportunity_Score", "Trend"]
+                tooltip=["Title (base)", "ASIN", "Brand (base)", "Margine_Netto_%", "Margine_Netto", "Shipping_Cost", "SalesRank_Comp", "Opportunity_Score", "Trend", "Return_Rate_Display", "Weight_kg"]
             ).interactive()
             st.altair_chart(chart, use_container_width=True)
             
@@ -816,11 +902,12 @@ if avvia:
                     "Margine_Netto_%": "mean",
                     "Margine_Netto": "mean",
                     "Shipping_Cost": "mean",
-                    "Opportunity_Score": "mean"
+                    "Opportunity_Score": "mean",
+                    "Weight_kg": "mean"
                 }).reset_index()
                 market_analysis.columns = ["Mercato", "Prodotti", "Margine Netto Medio (%)", 
                                           "Margine Netto Medio (€)", "Costo Spedizione Medio (€)",
-                                          "Opportunity Score Medio"]
+                                          "Opportunity Score Medio", "Peso Medio (kg)"]
                 market_analysis = market_analysis.round(2)
                 st.dataframe(market_analysis, use_container_width=True)
                 
@@ -830,7 +917,7 @@ if avvia:
                     color=alt.Color("Mercato:N", scale=alt.Scale(scheme='category10')),
                     tooltip=["Mercato", "Prodotti", "Margine Netto Medio (%)", 
                             "Margine Netto Medio (€)", "Costo Spedizione Medio (€)", 
-                            "Opportunity Score Medio"]
+                            "Opportunity Score Medio", "Peso Medio (kg)"]
                 ).properties(height=300)
                 st.altair_chart(market_chart, use_container_width=True)
         else:
@@ -870,28 +957,47 @@ if avvia:
                     if selected_class != "Tutti":
                         filtered_df = filtered_df[filtered_df["Opportunity_Class"] == selected_class]
             
-            col1, col2 = st.columns(2)
+            # Aggiunta filtro per Return Rate
+            col1, col2, col3 = st.columns(3)
             with col1:
+                if "Return_Rate_Display" in filtered_df.columns:
+                    return_rates = ["Tutti"] + sorted(filtered_df["Return_Rate_Display"].unique().tolist())
+                    selected_return_rate = st.selectbox("Filtra per Return Rate", return_rates)
+                    if selected_return_rate != "Tutti":
+                        filtered_df = filtered_df[filtered_df["Return_Rate_Display"] == selected_return_rate]
+            
+            with col2:
                 min_op_score = st.slider("Opportunity Score Minimo", 
                                          min_value=float(filtered_df["Opportunity_Score"].min()),
                                          max_value=float(filtered_df["Opportunity_Score"].max()),
                                          value=float(filtered_df["Opportunity_Score"].min()))
                 filtered_df = filtered_df[filtered_df["Opportunity_Score"] >= min_op_score]
             
-            with col2:
+            with col3:
                 min_margin = st.slider("Margine Netto Minimo (€)", 
                                       min_value=float(filtered_df["Margine_Netto"].min()),
                                       max_value=float(filtered_df["Margine_Netto"].max()),
                                       value=float(filtered_df["Margine_Netto"].min()))
                 filtered_df = filtered_df[filtered_df["Margine_Netto"] >= min_margin]
             
-            search_term = st.text_input("Cerca per ASIN o Titolo")
-            if search_term:
-                mask = (
-                    filtered_df["ASIN"].str.contains(search_term, case=False, na=False) | 
-                    filtered_df["Title (base)"].str.contains(search_term, case=False, na=False)
-                )
-                filtered_df = filtered_df[mask]
+            # Filtro per peso massimo
+            col1, col2 = st.columns(2)
+            with col1:
+                if "Weight_kg" in filtered_df.columns:
+                    max_weight = st.slider("Peso Massimo (kg)", 
+                                          min_value=float(filtered_df["Weight_kg"].min()),
+                                          max_value=float(filtered_df["Weight_kg"].max()),
+                                          value=float(filtered_df["Weight_kg"].max()))
+                    filtered_df = filtered_df[filtered_df["Weight_kg"] <= max_weight]
+            
+            with col2:
+                search_term = st.text_input("Cerca per ASIN o Titolo")
+                if search_term:
+                    mask = (
+                        filtered_df["ASIN"].str.contains(search_term, case=False, na=False) | 
+                        filtered_df["Title (base)"].str.contains(search_term, case=False, na=False)
+                    )
+                    filtered_df = filtered_df[mask]
             
             st.markdown('</div>', unsafe_allow_html=True)
             
@@ -906,11 +1012,27 @@ if avvia:
                     else:
                         return 'background-color: #3d1a15; color: #e74c3c; font-weight: bold'
                 
+                def highlight_return_rate(val):
+                    if val == "Basso 🟢":
+                        return 'background-color: #14432d; color: #27ae60; font-weight: bold'
+                    elif val == "Alto 🔴":
+                        return 'background-color: #3d1a15; color: #e74c3c; font-weight: bold'
+                    else:
+                        return 'background-color: #282828; color: #aaaaaa;'
+                
                 def format_with_html(df):
                     styled = df.style.map(
                         lambda x: highlight_opportunity(x) if x in ["Eccellente", "Buona", "Discreta", "Bassa"] else '',
                         subset=["Opportunity_Class"]
                     )
+                    
+                    # Evidenzia anche Return Rate
+                    if "Return_Rate_Display" in df.columns:
+                        styled = styled.map(
+                            lambda x: highlight_return_rate(x) if x in ["Basso 🟢", "Alto 🔴", "N/D"] else '',
+                            subset=["Return_Rate_Display"]
+                        )
+                    
                     return styled.format({
                         "Price_Base": "€{:.2f}",
                         "Acquisto_Netto": "€{:.2f}",
@@ -978,6 +1100,7 @@ with st.expander("ℹ️ Come funziona l'Opportunity Score"):
     - **Trend**: Se il prodotto sta migliorando o peggiorando nel ranking
     - **Competizione**: Quante altre offerte ci sono per lo stesso prodotto
     - **Acquisti recenti**: Quanti acquisti sono stati fatti nell'ultimo mese
+    - **Return Rate**: Tasso di reso del prodotto (basso o alto)
     
     ### Calcolo del Margine
     
@@ -1009,12 +1132,21 @@ with st.expander("ℹ️ Come funziona l'Opportunity Score"):
     - Regno Unito: 20%
     
     Il margine stimato tiene conto di queste differenze, permettendoti di calcolare correttamente il potenziale guadagno anche quando il mercato di origine è diverso da quello italiano.
+    
+    ### Return Rate
+    
+    Il Return Rate indica la probabilità di reso del prodotto:
+    - **Basso** (Low): Prodotti con bassa probabilità di reso, nessuna penalizzazione
+    - **Alto** (High): Prodotti con alta probabilità di reso, penalizzazione applicata all'Opportunity Score
+    - **N/D**: Quando non è disponibile l'informazione, viene applicata una penalizzazione intermedia
+    
+    I prodotti con alto Return Rate sono più rischiosi perché comportano costi aggiuntivi di gestione e potenziali perdite.
     """)
 
 # Footer
 st.markdown("""
 <div style="text-align: center; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333; color: #aaa;">
     Amazon Market Analyzer - Arbitraggio Multi-Mercato © 2025<br>
-    Versione 2.0
+    Versione 2.1
 </div>
 """, unsafe_allow_html=True)
