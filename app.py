@@ -1,6 +1,7 @@
 import streamlit as st
 
 # QUESTO DEVE ESSERE IL PRIMO COMANDO STREAMLIT
+# Prima di qualsiasi altra importazione che potrebbe contenere comandi Streamlit
 st.set_page_config(
     page_title="Amazon Market Analyzer - Arbitraggio Multi-Mercato",
     page_icon="🔎",
@@ -17,7 +18,7 @@ import io
 from streamlit_extras.colored_header import colored_header
 from streamlit_extras.metric_cards import style_metric_cards
 
-# CSS personalizzato per tema dark con animazioni e transizioni per migliorare l'impatto visivo
+# CSS personalizzato per tema dark
 st.markdown("""
 <style>
     /* Tema dark globale */
@@ -47,8 +48,8 @@ st.markdown("""
         padding-top: 1rem;
     }
     
-    /* Cards e contenitori con animazione fadeIn */
-    .card, .result-container, .filter-group {
+    /* Cards e contenitori */
+    .card {
         border-radius: 10px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         padding: 1.5rem;
@@ -56,39 +57,23 @@ st.markdown("""
         margin-bottom: 1rem;
         color: #e0e0e0;
         border: 1px solid #333;
-        animation: fadeIn 0.5s ease-in-out;
     }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    
-    /* Container per le metriche */
-    .metric-container {
-        display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        margin-bottom: 1rem;
-    }
-    
-    /* Metriche */
-    [data-testid="stMetricValue"] {
-        background-color: #252525;
-        color: #e0e0e0 !important;
-        padding: 10px;
-        border-radius: 5px;
+    .result-container {
+        background-color: #1e1e1e;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        padding: 1.5rem;
+        margin-top: 2rem;
+        color: #e0e0e0;
         border: 1px solid #333;
-        transition: transform 0.3s ease, background-color 0.3s ease;
     }
-    [data-testid="stMetricValue"]:hover {
-        transform: scale(1.05);
-        background-color: #2a2a2a;
-    }
-    [data-testid="stMetricLabel"] {
-        color: #aaaaaa !important;
-    }
-    [data-testid="stMetricDelta"] {
-        color: #0d6efd !important;
+    .filter-group {
+        background-color: #252525;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        color: #e0e0e0;
+        border: 1px solid #333;
     }
     
     /* Pulsanti e interazioni */
@@ -176,10 +161,6 @@ st.markdown("""
         border-radius: 5px 5px 0 0;
         margin-right: 2px;
         border: 1px solid #333;
-        transition: background-color 0.3s ease, transform 0.3s ease;
-    }
-    .stTabs [data-baseweb="tab"]:hover {
-        transform: scale(1.05);
     }
     .stTabs [aria-selected="true"] {
         background-color: #1e1e1e;
@@ -213,12 +194,32 @@ st.markdown("""
         border: 1px solid #444;
     }
     
+    /* Metriche */
+    [data-testid="stMetricValue"] {
+        background-color: #252525;
+        color: #e0e0e0 !important;
+        padding: 10px;
+        border-radius: 5px;
+        font-weight: bold;
+        border: 1px solid #333;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #aaaaaa !important;
+    }
+    [data-testid="stMetricDelta"] {
+        color: #0d6efd !important;
+    }
+    
     /* Expander */
-    .streamlit-expanderHeader, .streamlit-expanderContent {
+    .streamlit-expanderHeader {
         background-color: #252525 !important;
         color: #e0e0e0 !important;
         border: 1px solid #333 !important;
-        transition: all 0.3s ease;
+    }
+    .streamlit-expanderContent {
+        background-color: #1e1e1e !important;
+        color: #e0e0e0 !important;
+        border: 1px solid #333 !important;
     }
     
     /* File uploader */
@@ -235,6 +236,60 @@ st.markdown("""
         border-color: #333 !important;
     }
 
+    /* Button personalizzato */
+    .copy-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #0d6efd;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 10px 16px;
+        font-size: 16px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        margin-top: 10px;
+        width: 100%;
+    }
+    
+    .copy-button:hover {
+        background-color: #0b5ed7;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        transform: translateY(-1px);
+    }
+    
+    .copy-button:active {
+        transform: translateY(1px);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    }
+    
+    .copy-button svg {
+        margin-right: 8px;
+    }
+    
+    /* Notifica di copia */
+    #copy-notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: #198754;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 6px;
+        z-index: 1000;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+    }
+    
+    .show-notification {
+        opacity: 1 !important;
+    }
+    
     /* Shipping calculator card */
     .shipping-card {
         background-color: #252525;
@@ -243,6 +298,7 @@ st.markdown("""
         border: 1px solid #444;
         margin-bottom: 15px;
     }
+    
     .shipping-title {
         font-size: 16px;
         font-weight: 600;
@@ -250,6 +306,33 @@ st.markdown("""
         color: #e0e0e0;
     }
 </style>
+
+<!-- Elementi extra UI -->
+<div id="copy-notification">ASINs copiati negli appunti! ✓</div>
+
+<!-- Script per la copia negli appunti -->
+<script>
+function copyASINsToClipboard() {
+    const asinsText = document.getElementById('asins-content').value;
+    
+    // Usa l'API Clipboard moderna
+    navigator.clipboard.writeText(asinsText)
+        .then(() => {
+            // Mostra la notifica
+            const notification = document.getElementById('copy-notification');
+            notification.classList.add('show-notification');
+            
+            // Nascondi la notifica dopo 2 secondi
+            setTimeout(() => {
+                notification.classList.remove('show-notification');
+            }, 2000);
+        })
+        .catch(err => {
+            console.error('Errore nella copia: ', err);
+            alert('Non è stato possibile copiare gli ASIN. Prova a selezionarli manualmente.');
+        });
+}
+</script>
 """, unsafe_allow_html=True)
 
 # Inizializzazione delle "ricette" in session_state
@@ -294,28 +377,6 @@ def calculate_shipping_cost(weight_kg):
     
     # Se superiore al limite massimo, utilizza il costo massimo
     return SHIPPING_COSTS[100]
-
-# Funzione per calcolare il fattore di penalizzazione del Return Rate
-def calculate_return_rate_factor(return_rate):
-    """
-    Converte il Return Rate in un fattore numerico per il calcolo dell'Opportunity Score.
-    
-    Args:
-        return_rate: Valore del Return Rate ("low", "high" o vuoto/None)
-        
-    Returns:
-        float: Fattore di penalizzazione (1.0 per "low", 0.7 per "high", 0.85 per valori mancanti)
-    """
-    if pd.isna(return_rate) or return_rate == "":
-        return 0.85  # Valore intermedio per dati mancanti
-    
-    return_rate_lower = str(return_rate).lower().strip()
-    if return_rate_lower == "low":
-        return 1.0  # Nessuna penalizzazione
-    elif return_rate_lower == "high":
-        return 0.7  # Forte penalizzazione
-    else:
-        return 0.85  # Default per valori non riconosciuti
 
 #################################
 # Sidebar: Caricamento file, Prezzo di riferimento, Sconto, Impostazioni e Ricette
@@ -412,9 +473,6 @@ with st.sidebar:
         delta = st.slider("Peso penalizzante per Offer Count", 0.0, 5.0, st.session_state.get("delta", 1.0), step=0.1, key="delta")
         epsilon = st.slider("Peso per il Margine (%)", 0.0, 10.0, st.session_state.get("epsilon", 3.0), step=0.1, key="epsilon")  # Valore predefinito aumentato
         zeta = st.slider("Peso per Trend Sales Rank", 0.0, 5.0, st.session_state.get("zeta", 1.0), step=0.1, key="zeta")
-        return_rate_weight = st.slider("Peso penalizzante per Return Rate alto", 0.0, 5.0, 
-                                     st.session_state.get("return_rate_weight", 2.0), step=0.1, 
-                                     key="return_rate_weight")
     
     with tab2:
         gamma = st.slider("Peso per volume di vendita", 0.0, 5.0, st.session_state.get("gamma", 2.0), step=0.1, key="gamma")
@@ -442,7 +500,6 @@ with st.sidebar:
         st.session_state["theta"] = recipe.get("theta", 1.5)
         st.session_state["min_margin_multiplier"] = recipe.get("min_margin_multiplier", 1.2)
         st.session_state["discount_percent"] = recipe.get("discount_percent", 20.0)
-        st.session_state["return_rate_weight"] = recipe.get("return_rate_weight", 2.0)
         # Caricamento delle impostazioni IVA se presenti
         if "iva_base" in recipe:
             country_name, rate = recipe["iva_base"]
@@ -466,7 +523,6 @@ with st.sidebar:
                 "theta": st.session_state.get("theta", 1.5),
                 "min_margin_multiplier": st.session_state.get("min_margin_multiplier", 1.2),
                 "discount_percent": st.session_state.get("discount_percent", 20.0),
-                "return_rate_weight": st.session_state.get("return_rate_weight", 2.0),
                 "iva_base": iva_base,
                 "iva_comp": iva_comp
             }
@@ -513,68 +569,22 @@ def parse_int(x):
     except:
         return np.nan
 
-# Funzione migliorata per parsare il peso dagli attributi
+# Funzione per parsare il peso dagli attributi
 def parse_weight(x):
-    """Estrae il peso in kg dai campi di attributo.
-    
-    IMPORTANTE: Questa funzione assume che tutti i valori numerici siano in grammi
-    a meno che non sia esplicitamente indicato "kg".
-    """
+    """Estrae il peso in kg dai campi di attributo."""
     if not isinstance(x, str):
         return np.nan
-        
-    # Debug: stampa il valore in input
-    print(f"Parsing peso da: {x}")
     
-    # Pulisci la stringa da caratteri non necessari
-    x_clean = x.lower().replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+    # Cerca pattern come "0.5 kg" o "500 g"
+    kg_match = re.search(r'(\d+\.?\d*)\s*kg', x.lower())
+    g_match = re.search(r'(\d+\.?\d*)\s*g', x.lower())
     
-    # Cerca pattern "peso: X kg" o "weight: X kg"
-    peso_pattern = re.search(r'(peso|weight)[\s:]+(\d+[.,]?\d*)\s*kg', x_clean)
-    if peso_pattern:
-        weight_val = peso_pattern.group(2).replace(',', '.')
-        print(f"Trovato peso in kg: {weight_val}")
-        return float(weight_val)
-    
-    # Cerca pattern "peso: X g" o "weight: X g"
-    peso_g_pattern = re.search(r'(peso|weight)[\s:]+(\d+[.,]?\d*)\s*g', x_clean)
-    if peso_g_pattern:
-        weight_val = peso_g_pattern.group(2).replace(',', '.')
-        print(f"Trovato peso in g: {weight_val}, convertito a kg: {float(weight_val)/1000}")
-        return float(weight_val) / 1000
-    
-    # Controlla se è specificato "kg"
-    kg_match = re.search(r'(\d+[.,]?\d*)\s*kg', x_clean)
     if kg_match:
-        weight_val = kg_match.group(1).replace(',', '.')
-        print(f"Trovato kg: {weight_val}")
-        return float(weight_val)
-    
-    # Controlla se è specificato "g" o "gr" per grammi
-    g_match = re.search(r'(\d+[.,]?\d*)\s*g[r]?', x_clean)
-    if g_match:
-        weight_val = g_match.group(1).replace(',', '.')
-        gram_weight = float(weight_val) / 1000
-        print(f"Trovato grammi: {weight_val}, convertito in kg: {gram_weight}")
-        return gram_weight
-    
-    # Cerca qualsiasi numero che potrebbe essere un peso
-    # ma solo se la stringa contiene parole chiave relative al peso
-    if any(kw in x_clean for kw in ['peso', 'weight', 'grammi', 'grams', 'kg', ' g ', 'pesante']):
-        num_match = re.search(r'(\d+[.,]?\d*)', x_clean)
-        if num_match:
-            weight_val = num_match.group(1).replace(',', '.')
-            # Se il numero è grande (>100), probabilmente sono grammi
-            val = float(weight_val)
-            if val > 100:
-                print(f"Trovato probabile peso in grammi: {val}, convertito in kg: {val/1000}")
-                return val / 1000
-            else:
-                print(f"Trovato probabile peso in kg: {val}")
-                return val
-    
-    print("Nessun peso trovato")
-    return np.nan
+        return float(kg_match.group(1))
+    elif g_match:
+        return float(g_match.group(1)) / 1000  # converti grammi in kg
+    else:
+        return np.nan
 
 # Funzione per formattare il Trend in base al valore di Trend_Bonus
 def format_trend(trend):
@@ -597,18 +607,6 @@ def classify_opportunity(score):
         return "Discreta", "warning-tag"
     else:
         return "Bassa", "danger-tag"
-
-# Funzione per formattare il Return Rate per la visualizzazione
-def format_return_rate(rate):
-    if pd.isna(rate) or rate == "":
-        return "N/D"
-    rate_lower = str(rate).lower().strip()
-    if rate_lower == "low":
-        return "Basso 🟢"
-    elif rate_lower == "high":
-        return "Alto 🔴"
-    else:
-        return str(rate)
 
 #################################
 # Visualizzazione Immediata degli ASIN dalla Lista di Origine
@@ -634,24 +632,20 @@ with tab_main1:
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     asin_text = "\n".join(unique_asins)
-                    asins_area = st.text_area("ASIN disponibili:", asin_text, height=200, key="asins_display")
+                    st.text_area("ASIN disponibili:", asin_text, height=200, key="asins-content", label_visibility="collapsed")
                     
-                    if st.button("📋 Copia ASINs negli appunti", type="primary"):
-                        st.write("ASINs copiati negli appunti! ✓")
-                        st.session_state['clipboard_content'] = asin_text
-                        st.markdown(
-                            f"""
-                            <script>
-                                navigator.clipboard.writeText(`{asin_text}`).then(function() {{
-                                    console.log('Copying to clipboard was successful!');
-                                }}, function(err) {{
-                                    console.error('Could not copy text: ', err);
-                                }});
-                            </script>
-                            """,
-                            unsafe_allow_html=True
-                        )
-                        
+                    # Pulsante migliorato per copiare gli ASIN
+                    st.markdown(f"""
+                    <button 
+                        onclick="copyASINsToClipboard()" 
+                        class="copy-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                            <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                        </svg>
+                        Copia ASINs negli appunti
+                    </button>
+                    """, unsafe_allow_html=True)
                 with col2:
                     st.metric("Totale ASIN", len(unique_asins))
                     if "Brand (base)" in df_base.columns:
@@ -696,11 +690,13 @@ def calc_final_purchase_price(row, discount, iva_base_rate):
 # Elaborazione Completa e Calcolo Opportunity Score
 #################################
 if avvia:
+    # Controllo file di confronto
     if not comparison_files:
         with tab_main1:
             st.error("Carica almeno un file di Liste di Confronto.")
         st.stop()
     
+    # Elaborazione Liste di Confronto
     comp_list = []
     for f in comparison_files:
         df_temp = load_data(f)
@@ -715,111 +711,72 @@ if avvia:
         st.stop()
     df_comp = pd.concat(comp_list, ignore_index=True)
     
+    # Verifica della presenza della colonna ASIN in entrambi i dataset
     if "ASIN" not in df_base.columns or "ASIN" not in df_comp.columns:
         with tab_main1:
             st.error("Assicurati che entrambi i file (origine e confronto) contengano la colonna ASIN.")
         st.stop()
     
+    # Merge tra base e confronto sulla colonna ASIN
     df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner", suffixes=(" (base)", " (comp)"))
     if df_merged.empty:
         with tab_main1:
             st.error("Nessuna corrispondenza trovata tra la Lista di Origine e le Liste di Confronto.")
         st.stop()
     
+    # Utilizza le colonne di prezzo selezionate dalla sidebar
     price_col_base = f"{ref_price_base} (base)"
     price_col_comp = f"{ref_price_comp} (comp)"
     df_merged["Price_Base"] = df_merged.get(price_col_base, pd.Series(np.nan)).apply(parse_float)
     df_merged["Price_Comp"] = df_merged.get(price_col_comp, pd.Series(np.nan)).apply(parse_float)
     
+    # Conversione dei dati dal mercato di confronto per le altre metriche
     df_merged["SalesRank_Comp"] = df_merged.get("Sales Rank: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["Bought_Comp"] = df_merged.get("Bought in past month (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
+    # Leggi anche il Sales Rank a 90 giorni, se presente
     df_merged["SalesRank_90d"] = df_merged.get("Sales Rank: 90 days avg. (comp)", pd.Series(np.nan)).apply(parse_int)
     
-    # Preprocessing per Return Rate
-    df_merged["Return_Rate"] = df_merged.get("Return Rate (comp)", pd.Series(""))
-    df_merged["Return_Rate_Display"] = df_merged["Return_Rate"].apply(format_return_rate)
-    df_merged["Return_Rate_Factor"] = df_merged["Return_Rate"].apply(calculate_return_rate_factor)
-    
+    # Estrai informazioni sul peso
+    # Cerca in varie colonne che potrebbero contenere informazioni sul peso
     possible_weight_cols = [
         "Weight (base)", "Item Weight (base)", "Package: Weight (kg) (base)", 
-        "Package: Weight (base)", "Product details (base)", "Features (base)"
+        "Product details (base)", "Features (base)"
     ]
     
+    # Inizializza colonna peso
     df_merged["Weight_kg"] = np.nan
+    
+    # Cerca nelle possibili colonne di peso
     for col in possible_weight_cols:
         if col in df_merged.columns:
             weight_data = df_merged[col].apply(parse_weight)
+            # Aggiorna solo i valori mancanti
             df_merged.loc[df_merged["Weight_kg"].isna(), "Weight_kg"] = weight_data.loc[df_merged["Weight_kg"].isna()]
     
-    # Aggiungi un altro tentativo di estrazione del peso direttamente dal titolo del prodotto
-    if df_merged["Weight_kg"].isna().all():
-        st.warning("Non è stato possibile rilevare i pesi dai campi attributo standard. Tentativo di estrazione dal titolo...")
-        if "Title (base)" in df_merged.columns:
-            df_merged["Weight_kg"] = df_merged["Title (base)"].apply(parse_weight)
-            
-    # Verifica se siamo riusciti a estrarre alcuni pesi
-    if df_merged["Weight_kg"].notna().any():
-        # Crea una distribuzione di pesi variegata per i prodotti senza peso rilevato
-        valid_weights = df_merged.loc[df_merged["Weight_kg"].notna(), "Weight_kg"]
-        if not valid_weights.empty:
-            # Genera pesi basati sulla distribuzione di quelli trovati
-            mean_weight = valid_weights.mean()
-            std_weight = max(valid_weights.std(), 0.5)  # Almeno 0.5 kg di deviazione
-            st.info(f"Applicando distribuzione di pesi (media: {mean_weight:.2f} kg, deviazione: {std_weight:.2f} kg) ai prodotti senza peso rilevato")
-            
-            # Genera pesi casuali per i prodotti senza peso
-            np.random.seed(42)  # Per riproducibilità
-            missing_count = df_merged["Weight_kg"].isna().sum()
-            random_weights = np.random.normal(mean_weight, std_weight, size=missing_count)
-            random_weights = np.clip(random_weights, 0.1, 30)  # Limita tra 100g e 30kg
-            
-            # Assegna i pesi generati
-            df_merged.loc[df_merged["Weight_kg"].isna(), "Weight_kg"] = random_weights
-        else:
-            st.warning("Non è stato possibile rilevare alcun peso dai dati. Assegnando pesi predefiniti variabili...")
-            # Assegna pesi variabili predefiniti
-            np.random.seed(42)
-            random_weights = np.random.uniform(0.5, 3.0, size=df_merged["Weight_kg"].isna().sum())
-            df_merged.loc[df_merged["Weight_kg"].isna(), "Weight_kg"] = random_weights
-    else:
-        st.warning("Non è stato possibile rilevare alcun peso dai dati. Assegnando pesi predefiniti variabili...")
-        # Assegna pesi variabili predefiniti
-        np.random.seed(42)
-        random_weights = np.random.uniform(0.5, 3.0, size=len(df_merged))
-        df_merged["Weight_kg"] = random_weights
+    # Se non ci sono informazioni sul peso, imposta un valore predefinito
+    df_merged["Weight_kg"] = df_merged["Weight_kg"].fillna(1.0)  # Assume 1kg come predefinito
     
-    # Debug dei pesi
-    st.write("Rilevamento dei pesi dei prodotti:")
-    st.write(f"Pesi mancanti prima del riempimento: {df_merged['Weight_kg'].isna().sum()} su {len(df_merged)}")
-    
-    # Riempimento e controllo dei pesi
-    df_merged["Weight_kg"] = df_merged["Weight_kg"].fillna(1.0)
-    # Assicuriamoci che non ci siano valori 0 che potrebbero causare problemi nel calcolo dei costi
-    df_merged.loc[df_merged["Weight_kg"] <= 0, "Weight_kg"] = 1.0
-    
-    st.write(f"Gamma dei pesi (kg): {df_merged['Weight_kg'].min():.2f} - {df_merged['Weight_kg'].max():.2f}")
-    st.write(f"Peso medio (kg): {df_merged['Weight_kg'].mean():.2f}")
-    
-    # Crea un istogramma dei pesi
-    weight_hist_data = pd.DataFrame({"Peso (kg)": df_merged["Weight_kg"]})
-    weight_hist = alt.Chart(weight_hist_data).mark_bar().encode(
-        alt.X("Peso (kg):Q", bin=alt.Bin(maxbins=20)),
-        alt.Y("count():Q", title="Numero Prodotti")
-    ).properties(
-        title="Distribuzione dei Pesi",
-        height=150
-    )
-    st.altair_chart(weight_hist, use_container_width=True)
-    
+    # Calcola il costo di spedizione per ogni prodotto
     df_merged["Shipping_Cost"] = df_merged["Weight_kg"].apply(calculate_shipping_cost)
     
+    # Calcolo del prezzo d'acquisto netto per ogni prodotto dalla lista di origine
+    # Utilizzo della funzione aggiornata con IVA variabile
     df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount, iva_base_rate), axis=1)
     
+    # NUOVA LOGICA: Calcolo del margine stimato considerando IVA correttamente
+    # 1. Prezzo nel mercato di confronto (lordo IVA)
+    # 2. Prezzo di acquisto netto (già senza IVA)
+    # 3. Margine = Prezzo confronto / (1 + IVA) - Prezzo acquisto netto
+    
+    # Calcolo del prezzo netto di vendita nel mercato di confronto (senza IVA)
     df_merged["Vendita_Netto"] = df_merged["Price_Comp"] / (1 + iva_comp_rate)
+    
+    # Calcolo del margine stimato corretto (in valore assoluto e percentuale)
     df_merged["Margine_Stimato"] = df_merged["Vendita_Netto"] - df_merged["Acquisto_Netto"]
     df_merged["Margine_%"] = (df_merged["Margine_Stimato"] / df_merged["Acquisto_Netto"]) * 100
     
+    # Calcolo del margine netto con costi di spedizione
     if include_shipping:
         df_merged["Margine_Netto"] = df_merged["Margine_Stimato"] - df_merged["Shipping_Cost"]
         df_merged["Margine_Netto_%"] = (df_merged["Margine_Netto"] / df_merged["Acquisto_Netto"]) * 100
@@ -827,11 +784,14 @@ if avvia:
         df_merged["Margine_Netto"] = df_merged["Margine_Stimato"]
         df_merged["Margine_Netto_%"] = df_merged["Margine_%"]
     
+    # Nuovo calcolo del margine percentuale tra i prezzi lordi (solo per riferimento)
     df_merged["Margin_Pct_Lordo"] = (df_merged["Price_Comp"] - df_merged["Price_Base"]) / df_merged["Price_Base"] * 100
     
+    # Filtro sui prodotti con margine positivo
     df_merged = df_merged[df_merged["Margine_Netto_%"] > min_margin_pct]
     df_merged = df_merged[df_merged["Margine_Netto"] > min_margin_abs]
     
+    # Applicazione dei filtri avanzati (sul mercato di confronto)
     df_merged["SalesRank_Comp"] = df_merged["SalesRank_Comp"].fillna(999999)
     df_merged = df_merged[df_merged["SalesRank_Comp"] <= max_sales_rank]
     
@@ -841,14 +801,22 @@ if avvia:
     df_merged["Price_Comp"] = df_merged["Price_Comp"].fillna(0)
     df_merged = df_merged[df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price)]
     
+    # Calcolo del bonus/penalità per il Trend del Sales Rank
     df_merged["Trend_Bonus"] = np.log((df_merged["SalesRank_90d"].fillna(df_merged["SalesRank_Comp"]) + 1) / (df_merged["SalesRank_Comp"] + 1))
+    # Formattiamo il trend in una stringa con icona
     df_merged["Trend"] = df_merged["Trend_Bonus"].apply(format_trend)
     
+    # NUOVA FORMULA per l'Opportunity Score
+    # Normalizzazione rank per evitare divisioni per zero o valori negativi
     df_merged["Norm_Rank"] = np.log(df_merged["SalesRank_Comp"].fillna(999999) + 10)
+    
+    # Calcoliamo il volume stimato di vendite (inversamente proporzionale al rank)
     df_merged["Volume_Score"] = 1000 / df_merged["Norm_Rank"]
+    
+    # Calcolo del fattore di ROI (Return on Investment)
     df_merged["ROI_Factor"] = df_merged["Margine_Netto"] / df_merged["Acquisto_Netto"]
     
-    # Applicazione del fattore Return Rate all'Opportunity Score
+    # Calcolo del nuovo Opportunity Score (ora basato sul margine netto)
     df_merged["Opportunity_Score"] = (
         epsilon * df_merged["Margine_Netto_%"] +
         theta * df_merged["Margine_Netto"] +
@@ -859,44 +827,45 @@ if avvia:
         gamma * df_merged["Volume_Score"]
     )
     
-    # Applicazione del fattore Return Rate - aggiunto peso regolabile
-    # Valori Return_Rate_Factor: Low = 1.0 (nessuna penalizzazione), High = 0.7 (30% penalizzazione)
-    # Applichiamo il peso solo quando il Return Rate è alto (penalizzazione)
-    df_merged.loc[df_merged["Return_Rate"].str.lower() == "high", "Opportunity_Score"] -= (
-        return_rate_weight * (1 - df_merged["Return_Rate_Factor"]) * df_merged["Opportunity_Score"]
-    )
-    
+    # Fattore di penalizzazione per margini troppo bassi
     min_margin_threshold = min_margin_abs * min_margin_multiplier
     df_merged.loc[df_merged["Margine_Netto"] < min_margin_threshold, "Opportunity_Score"] *= (df_merged["Margine_Netto"] / min_margin_threshold)
     
+    # Normalizzazione dei punteggi per renderli più leggibili (0-100 scala)
     max_score = df_merged["Opportunity_Score"].max()
     if not np.isnan(max_score) and max_score > 0:
         df_merged["Opportunity_Score"] = (df_merged["Opportunity_Score"] / max_score) * 100
     
+    # Classificazione dell'opportunità - Correzione dell'errore
+    # Invece di assegnare una Series a due colonne, creiamo le colonne separatamente
     df_merged["Opportunity_Class"] = df_merged["Opportunity_Score"].apply(
-        lambda score: classify_opportunity(score)[0]
+        lambda score: classify_opportunity(score)[0]  # Solo il primo elemento della tupla
     )
     df_merged["Opportunity_Tag"] = df_merged["Opportunity_Score"].apply(
-        lambda score: classify_opportunity(score)[1]
+        lambda score: classify_opportunity(score)[1]  # Solo il secondo elemento della tupla
     )
     
+    # Aggiunta dell'informazione sulle aliquote IVA utilizzate
     df_merged["IVA_Origine"] = f"{iva_base[0]} ({iva_base[1]}%)"
     df_merged["IVA_Confronto"] = f"{iva_comp[0]} ({iva_comp[1]}%)"
     
+    # Ordiniamo i risultati per Opportunity Score decrescente
     df_merged = df_merged.sort_values("Opportunity_Score", ascending=False)
     
+    # Selezione delle colonne finali da visualizzare
     cols_final = [
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
         "Price_Base", "Acquisto_Netto", "Price_Comp", "Vendita_Netto",
         "Margine_Stimato", "Shipping_Cost", "Margine_Netto", "Margine_Netto_%", 
         "Weight_kg", "SalesRank_Comp", "SalesRank_90d",
         "Trend", "Bought_Comp", "NewOffer_Comp", "Volume_Score",
-        "Return_Rate_Display", "Opportunity_Score", "Opportunity_Class", "IVA_Origine", "IVA_Confronto",
+        "Opportunity_Score", "Opportunity_Class", "IVA_Origine", "IVA_Confronto",
         "Brand (base)", "Package: Dimension (cm³) (base)"
     ]
     cols_final = [c for c in cols_final if c in df_merged.columns]
     df_finale = df_merged[cols_final].copy()
     
+    # Arrotonda i valori numerici principali a 2 decimali
     cols_to_round = ["Price_Base", "Acquisto_Netto", "Price_Comp", "Vendita_Netto", 
                      "Margine_Stimato", "Shipping_Cost", "Margine_Netto", "Margine_Netto_%", 
                      "Margine_%", "Opportunity_Score", "Volume_Score", "Weight_kg"]
@@ -904,6 +873,7 @@ if avvia:
         if col in df_finale.columns:
             df_finale[col] = df_finale[col].round(2)
     
+    # Salviamo i dati nella sessione per i filtri interattivi
     st.session_state['filtered_data'] = df_finale
     
     #################################
@@ -913,8 +883,8 @@ if avvia:
         st.markdown('<div class="result-container">', unsafe_allow_html=True)
         st.subheader("📊 Dashboard delle Opportunità")
         
+        # Metriche principali
         if not df_finale.empty:
-            st.markdown('<div class="metric-container">', unsafe_allow_html=True)
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Prodotti Trovati", len(df_finale))
@@ -924,10 +894,11 @@ if avvia:
                 st.metric("Margine Netto Medio (€)", f"{df_finale['Margine_Netto'].mean():.2f}€")
             with col4:
                 st.metric("Opportunity Score Massimo", f"{df_finale['Opportunity_Score'].max():.2f}")
-            st.markdown('</div>', unsafe_allow_html=True)
             
+            # Riepilogo impostazioni
             st.info(f"IVA Origine: {iva_base[0]} ({iva_base[1]}%) | IVA Confronto: {iva_comp[0]} ({iva_comp[1]}%) | {'✅ Spedizione Inclusa' if include_shipping else '❌ Spedizione Esclusa'}")
             
+            # Configura i colori per il tema dark in Altair
             dark_colors = {
                 "Eccellente": "#2ecc71",
                 "Buona": "#27ae60",
@@ -935,6 +906,7 @@ if avvia:
                 "Bassa": "#e74c3c"
             }
             
+            # Grafico di distribuzione degli Opportunity Score
             st.subheader("Distribuzione Opportunity Score")
             hist = alt.Chart(df_finale.reset_index()).mark_bar().encode(
                 alt.X("Opportunity_Score:Q", bin=alt.Bin(maxbins=20), title="Opportunity Score"),
@@ -945,37 +917,18 @@ if avvia:
             ).properties(height=250)
             st.altair_chart(hist, use_container_width=True)
             
-            # Aggiunta di un grafico per la distribuzione del Return Rate
-            if "Return_Rate_Display" in df_finale.columns:
-                st.subheader("Distribuzione Return Rate")
-                return_counts = df_finale["Return_Rate_Display"].value_counts().reset_index()
-                return_counts.columns = ["Return Rate", "Conteggio"]
-                
-                return_colors = {
-                    "Basso 🟢": "#27ae60",  # Verde per basso return rate
-                    "Alto 🔴": "#e74c3c",    # Rosso per alto return rate
-                    "N/D": "#7f8c8d"        # Grigio per valori mancanti
-                }
-                
-                return_chart = alt.Chart(return_counts).mark_bar().encode(
-                    x=alt.X("Return Rate:N", title="Return Rate"),
-                    y=alt.Y("Conteggio:Q", title="Numero di Prodotti"),
-                    color=alt.Color("Return Rate:N", 
-                                   scale=alt.Scale(domain=list(return_colors.keys()),
-                                                  range=list(return_colors.values())))
-                ).properties(height=200)
-                st.altair_chart(return_chart, use_container_width=True)
-            
+            # Grafico Scatter: Margine Netto (%) vs Opportunity Score con dimensione per Volume
             st.subheader("Analisi Multifattoriale")
             chart = alt.Chart(df_finale.reset_index()).mark_circle().encode(
                 x=alt.X("Margine_Netto_%:Q", title="Margine Netto (%)"),
                 y=alt.Y("Opportunity_Score:Q", title="Opportunity Score"),
                 size=alt.Size("Volume_Score:Q", title="Volume Stimato", scale=alt.Scale(range=[20, 200])),
                 color=alt.Color("Locale (comp):N", title="Mercato Confronto", scale=alt.Scale(scheme='category10')),
-                tooltip=["Title (base)", "ASIN", "Brand (base)", "Margine_Netto_%", "Margine_Netto", "Shipping_Cost", "SalesRank_Comp", "Opportunity_Score", "Trend", "Return_Rate_Display", "Weight_kg"]
+                tooltip=["Title (base)", "ASIN", "Margine_Netto_%", "Margine_Netto", "Shipping_Cost", "SalesRank_Comp", "Opportunity_Score", "Trend"]
             ).interactive()
             st.altair_chart(chart, use_container_width=True)
             
+            # Analisi per Mercato di Confronto
             st.subheader("Analisi per Mercato")
             if "Locale (comp)" in df_finale.columns:
                 market_analysis = df_finale.groupby("Locale (comp)").agg({
@@ -983,22 +936,22 @@ if avvia:
                     "Margine_Netto_%": "mean",
                     "Margine_Netto": "mean",
                     "Shipping_Cost": "mean",
-                    "Opportunity_Score": "mean",
-                    "Weight_kg": "mean"
+                    "Opportunity_Score": "mean"
                 }).reset_index()
                 market_analysis.columns = ["Mercato", "Prodotti", "Margine Netto Medio (%)", 
                                           "Margine Netto Medio (€)", "Costo Spedizione Medio (€)",
-                                          "Opportunity Score Medio", "Peso Medio (kg)"]
+                                          "Opportunity Score Medio"]
                 market_analysis = market_analysis.round(2)
                 st.dataframe(market_analysis, use_container_width=True)
                 
+                # Grafico a barre per confronto mercati
                 market_chart = alt.Chart(market_analysis).mark_bar().encode(
                     x="Mercato:N",
                     y="Opportunity Score Medio:Q",
                     color=alt.Color("Mercato:N", scale=alt.Scale(scheme='category10')),
                     tooltip=["Mercato", "Prodotti", "Margine Netto Medio (%)", 
                             "Margine Netto Medio (€)", "Costo Spedizione Medio (€)", 
-                            "Opportunity Score Medio", "Peso Medio (kg)"]
+                            "Opportunity Score Medio"]
                 ).properties(height=300)
                 st.altair_chart(market_chart, use_container_width=True)
         else:
@@ -1012,6 +965,7 @@ if avvia:
             st.markdown('<div class="result-container">', unsafe_allow_html=True)
             st.subheader("🔍 Esplora i Risultati")
             
+            # Filtri interattivi
             st.markdown('<div class="filter-group">', unsafe_allow_html=True)
             col1, col2, col3 = st.columns(3)
             
@@ -1038,58 +992,35 @@ if avvia:
                     if selected_class != "Tutti":
                         filtered_df = filtered_df[filtered_df["Opportunity_Class"] == selected_class]
             
-            # Aggiunta filtro per Return Rate
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
-                if "Return_Rate_Display" in filtered_df.columns:
-                    return_rates = ["Tutti"] + sorted(filtered_df["Return_Rate_Display"].unique().tolist())
-                    selected_return_rate = st.selectbox("Filtra per Return Rate", return_rates)
-                    if selected_return_rate != "Tutti":
-                        filtered_df = filtered_df[filtered_df["Return_Rate_Display"] == selected_return_rate]
-            
-            with col2:
                 min_op_score = st.slider("Opportunity Score Minimo", 
                                          min_value=float(filtered_df["Opportunity_Score"].min()),
                                          max_value=float(filtered_df["Opportunity_Score"].max()),
                                          value=float(filtered_df["Opportunity_Score"].min()))
                 filtered_df = filtered_df[filtered_df["Opportunity_Score"] >= min_op_score]
             
-            with col3:
+            with col2:
                 min_margin = st.slider("Margine Netto Minimo (€)", 
                                       min_value=float(filtered_df["Margine_Netto"].min()),
                                       max_value=float(filtered_df["Margine_Netto"].max()),
                                       value=float(filtered_df["Margine_Netto"].min()))
                 filtered_df = filtered_df[filtered_df["Margine_Netto"] >= min_margin]
             
-            # Filtro per peso massimo
-            col1, col2 = st.columns(2)
-            with col1:
-                if "Weight_kg" in filtered_df.columns:
-                    min_weight = float(filtered_df["Weight_kg"].min())
-                    max_weight = float(filtered_df["Weight_kg"].max())
-                    
-                    # Previeni l'errore quando min e max sono uguali
-                    if min_weight == max_weight:
-                        st.info(f"Tutti i prodotti hanno lo stesso peso: {min_weight} kg")
-                    else:
-                        max_weight_filter = st.slider("Peso Massimo (kg)", 
-                                              min_value=min_weight,
-                                              max_value=max_weight,
-                                              value=max_weight)
-                        filtered_df = filtered_df[filtered_df["Weight_kg"] <= max_weight_filter]
-            
-            with col2:
-                search_term = st.text_input("Cerca per ASIN o Titolo")
-                if search_term:
-                    mask = (
-                        filtered_df["ASIN"].str.contains(search_term, case=False, na=False) | 
-                        filtered_df["Title (base)"].str.contains(search_term, case=False, na=False)
-                    )
-                    filtered_df = filtered_df[mask]
+            # Cerca per ASIN o titolo
+            search_term = st.text_input("Cerca per ASIN o Titolo")
+            if search_term:
+                mask = (
+                    filtered_df["ASIN"].str.contains(search_term, case=False, na=False) | 
+                    filtered_df["Title (base)"].str.contains(search_term, case=False, na=False)
+                )
+                filtered_df = filtered_df[mask]
             
             st.markdown('</div>', unsafe_allow_html=True)
             
+            # Visualizzazione dei risultati filtrati
             if not filtered_df.empty:
+                # Formato personalizzato per la tabella dei risultati in tema dark
                 def highlight_opportunity(val):
                     if val == "Eccellente":
                         return 'background-color: #153d2e; color: #2ecc71; font-weight: bold'
@@ -1100,27 +1031,12 @@ if avvia:
                     else:
                         return 'background-color: #3d1a15; color: #e74c3c; font-weight: bold'
                 
-                def highlight_return_rate(val):
-                    if val == "Basso 🟢":
-                        return 'background-color: #14432d; color: #27ae60; font-weight: bold'
-                    elif val == "Alto 🔴":
-                        return 'background-color: #3d1a15; color: #e74c3c; font-weight: bold'
-                    else:
-                        return 'background-color: #282828; color: #aaaaaa;'
-                
+                # Aggiungi la formattazione HTML per le classi di opportunity
                 def format_with_html(df):
-                    styled = df.style.map(
+                    styled = df.style.map(  # Cambiato da applymap a map (deprecato)
                         lambda x: highlight_opportunity(x) if x in ["Eccellente", "Buona", "Discreta", "Bassa"] else '',
                         subset=["Opportunity_Class"]
                     )
-                    
-                    # Evidenzia anche Return Rate
-                    if "Return_Rate_Display" in df.columns:
-                        styled = styled.map(
-                            lambda x: highlight_return_rate(x) if x in ["Basso 🟢", "Alto 🔴", "N/D"] else '',
-                            subset=["Return_Rate_Display"]
-                        )
-                    
                     return styled.format({
                         "Price_Base": "€{:.2f}",
                         "Acquisto_Netto": "€{:.2f}",
@@ -1135,16 +1051,20 @@ if avvia:
                         "Weight_kg": "{:.2f} kg"
                     })
                 
+                # Visualizzazione dei risultati - SENZA PAGINAZIONE
                 st.markdown(f"**{len(filtered_df)} prodotti trovati**")
                 
+                # Selezione delle colonne da visualizzare
                 display_cols = [col for col in filtered_df.columns if col not in ["Opportunity_Tag", "SalesRank_90d"]]
                 
+                # Mostra la tabella completa (senza paginazione)
                 st.dataframe(
                     format_with_html(filtered_df[display_cols]),
-                    height=600,
+                    height=600,  # Altezza fissa per visualizzare più righe
                     use_container_width=True
                 )
                 
+                # Esportazione dati
                 csv_data = filtered_df.to_csv(index=False, sep=";").encode("utf-8")
                 excel_data = io.BytesIO()
                 filtered_df.to_excel(excel_data, index=False)
@@ -1188,7 +1108,6 @@ with st.expander("ℹ️ Come funziona l'Opportunity Score"):
     - **Trend**: Se il prodotto sta migliorando o peggiorando nel ranking
     - **Competizione**: Quante altre offerte ci sono per lo stesso prodotto
     - **Acquisti recenti**: Quanti acquisti sono stati fatti nell'ultimo mese
-    - **Return Rate**: Tasso di reso del prodotto (basso o alto)
     
     ### Calcolo del Margine
     
@@ -1220,21 +1139,12 @@ with st.expander("ℹ️ Come funziona l'Opportunity Score"):
     - Regno Unito: 20%
     
     Il margine stimato tiene conto di queste differenze, permettendoti di calcolare correttamente il potenziale guadagno anche quando il mercato di origine è diverso da quello italiano.
-    
-    ### Return Rate
-    
-    Il Return Rate indica la probabilità di reso del prodotto:
-    - **Basso** (Low): Prodotti con bassa probabilità di reso, nessuna penalizzazione
-    - **Alto** (High): Prodotti con alta probabilità di reso, penalizzazione applicata all'Opportunity Score
-    - **N/D**: Quando non è disponibile l'informazione, viene applicata una penalizzazione intermedia
-    
-    I prodotti con alto Return Rate sono più rischiosi perché comportano costi aggiuntivi di gestione e potenziali perdite.
     """)
 
 # Footer
 st.markdown("""
 <div style="text-align: center; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #333; color: #aaa;">
     Amazon Market Analyzer - Arbitraggio Multi-Mercato © 2025<br>
-    Versione 2.1
+    Versione 2.0
 </div>
 """, unsafe_allow_html=True)
