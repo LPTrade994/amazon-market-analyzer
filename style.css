@@ -4,6 +4,10 @@
     color: #e0e0e0;
 }
 
+html, body {
+    overflow-y: scroll;
+}
+
 /* Sidebar dark */
 [data-testid="stSidebar"] {
     background-color: #1a1a1a;
@@ -171,6 +175,7 @@ a:hover {
 .stTabs [data-baseweb="tab-panel"] {
     background-color: #1e1e1e;
     padding: 15px;
+    box-sizing: border-box;
     border-radius: 0 0 10px 10px;
     color: #e0e0e0;
     border-left: 1px solid #333;
@@ -198,6 +203,7 @@ a:hover {
 .stDataFrame, .stTable { /* Applicato anche a st.table se usato */
     border: 1px solid #333;
     border-radius: 6px; /* Angoli arrotondati */
+    box-sizing: border-box;
     overflow: hidden; /* Per far rispettare il border-radius ai figli */
 }
 .stDataFrame th, .stTable th {
