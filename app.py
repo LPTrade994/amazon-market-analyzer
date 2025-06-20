@@ -26,6 +26,10 @@ st.markdown("""
         background-color: #121212;
         color: #e0e0e0;
     }
+
+    html, body {
+        overflow-y: scroll;
+    }
     
     /* Sidebar dark */
     [data-testid="stSidebar"] {
@@ -149,6 +153,7 @@ st.markdown("""
     .stTabs [data-baseweb="tab-panel"] {
         background-color: #1e1e1e;
         padding: 15px;
+        box-sizing: border-box;
         border-radius: 0 0 10px 10px;
         color: #e0e0e0;
         border-left: 1px solid #333;
@@ -170,8 +175,9 @@ st.markdown("""
     }
     
     /* DataFrames e tabelle */
-    .stDataFrame {
+    .stDataFrame, .stTable {
         border: 1px solid #333;
+        box-sizing: border-box;
     }
     .stDataFrame th {
         background-color: #252525 !important;
