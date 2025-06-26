@@ -543,13 +543,15 @@ def load_data(uploaded_file):
         return None
     fname = uploaded_file.name.lower()
     if fname.endswith(".xlsx"):
-        return pd.read_excel(uploaded_file, dtype=str)
+        df = pd.read_excel(uploaded_file, dtype=str)
     else:
         try:
-            return pd.read_csv(uploaded_file, sep=";", dtype=str)
-        except:
+            df = pd.read_csv(uploaded_file, sep=";", dtype=str)
+        except Exception:
             uploaded_file.seek(0)
-            return pd.read_csv(uploaded_file, sep=",", dtype=str)
+            df = pd.read_csv(uploaded_file, sep=",", dtype=str)
+    df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
+    return df
 
 def parse_float(x):
     """Converte stringhe in float, gestendo simboli e errori."""
