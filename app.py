@@ -717,6 +717,10 @@ if avvia:
             st.error("Assicurati che entrambi i file (origine e confronto) contengano la colonna ASIN.")
         st.stop()
     
+    # Normalizza gli ASIN rimuovendo spazi e usando il maiuscolo
+    df_base["ASIN"] = df_base["ASIN"].str.strip().str.upper()
+    df_comp["ASIN"] = df_comp["ASIN"].str.strip().str.upper()
+
     # Merge tra base e confronto sulla colonna ASIN
     df_merged = pd.merge(df_base, df_comp, on="ASIN", how="inner", suffixes=(" (base)", " (comp)"))
     if df_merged.empty:
