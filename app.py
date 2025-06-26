@@ -396,13 +396,14 @@ with st.sidebar:
     )
 
     colored_header(label="💰 Impostazioni Prezzi", description="Configurazione prezzi", color_name="blue-70")
+    price_options = ["Buy Box 🚚: Current", "Amazon: Current", "New: Current"]
     ref_price_base = st.selectbox(
         "Per la Lista di Origine",
-        ["Buy Box: Current", "Amazon: Current", "New: Current"]
+        price_options
     )
     ref_price_comp = st.selectbox(
         "Per la Lista di Confronto",
-        ["Buy Box: Current", "Amazon: Current", "New: Current"]
+        price_options
     )
 
     colored_header(label="🏷️ Sconto & IVA", description="Parametri finanziari", color_name="blue-70")
@@ -738,8 +739,8 @@ if avvia:
     df_merged["SalesRank_Comp"] = df_merged.get("Sales Rank: Current (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["Bought_Comp"] = df_merged.get("Bought in past month (comp)", pd.Series(np.nan)).apply(parse_int)
     df_merged["NewOffer_Comp"] = df_merged.get("New Offer Count: Current (comp)", pd.Series(np.nan)).apply(parse_int)
-    # Leggi anche il Sales Rank a 90 giorni, se presente
-    df_merged["SalesRank_90d"] = df_merged.get("Sales Rank: 90 days avg. (comp)", pd.Series(np.nan)).apply(parse_int)
+    # Leggi anche il Sales Rank a 30 giorni, se presente
+    df_merged["SalesRank_30d"] = df_merged.get("Sales Rank: 30 days avg. (comp)", pd.Series(np.nan)).apply(parse_int)
     
     # Estrai informazioni sul peso
     # Cerca in varie colonne che potrebbero contenere informazioni sul peso
@@ -806,7 +807,7 @@ if avvia:
     df_merged = df_merged[df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price)]
     
     # Calcolo del bonus/penalità per il Trend del Sales Rank
-    df_merged["Trend_Bonus"] = np.log((df_merged["SalesRank_90d"].fillna(df_merged["SalesRank_Comp"]) + 1) / (df_merged["SalesRank_Comp"] + 1))
+    df_merged["Trend_Bonus"] = np.log((df_merged["SalesRank_30d"].fillna(df_merged["SalesRank_Comp"]) + 1) / (df_merged["SalesRank_Comp"] + 1))
     # Formattiamo il trend in una stringa con icona
     df_merged["Trend"] = df_merged["Trend_Bonus"].apply(format_trend)
     
@@ -861,7 +862,7 @@ if avvia:
         "Locale (base)", "Locale (comp)", "Title (base)", "ASIN",
         "Price_Base", "Acquisto_Netto", "Price_Comp", "Vendita_Netto",
         "Margine_Stimato", "Shipping_Cost", "Margine_Netto", "Margine_Netto_%", 
-        "Weight_kg", "SalesRank_Comp", "SalesRank_90d",
+        "Weight_kg", "SalesRank_Comp", "SalesRank_30d",
         "Trend", "Bought_Comp", "NewOffer_Comp", "Volume_Score",
         "Opportunity_Score", "Opportunity_Class", "IVA_Origine", "IVA_Confronto",
         "Brand (base)", "Package: Dimension (cm³) (base)"
@@ -1059,7 +1060,7 @@ if avvia:
                 st.markdown(f"**{len(filtered_df)} prodotti trovati**")
                 
                 # Selezione delle colonne da visualizzare
-                display_cols = [col for col in filtered_df.columns if col not in ["Opportunity_Tag", "SalesRank_90d"]]
+                display_cols = [col for col in filtered_df.columns if col not in ["Opportunity_Tag", "SalesRank_30d"]]
                 
                 # Mostra la tabella completa (senza paginazione)
                 st.dataframe(
