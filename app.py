@@ -575,16 +575,23 @@ def parse_weight(x):
     """Estrae il peso in kg dai campi di attributo."""
     if not isinstance(x, str):
         return np.nan
-    
+
     # Cerca pattern come "0.5 kg" o "500 g"
     kg_match = re.search(r'(\d+\.?\d*)\s*kg', x.lower())
     g_match = re.search(r'(\d+\.?\d*)\s*g', x.lower())
-    
+
     if kg_match:
         return float(kg_match.group(1))
     elif g_match:
         return float(g_match.group(1)) / 1000  # converti grammi in kg
     else:
+        # Se la stringa è puramente numerica, interpretala come kg
+        numeric_match = re.fullmatch(r'\s*(\d+\.?\d*)\s*', x)
+        if numeric_match:
+            try:
+                return float(numeric_match.group(1))
+            except ValueError:
+                return np.nan
         return np.nan
 
 # Funzione per formattare il Trend in base al valore di Trend_Bonus
@@ -745,8 +752,12 @@ if avvia:
     # Estrai informazioni sul peso
     # Cerca in varie colonne che potrebbero contenere informazioni sul peso
     possible_weight_cols = [
-        "Weight (base)", "Item Weight (base)", "Package: Weight (kg) (base)", 
-        "Product details (base)", "Features (base)"
+        "Weight (base)",
+        "Item Weight (base)",
+        "Package: Weight (kg) (base)",
+        "Package: Weight (g) (base)",
+        "Product details (base)",
+        "Features (base)"
     ]
     
     # Inizializza colonna peso
@@ -755,7 +766,19 @@ if avvia:
     # Cerca nelle possibili colonne di peso
     for col in possible_weight_cols:
         if col in df_merged.columns:
-            weight_data = df_merged[col].apply(parse_weight)
+            if "(g)" in col:
+                # Valori espressi in grammi
+                def to_kg(val):
+                    if pd.isna(val):
+                        return np.nan
+                    try:
+                        num = re.search(r'(\d+\.?\d*)', str(val))
+                        return float(num.group(1)) / 1000 if num else np.nan
+                    except Exception:
+                        return np.nan
+                weight_data = df_merged[col].apply(to_kg)
+            else:
+                weight_data = df_merged[col].apply(parse_weight)
             # Aggiorna solo i valori mancanti
             df_merged.loc[df_merged["Weight_kg"].isna(), "Weight_kg"] = weight_data.loc[df_merged["Weight_kg"].isna()]
     
