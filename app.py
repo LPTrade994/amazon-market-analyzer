@@ -356,6 +356,15 @@ SHIPPING_COSTS = {
     100: 34.16 # Fino a 100 kg
 }
 
+# Aliquote IVA per paese (codice mercato -> percentuale)
+VAT_RATES = {
+    "IT": 22,
+    "DE": 19,
+    "FR": 20,
+    "ES": 21,
+    "UK": 20,
+}
+
 # Funzione per calcolare il costo di spedizione in base al peso
 def calculate_shipping_cost(weight_kg):
     """
@@ -406,43 +415,10 @@ with st.sidebar:
         price_options
     )
 
-    colored_header(label="🏷️ Sconto & IVA", description="Parametri finanziari", color_name="blue-70")
+    colored_header(label="🏷️ Sconto", description="Parametri finanziari", color_name="blue-70")
     discount_percent = st.number_input("Sconto sugli acquisti (%)", min_value=0.0, value=st.session_state.get("discount_percent", 20.0), step=0.1, key="discount_percent")
     discount = discount_percent / 100.0  # convertiamo in frazione
     
-    # Aggiunta del selettore per l'IVA di riferimento per entrambi i mercati
-    st.markdown("**IVA per calcolo del margine**")
-    
-    # Paesi e le loro aliquote IVA
-    paesi_iva = [
-        ("Italia", 22), 
-        ("Germania", 19), 
-        ("Francia", 20), 
-        ("Spagna", 21), 
-        ("Regno Unito", 20)
-    ]
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Mercato Origine**")
-        iva_base = st.selectbox(
-            "IVA mercato origine",
-            paesi_iva,
-            format_func=lambda x: f"{x[0]} ({x[1]}%)",
-            key="iva_base"
-        )
-        iva_base_rate = iva_base[1] / 100.0
-    
-    with col2:
-        st.markdown("**Mercato Confronto**")
-        iva_comp = st.selectbox(
-            "IVA mercato confronto",
-            paesi_iva,
-            format_func=lambda x: f"{x[0]} ({x[1]}%)",
-            key="iva_comp"
-        )
-        iva_comp_rate = iva_comp[1] / 100.0
     
     # Sezione per i costi di spedizione
     colored_header(label="🚚 Spedizione", description="Calcolo costi di spedizione", color_name="blue-70")
@@ -501,15 +477,6 @@ with st.sidebar:
         st.session_state["theta"] = recipe.get("theta", 1.5)
         st.session_state["min_margin_multiplier"] = recipe.get("min_margin_multiplier", 1.2)
         st.session_state["discount_percent"] = recipe.get("discount_percent", 20.0)
-        # Caricamento delle impostazioni IVA se presenti
-        if "iva_base" in recipe:
-            country_name, rate = recipe["iva_base"]
-            idx = next((i for i, (name, _) in enumerate(paesi_iva) if name == country_name), 0)
-            st.session_state["iva_base"] = idx
-        if "iva_comp" in recipe:
-            country_name, rate = recipe["iva_comp"]
-            idx = next((i for i, (name, _) in enumerate(paesi_iva) if name == country_name), 0)
-            st.session_state["iva_comp"] = idx
     
     new_recipe_name = st.text_input("Nome Nuova Ricetta")
     if st.button("💾 Salva Ricetta"):
@@ -523,9 +490,7 @@ with st.sidebar:
                 "gamma": st.session_state.get("gamma", 2.0),
                 "theta": st.session_state.get("theta", 1.5),
                 "min_margin_multiplier": st.session_state.get("min_margin_multiplier", 1.2),
-                "discount_percent": st.session_state.get("discount_percent", 20.0),
-                "iva_base": iva_base,
-                "iva_comp": iva_comp
+                "discount_percent": st.session_state.get("discount_percent", 20.0)
             }
             st.success(f"Ricetta '{new_recipe_name}' salvata!")
         else:
@@ -672,14 +637,14 @@ with tab_main1:
 #################################
 # Funzione per Calcolare il Prezzo d'Acquisto Netto - AGGIORNATA con IVA variabile
 #################################
-def calc_final_purchase_price(row, discount, iva_base_rate):
+def calc_final_purchase_price(row, discount):
     """
     Calcola il prezzo d'acquisto netto, IVA esclusa e scontato, in base al paese.
     
     Params:
       row: la riga del dataframe
       discount: percentuale di sconto (in formato decimale, es. 0.2 per 20%)
-      iva_base_rate: aliquota IVA del mercato di origine (in formato decimale, es. 0.22 per 22%)
+      Determina automaticamente l'aliquota IVA in base al mercato di origine
     
     Returns:
       Il prezzo di acquisto netto (IVA esclusa e scontato)
@@ -689,7 +654,9 @@ def calc_final_purchase_price(row, discount, iva_base_rate):
         return np.nan
     
     # Calcolo prezzo netto (senza IVA)
-    net_price = gross / (1 + iva_base_rate)
+    locale = row.get("Locale (base)", "")
+    vat_rate = VAT_RATES.get(locale, 0) / 100.0
+    net_price = gross / (1 + vat_rate)
     
     # Calcolo prezzo scontato
     discounted_price = net_price * (1 - discount)
@@ -792,7 +759,7 @@ if avvia:
     
     # Calcolo del prezzo d'acquisto netto per ogni prodotto dalla lista di origine
     # Utilizzo della funzione aggiornata con IVA variabile
-    df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount, iva_base_rate), axis=1)
+    df_merged["Acquisto_Netto"] = df_merged.apply(lambda row: calc_final_purchase_price(row, discount), axis=1)
     
     # NUOVA LOGICA: Calcolo del margine stimato considerando IVA correttamente
     # 1. Prezzo nel mercato di confronto (lordo IVA)
@@ -800,7 +767,7 @@ if avvia:
     # 3. Margine = Prezzo confronto / (1 + IVA) - Prezzo acquisto netto
     
     # Calcolo del prezzo netto di vendita nel mercato di confronto (senza IVA)
-    df_merged["Vendita_Netto"] = df_merged["Price_Comp"] / (1 + iva_comp_rate)
+    df_merged["Vendita_Netto"] = df_merged.apply(lambda row: row["Price_Comp"] / (1 + VAT_RATES.get(row.get("Locale (comp)", ""), 0) / 100.0), axis=1)
     
     # Calcolo del margine stimato corretto (in valore assoluto e percentuale)
     df_merged["Margine_Stimato"] = df_merged["Vendita_Netto"] - df_merged["Acquisto_Netto"]
@@ -876,8 +843,8 @@ if avvia:
     )
     
     # Aggiunta dell'informazione sulle aliquote IVA utilizzate
-    df_merged["IVA_Origine"] = f"{iva_base[0]} ({iva_base[1]}%)"
-    df_merged["IVA_Confronto"] = f"{iva_comp[0]} ({iva_comp[1]}%)"
+    df_merged["IVA_Origine"] = df_merged["Locale (base)"].map(lambda x: f"{VAT_RATES.get(x, 0)}%")
+    df_merged["IVA_Confronto"] = df_merged["Locale (comp)"].map(lambda x: f"{VAT_RATES.get(x, 0)}%")
     
     # Ordiniamo i risultati per Opportunity Score decrescente
     df_merged = df_merged.sort_values("Opportunity_Score", ascending=False)
@@ -926,7 +893,7 @@ if avvia:
                 st.metric("Opportunity Score Massimo", f"{df_finale['Opportunity_Score'].max():.2f}")
             
             # Riepilogo impostazioni
-            st.info(f"IVA Origine: {iva_base[0]} ({iva_base[1]}%) | IVA Confronto: {iva_comp[0]} ({iva_comp[1]}%) | {'✅ Spedizione Inclusa' if include_shipping else '❌ Spedizione Esclusa'}")
+            st.info('Aliquote IVA determinate automaticamente per ogni riga | ' + ('✅ Spedizione Inclusa' if include_shipping else '❌ Spedizione Esclusa'))
             
             # Configura i colori per il tema dark in Altair
             dark_colors = {
