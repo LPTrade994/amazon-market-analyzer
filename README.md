@@ -35,3 +35,22 @@ These headers must be present (with `(base)` or `(comp)` suffixes after upload) 
 - **Shipping & VAT Handling** – calculate net margins including shipping costs and market‑specific VAT rates.
 - **Interactive Dashboard** – visualize scores, margins and volume with histograms and scatter plots; save/load parameter "recipes" for repeated analyses.
 
+
+## VAT and Discount Logic
+
+Locale strings from the CSV files are normalized to a two letter country code (e.g. `Amazon.de` or `de-DE` become `DE`). `GB` is converted to `UK` so that the correct VAT rate is applied automatically.
+
+For purchases from foreign markets the discount is calculated on the VAT excluded price:
+
+```
+Net = Price / (1 + VAT) * (1 - Discount)
+```
+
+When buying in Italy the discount is first computed on the gross price and then subtracted from the VAT excluded price:
+
+```
+Net = Price / (1 + VAT) - Price * Discount
+```
+
+The dashboard chooses the proper VAT rate for each row and displays both origin and comparison market VAT percentages.
+

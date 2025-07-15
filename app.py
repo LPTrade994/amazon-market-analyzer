@@ -365,6 +365,18 @@ VAT_RATES = {
     "UK": 20,
 }
 
+# Normalizza i codici mercato per individuare correttamente l'aliquota IVA
+def normalize_locale(locale_str):
+    """Restituisce un codice paese a due lettere da una stringa di locale."""
+    if not isinstance(locale_str, str):
+        return ""
+    s = locale_str.strip().upper()
+    matches = re.findall(r"[A-Z]{2}", s)
+    code = matches[-1] if matches else ""
+    if code == "GB":
+        code = "UK"
+    return code
+
 # Funzione per calcolare il costo di spedizione in base al peso
 def calculate_shipping_cost(weight_kg):
     """
@@ -652,16 +664,18 @@ def calc_final_purchase_price(row, discount):
     gross = row["Price_Base"]
     if pd.isna(gross):
         return np.nan
-    
-    # Calcolo prezzo netto (senza IVA)
-    locale = row.get("Locale (base)", "")
+
+    locale = normalize_locale(row.get("Locale (base)", ""))
     vat_rate = VAT_RATES.get(locale, 0) / 100.0
     net_price = gross / (1 + vat_rate)
-    
-    # Calcolo prezzo scontato
-    discounted_price = net_price * (1 - discount)
-    
-    return discounted_price
+
+    if locale == "IT":
+        discount_amount = gross * discount
+        final_price = net_price - discount_amount
+    else:
+        final_price = net_price * (1 - discount)
+
+    return max(final_price, 0)
 
 #################################
 # Elaborazione Completa e Calcolo Opportunity Score
@@ -767,7 +781,10 @@ if avvia:
     # 3. Margine = Prezzo confronto / (1 + IVA) - Prezzo acquisto netto
     
     # Calcolo del prezzo netto di vendita nel mercato di confronto (senza IVA)
-    df_merged["Vendita_Netto"] = df_merged.apply(lambda row: row["Price_Comp"] / (1 + VAT_RATES.get(row.get("Locale (comp)", ""), 0) / 100.0), axis=1)
+    df_merged["Vendita_Netto"] = df_merged.apply(
+        lambda row: row["Price_Comp"] / (1 + VAT_RATES.get(normalize_locale(row.get("Locale (comp)", "")), 0) / 100.0),
+        axis=1
+    )
     
     # Calcolo del margine stimato corretto (in valore assoluto e percentuale)
     df_merged["Margine_Stimato"] = df_merged["Vendita_Netto"] - df_merged["Acquisto_Netto"]
@@ -843,8 +860,12 @@ if avvia:
     )
     
     # Aggiunta dell'informazione sulle aliquote IVA utilizzate
-    df_merged["IVA_Origine"] = df_merged["Locale (base)"].map(lambda x: f"{VAT_RATES.get(x, 0)}%")
-    df_merged["IVA_Confronto"] = df_merged["Locale (comp)"].map(lambda x: f"{VAT_RATES.get(x, 0)}%")
+    df_merged["IVA_Origine"] = df_merged["Locale (base)"].map(
+        lambda x: f"{VAT_RATES.get(normalize_locale(x), 0)}%"
+    )
+    df_merged["IVA_Confronto"] = df_merged["Locale (comp)"].map(
+        lambda x: f"{VAT_RATES.get(normalize_locale(x), 0)}%"
+    )
     
     # Ordiniamo i risultati per Opportunity Score decrescente
     df_merged = df_merged.sort_values("Opportunity_Score", ascending=False)
