@@ -16,6 +16,7 @@ import re
 import altair as alt
 import io
 import json
+from st_aggrid import AgGrid, GridOptionsBuilder
 from streamlit_extras.colored_header import colored_header
 from streamlit_extras.metric_cards import style_metric_cards
 from loaders import load_data, parse_float, parse_int, parse_weight
@@ -618,10 +619,14 @@ if avvia:
                 display_cols = [col for col in filtered_df.columns if col not in ["Opportunity_Tag", "SalesRank_30d"]]
                 
                 # Mostra la tabella completa (senza paginazione)
-                st.dataframe(
-                    format_with_html(filtered_df[display_cols]),
-                    height=600,  # Altezza fissa per visualizzare più righe
-                    use_container_width=True
+                go = GridOptionsBuilder.from_dataframe(filtered_df[display_cols])
+                go.configure_default_column(sortable=True, filter=True)
+                go.configure_grid_options(enableRangeSelection=True)
+                go = go.build()
+                AgGrid(
+                    filtered_df[display_cols],
+                    gridOptions=go,
+                    fit_columns_on_grid_load=True,
                 )
                 
                 # Esportazione dati
