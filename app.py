@@ -16,7 +16,7 @@ import re
 import altair as alt
 import io
 import json
-from st_aggrid import AgGrid, GridOptionsBuilder
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from streamlit_extras.colored_header import colored_header
 from streamlit_extras.metric_cards import style_metric_cards
 from loaders import load_data, parse_float, parse_int, parse_weight
@@ -627,6 +627,9 @@ if avvia:
                     filtered_df[display_cols],
                     gridOptions=go,
                     fit_columns_on_grid_load=True,
+                    update_mode=GridUpdateMode.NO_UPDATE,
+                    theme="streamlit",
+                    key="results_grid",
                 )
                 
                 # Esportazione dati
