@@ -15,6 +15,7 @@ import numpy as np
 import re
 import altair as alt
 import io
+import json
 from streamlit_extras.colored_header import colored_header
 from streamlit_extras.metric_cards import style_metric_cards
 from loaders import load_data, parse_float, parse_int, parse_weight
@@ -53,6 +54,22 @@ with st.sidebar:
         type=["csv", "xlsx"],
         accept_multiple_files=True
     )
+
+    # Precarica i dati base per mostrare gli ASIN disponibili
+    df_base = None
+    asin_list = []
+    if files_base:
+        base_list = []
+        for f in files_base:
+            df_temp = load_data(f)
+            if df_temp is not None and not df_temp.empty:
+                base_list.append(df_temp)
+        if base_list:
+            df_base = pd.concat(base_list, ignore_index=True)
+            if "ASIN" in df_base.columns:
+                asin_list = (
+                    df_base["ASIN"].astype(str).str.strip().str.upper().dropna().unique().tolist()
+                )
 
     colored_header(label="💰 Impostazioni Prezzi", description="Configurazione prezzi", color_name="blue-70")
     price_options = ["Buy Box 🚚: Current", "Amazon: Current", "New: Current"]
@@ -148,6 +165,30 @@ with st.sidebar:
 
     st.markdown("---")
     avvia = st.button("🚀 Calcola Opportunity Score", use_container_width=True)
+
+with tab_main1:
+    if asin_list:
+        asin_text = "\n".join(asin_list)
+        st.text_area("ASIN caricati", value=asin_text, height=200, key="asin_display")
+        st.markdown(
+            f"""
+            <button class="copy-button" id="copy-asins">📋 Copia ASIN</button>
+            <div id="copy-notification">Copiato!</div>
+            <script>
+            const asinText = {json.dumps(asin_text)};
+            const btn = document.getElementById('copy-asins');
+            btn.addEventListener('click', function() {{
+                navigator.clipboard.writeText(asinText);
+                const note = document.getElementById('copy-notification');
+                note.classList.add('show-notification');
+                setTimeout(() => note.classList.remove('show-notification'), 2000);
+            }});
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("Carica una Lista di Origine per visualizzare gli ASIN.")
 
 #################################
 # Funzioni di Caricamento e Parsing
