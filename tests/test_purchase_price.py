@@ -1,33 +1,10 @@
-import ast
 import math
-import re
-import types
+import pathlib
+import sys
 
-# Minimal stub for pandas.isna used in app.py
-class _PandasStub(types.SimpleNamespace):
-    @staticmethod
-    def isna(value):
-        return isinstance(value, float) and math.isnan(value)
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-pd = _PandasStub()
-
-
-def load_functions():
-    with open('app.py', 'r') as f:
-        source = f.read()
-    module = ast.parse(source)
-    env = {'re': re, 'pd': pd, 'math': math}
-    for node in module.body:
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == 'VAT_RATES':
-                    exec(compile(ast.Module([node], []), 'app.py', 'exec'), env)
-        elif isinstance(node, ast.FunctionDef) and node.name in {'normalize_locale', 'calc_final_purchase_price'}:
-            exec(compile(ast.Module([node], []), 'app.py', 'exec'), env)
-    return env['VAT_RATES'], env['normalize_locale'], env['calc_final_purchase_price']
-
-
-VAT_RATES, normalize_locale, calc_final_purchase_price = load_functions()
+from score import VAT_RATES, normalize_locale, calc_final_purchase_price
 
 
 def test_purchase_price_de():
