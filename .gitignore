@@ -1,0 +1,10 @@
+# Cache directories
+.ruff_cache/
+.pytest_cache/
+
+# Local data
+sample_data/
+data/
+
+# Secret configuration
+.streamlit/secrets.toml
