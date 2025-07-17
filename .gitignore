@@ -1,3 +1,25 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+venv.bak/
+
 # Cache directories
 .ruff_cache/
 .pytest_cache/
@@ -8,3 +30,7 @@ data/
 
 # Secret configuration
 .streamlit/secrets.toml
+
+# OS files
+.DS_Store
+
