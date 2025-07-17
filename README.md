@@ -71,3 +71,7 @@ Net = Price / (1 + VAT) - Price * Discount
 
 The dashboard chooses the proper VAT rate for each row and displays both origin and comparison market VAT percentages.
 
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
