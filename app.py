@@ -275,8 +275,45 @@ if avvia:
     # 1. Prezzo nel mercato di confronto (lordo IVA)
     # 2. Prezzo di acquisto netto (già senza IVA)
     # 3. Margine = Prezzo confronto / (1 + IVA) - Prezzo acquisto netto
-    
+
     df_merged["Price_Comp"] = df_merged["Price_Comp"].fillna(0)
+
+    # Prezzo netto di vendita nel mercato di confronto (senza IVA)
+    df_merged["Vendita_Netto"] = df_merged.apply(
+        lambda row: row["Price_Comp"] /
+        (1 + VAT_RATES.get(normalize_locale(row.get("Locale (comp)", "")), 0) / 100.0),
+        axis=1,
+    )
+
+    # Margine stimato e percentuale rispetto al prezzo d'acquisto
+    df_merged["Margine_Stimato"] = df_merged["Vendita_Netto"] - df_merged["Acquisto_Netto"]
+    df_merged["Margine_%"] = (df_merged["Margine_Stimato"] / df_merged["Acquisto_Netto"]) * 100
+
+    # Calcolo del margine netto con o senza costi di spedizione
+    if include_shipping:
+        df_merged["Margine_Netto"] = df_merged["Margine_Stimato"] - df_merged["Shipping_Cost"]
+        df_merged["Margine_Netto_%"] = (
+            df_merged["Margine_Netto"] / df_merged["Acquisto_Netto"]
+        ) * 100
+    else:
+        df_merged["Margine_Netto"] = df_merged["Margine_Stimato"]
+        df_merged["Margine_Netto_%"] = df_merged["Margine_%"]
+
+    # Margine percentuale lordo per riferimento
+    df_merged["Margin_Pct_Lordo"] = (
+        (df_merged["Price_Comp"] - df_merged["Price_Base"]) / df_merged["Price_Base"]
+    ) * 100
+
+    # Filtri minimi su margine netto
+    df_merged = df_merged[df_merged["Margine_Netto_%"] > min_margin_pct]
+    df_merged = df_merged[df_merged["Margine_Netto"] > min_margin_abs]
+
+    # Filtri avanzati sul mercato di confronto
+    df_merged["SalesRank_Comp"] = df_merged["SalesRank_Comp"].fillna(999999)
+    df_merged = df_merged[df_merged["SalesRank_Comp"] <= max_sales_rank]
+    df_merged["NewOffer_Comp"] = df_merged["NewOffer_Comp"].fillna(0)
+    df_merged = df_merged[df_merged["NewOffer_Comp"] <= max_offer_count]
+
     df_merged = df_merged[df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price)]
     
     # Calcolo del bonus/penalità per il Trend del Sales Rank
