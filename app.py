@@ -618,7 +618,7 @@ if avvia:
                 # Selezione delle colonne da visualizzare
                 display_cols = [col for col in filtered_df.columns if col not in ["Opportunity_Tag", "SalesRank_30d"]]
                 
-                # Mostra la tabella completa (senza paginazione)
+                # Mostra la tabella completa (senza paginazione) con AgGrid
                 go = GridOptionsBuilder.from_dataframe(filtered_df[display_cols])
                 go.configure_default_column(sortable=True, filter=True)
                 go.configure_grid_options(enableRangeSelection=True)
