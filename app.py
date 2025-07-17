@@ -33,6 +33,9 @@ if 'filtered_data' not in st.session_state:
 
 st.markdown('<h1 class="main-header">📊 Amazon Market Analyzer - Arbitraggio Multi-Mercato</h1>', unsafe_allow_html=True)
 
+tab_main1, tab_main2, tab_main3 = st.tabs(
+    ["📋 ASIN Caricati", "📊 Analisi Opportunità", "📎 Risultati Dettagliati"]
+)
 
 #################################
 # Sidebar: Caricamento file, Prezzo di riferimento, Sconto, Impostazioni e Ricette
@@ -154,6 +157,26 @@ with st.sidebar:
 # Elaborazione Completa e Calcolo Opportunity Score
 #################################
 if avvia:
+    if not files_base:
+        with tab_main1:
+            st.error("Carica almeno un file di Lista di Origine.")
+        st.stop()
+
+    base_list = []
+    for f in files_base:
+        df_temp = load_data(f)
+        if df_temp is not None and not df_temp.empty:
+            base_list.append(df_temp)
+        else:
+            with tab_main1:
+                st.warning(f"Il file base {f.name} è vuoto o non valido.")
+    if not base_list:
+        with tab_main1:
+            st.error("Nessun file di origine valido caricato.")
+        st.stop()
+
+    df_base = pd.concat(base_list, ignore_index=True)
+
     # Controllo file di confronto
     if not comparison_files:
         with tab_main1:
@@ -252,8 +275,45 @@ if avvia:
     # 1. Prezzo nel mercato di confronto (lordo IVA)
     # 2. Prezzo di acquisto netto (già senza IVA)
     # 3. Margine = Prezzo confronto / (1 + IVA) - Prezzo acquisto netto
-    
+
     df_merged["Price_Comp"] = df_merged["Price_Comp"].fillna(0)
+
+    # Prezzo netto di vendita nel mercato di confronto (senza IVA)
+    df_merged["Vendita_Netto"] = df_merged.apply(
+        lambda row: row["Price_Comp"] /
+        (1 + VAT_RATES.get(normalize_locale(row.get("Locale (comp)", "")), 0) / 100.0),
+        axis=1,
+    )
+
+    # Margine stimato e percentuale rispetto al prezzo d'acquisto
+    df_merged["Margine_Stimato"] = df_merged["Vendita_Netto"] - df_merged["Acquisto_Netto"]
+    df_merged["Margine_%"] = (df_merged["Margine_Stimato"] / df_merged["Acquisto_Netto"]) * 100
+
+    # Calcolo del margine netto con o senza costi di spedizione
+    if include_shipping:
+        df_merged["Margine_Netto"] = df_merged["Margine_Stimato"] - df_merged["Shipping_Cost"]
+        df_merged["Margine_Netto_%"] = (
+            df_merged["Margine_Netto"] / df_merged["Acquisto_Netto"]
+        ) * 100
+    else:
+        df_merged["Margine_Netto"] = df_merged["Margine_Stimato"]
+        df_merged["Margine_Netto_%"] = df_merged["Margine_%"]
+
+    # Margine percentuale lordo per riferimento
+    df_merged["Margin_Pct_Lordo"] = (
+        (df_merged["Price_Comp"] - df_merged["Price_Base"]) / df_merged["Price_Base"]
+    ) * 100
+
+    # Filtri minimi su margine netto
+    df_merged = df_merged[df_merged["Margine_Netto_%"] > min_margin_pct]
+    df_merged = df_merged[df_merged["Margine_Netto"] > min_margin_abs]
+
+    # Filtri avanzati sul mercato di confronto
+    df_merged["SalesRank_Comp"] = df_merged["SalesRank_Comp"].fillna(999999)
+    df_merged = df_merged[df_merged["SalesRank_Comp"] <= max_sales_rank]
+    df_merged["NewOffer_Comp"] = df_merged["NewOffer_Comp"].fillna(0)
+    df_merged = df_merged[df_merged["NewOffer_Comp"] <= max_offer_count]
+
     df_merged = df_merged[df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price)]
     
     # Calcolo del bonus/penalità per il Trend del Sales Rank
