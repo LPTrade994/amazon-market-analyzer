@@ -15,6 +15,23 @@ After installing dependencies, start the dashboard with:
 streamlit run app.py
 ```
 
+## Configuration
+
+Provide your Keepa API key and optional password using environment variables or a local `secrets.toml` file. When using environment variables set `API_KEY` (and `PASSWORD` if needed) before running Streamlit:
+
+```bash
+export API_KEY="your_keepa_key"
+export PASSWORD="your_password"
+```
+
+Alternatively create a `.streamlit/secrets.toml` file with the same fields. This file is ignored by Git and can be passed to Streamlit automatically when placed in the project directory:
+
+```toml
+API_KEY = "your_keepa_key"
+PASSWORD = "your_password"
+```
+
+
 ## Keepa Export Files
 
 The application expects Keepa CSV/XLSX exports for both the origin marketplace and the comparison marketplaces. Essential headers include:
