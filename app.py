@@ -33,6 +33,9 @@ if 'filtered_data' not in st.session_state:
 
 st.markdown('<h1 class="main-header">📊 Amazon Market Analyzer - Arbitraggio Multi-Mercato</h1>', unsafe_allow_html=True)
 
+tab_main1, tab_main2, tab_main3 = st.tabs(
+    ["📋 ASIN Caricati", "📊 Analisi Opportunità", "📎 Risultati Dettagliati"]
+)
 
 #################################
 # Sidebar: Caricamento file, Prezzo di riferimento, Sconto, Impostazioni e Ricette
@@ -154,6 +157,26 @@ with st.sidebar:
 # Elaborazione Completa e Calcolo Opportunity Score
 #################################
 if avvia:
+    if not files_base:
+        with tab_main1:
+            st.error("Carica almeno un file di Lista di Origine.")
+        st.stop()
+
+    base_list = []
+    for f in files_base:
+        df_temp = load_data(f)
+        if df_temp is not None and not df_temp.empty:
+            base_list.append(df_temp)
+        else:
+            with tab_main1:
+                st.warning(f"Il file base {f.name} è vuoto o non valido.")
+    if not base_list:
+        with tab_main1:
+            st.error("Nessun file di origine valido caricato.")
+        st.stop()
+
+    df_base = pd.concat(base_list, ignore_index=True)
+
     # Controllo file di confronto
     if not comparison_files:
         with tab_main1:
