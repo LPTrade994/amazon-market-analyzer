@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import math
 import re
+from pathlib import Path
 from typing import Any, Optional
 
+import pandas as pd
+import duckdb
+import streamlit as st
 
-def load_data(uploaded_file: Any):
+
+def load_data(uploaded_file: Any) -> Optional[pd.DataFrame]:
     """Load a CSV or XLSX file into a pandas DataFrame.
 
     This function imports pandas lazily to avoid requiring it at import time.
@@ -28,6 +33,32 @@ def load_data(uploaded_file: Any):
             df = pd.read_csv(uploaded_file, sep=",", dtype=str)
     df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
     return df
+
+
+@st.cache_data(show_spinner=False)
+def load_keepa(path: str | Path) -> pd.DataFrame:
+    """Load a Keepa export file from ``path``."""
+    df = pd.read_excel(path, dtype=str)
+    return df.loc[:, ~df.columns.str.contains("^Unnamed")]
+
+
+@st.cache_data(show_spinner=False)
+def load_prices(path: str | Path) -> pd.DataFrame:
+    """Load a price CSV/Excel file from ``path``."""
+    if str(path).lower().endswith(".xlsx"):
+        df = pd.read_excel(path, dtype=str)
+    else:
+        df = pd.read_csv(path, sep=";", dtype=str)
+    return df.loc[:, ~df.columns.str.contains("^Unnamed")]
+
+
+def merge_data(df_keepa: pd.DataFrame, df_prices: pd.DataFrame) -> pd.DataFrame:
+    """Merge data using DuckDB for large datasets."""
+    if len(df_keepa) > 100_000:
+        return duckdb.query_df(
+            {"k": df_keepa, "p": df_prices}, "k", "SELECT * FROM k JOIN p USING(ASIN)"
+        ).to_df()
+    return pd.merge(df_keepa, df_prices, on="ASIN", how="inner")
 
 
 def parse_float(value: Any) -> float:
