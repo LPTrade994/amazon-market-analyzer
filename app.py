@@ -39,6 +39,38 @@ from ui import apply_dark_theme
 
 apply_dark_theme()
 
+# Order of columns shown in the result grid
+DISPLAY_COLS_ORDER = [
+    # Product information
+    "Locale (base)",
+    "Locale (comp)",
+    "Title (base)",
+    "ASIN",
+    "Brand (base)",
+    "Package: Dimension (cm³) (base)",
+    # Pricing details
+    "Price_Base",
+    "Acquisto_Netto",
+    "Price_Comp",
+    "Vendita_Netto",
+    # Margin information
+    "Margine_Stimato",
+    "Shipping_Cost",
+    "Margine_Netto",
+    "Margine_Netto_%",
+    # Other metrics
+    "Weight_kg",
+    "SalesRank_Comp",
+    "Trend",
+    "Bought_Comp",
+    "NewOffer_Comp",
+    "Volume_Score",
+    "Opportunity_Score",
+    "Opportunity_Class",
+    "IVA_Origine",
+    "IVA_Confronto",
+]
+
 
 # Inizializzazione delle "ricette" in session_state
 if "recipes" not in st.session_state:
@@ -601,34 +633,10 @@ if avvia:
     df_merged = df_merged.sort_values("Opportunity_Score", ascending=False)
 
     # Selezione delle colonne finali da visualizzare
-    cols_final = [
-        "Locale (base)",
-        "Locale (comp)",
-        "Title (base)",
-        "ASIN",
-        "Price_Base",
-        "Acquisto_Netto",
-        "Price_Comp",
-        "Vendita_Netto",
-        "Margine_Stimato",
-        "Shipping_Cost",
-        "Margine_Netto",
-        "Margine_Netto_%",
-        "Weight_kg",
-        "SalesRank_Comp",
-        "SalesRank_30d",
-        "Trend",
-        "Bought_Comp",
-        "NewOffer_Comp",
-        "Volume_Score",
-        "Opportunity_Score",
-        "Opportunity_Class",
-        "IVA_Origine",
-        "IVA_Confronto",
-        "Brand (base)",
-        "Package: Dimension (cm³) (base)",
-    ]
-    cols_final = [c for c in cols_final if c in df_merged.columns]
+    cols_final = [c for c in DISPLAY_COLS_ORDER if c in df_merged.columns]
+    # Manteniamo eventuali colonne aggiuntive utili ma non mostrate
+    extra_cols = ["Opportunity_Tag", "SalesRank_30d"]
+    cols_final += [c for c in extra_cols if c in df_merged.columns]
     df_finale = df_merged[cols_final].copy()
 
     # Arrotonda i valori numerici principali a 2 decimali
@@ -935,17 +943,15 @@ if avvia:
                 # Visualizzazione dei risultati - SENZA PAGINAZIONE
                 st.markdown(f"**{len(filtered_df)} prodotti trovati**")
 
-                # Selezione delle colonne da visualizzare
-                display_cols = [
-                    col
-                    for col in filtered_df.columns
-                    if col not in ["Opportunity_Tag", "SalesRank_30d"]
-                ]
+                # Selezione delle colonne da visualizzare nell'ordine stabilito
+                display_cols = [c for c in DISPLAY_COLS_ORDER if c in filtered_df.columns]
+                filtered_df = filtered_df[display_cols]
 
                 # Mostra la tabella completa (senza paginazione) con AgGrid
-                go = GridOptionsBuilder.from_dataframe(filtered_df[display_cols])
+                go = GridOptionsBuilder.from_dataframe(filtered_df)
                 go.configure_default_column(sortable=True, filter=True)
                 go.configure_grid_options(enableRangeSelection=True)
+                go.configure_grid_options(autoSizeStrategy={"type": "fitGridWidth"})
                 go = go.build()
 
                 container_cls = "fullscreen" if st.session_state.get("grid_fullscreen") else ""
@@ -962,9 +968,8 @@ if avvia:
                         st.session_state["grid_fullscreen"] = True
 
                 AgGrid(
-                    filtered_df[display_cols],
+                    filtered_df,
                     gridOptions=go,
-                    fit_columns_on_grid_load=True,
                     update_mode=GridUpdateMode.NO_UPDATE,
                     theme="streamlit",
                     key="results_grid",
