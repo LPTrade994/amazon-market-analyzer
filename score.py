@@ -6,25 +6,10 @@ import math
 import re
 from typing import Any, Dict
 
-# Default shipping price table (Italy)
-SHIPPING_COSTS: Dict[int, float] = {
-    3: 5.14,    # up to 3 kg
-    4: 6.41,    # up to 4 kg
-    5: 6.95,    # up to 5 kg
-    10: 8.54,   # up to 10 kg
-    25: 12.51,  # up to 25 kg
-    50: 21.66,  # up to 50 kg
-    100: 34.16, # up to 100 kg
-}
+import pandas as pd
+import streamlit as st
 
-# VAT rates for supported marketplaces
-VAT_RATES: Dict[str, int] = {
-    "IT": 22,
-    "DE": 19,
-    "FR": 20,
-    "ES": 21,
-    "UK": 20,
-}
+from settings import SHIPPING_TABLE as SHIPPING_COSTS, VAT_RATES
 
 
 def normalize_locale(locale_str: Any) -> str:
@@ -41,7 +26,11 @@ def normalize_locale(locale_str: Any) -> str:
 
 def calculate_shipping_cost(weight_kg: Any) -> float:
     """Compute shipping cost from the ``SHIPPING_COSTS`` table."""
-    if weight_kg is None or (isinstance(weight_kg, float) and math.isnan(weight_kg)) or weight_kg <= 0:
+    if (
+        weight_kg is None
+        or (isinstance(weight_kg, float) and math.isnan(weight_kg))
+        or weight_kg <= 0
+    ):
         return 0.0
     for limit, cost in sorted(SHIPPING_COSTS.items()):
         if weight_kg <= limit:
@@ -85,3 +74,47 @@ def classify_opportunity(score: float):
     if score > 20:
         return "Discreta", "warning-tag"
     return "Bassa", "danger-tag"
+
+
+def _minmax(series: pd.Series) -> pd.Series:
+    min_val = series.min()
+    max_val = series.max()
+    if pd.isna(min_val) or pd.isna(max_val) or max_val == min_val:
+        return pd.Series(0.0, index=series.index)
+    return (series - min_val) / (max_val - min_val)
+
+
+def margin_score(df: pd.DataFrame) -> pd.Series:
+    return _minmax(df["Margine_Netto_%"].fillna(0))
+
+
+def demand_score(df: pd.DataFrame) -> pd.Series:
+    return 1 - _minmax(df["SalesRank_Comp"].fillna(df["SalesRank_Comp"].max()))
+
+
+def competition_score(df: pd.DataFrame) -> pd.Series:
+    return 1 - _minmax(df["NewOffer_Comp"].fillna(df["NewOffer_Comp"].max()))
+
+
+def volatility_score(df: pd.DataFrame) -> pd.Series:
+    return _minmax(df["Trend_Bonus"].fillna(0))
+
+
+def risk_score(df: pd.DataFrame) -> pd.Series:
+    return _minmax(df["ROI_Factor"].fillna(0))
+
+
+@st.cache_data(show_spinner=False)
+def compute_scores(df: pd.DataFrame, weights: Dict[str, float]) -> pd.DataFrame:
+    """Return ``df`` with a normalized opportunity score."""
+    df = df.copy()
+    subs = {
+        "margin": margin_score(df),
+        "demand": demand_score(df),
+        "competition": competition_score(df),
+        "volatility": volatility_score(df),
+        "risk": risk_score(df),
+    }
+    score = sum(weights.get(k, 1.0) * subs[k] for k in subs)
+    df["final_score"] = _minmax(score) * 100
+    return df
