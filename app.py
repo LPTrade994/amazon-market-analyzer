@@ -48,6 +48,10 @@ if "recipes" not in st.session_state:
 if "filtered_data" not in st.session_state:
     st.session_state["filtered_data"] = None
 
+# State for fullscreen grid view
+if "grid_fullscreen" not in st.session_state:
+    st.session_state["grid_fullscreen"] = False
+
 st.markdown(
     '<h1 class="main-header">📊 Amazon Market Analyzer - Arbitraggio Multi-Mercato</h1>',
     unsafe_allow_html=True,
@@ -943,6 +947,20 @@ if avvia:
                 go.configure_default_column(sortable=True, filter=True)
                 go.configure_grid_options(enableRangeSelection=True)
                 go = go.build()
+
+                container_cls = "fullscreen" if st.session_state.get("grid_fullscreen") else ""
+                st.markdown(
+                    f'<div id="results_grid_container" class="{container_cls}">',
+                    unsafe_allow_html=True,
+                )
+
+                if st.session_state.get("grid_fullscreen"):
+                    if st.button("Chiudi", key="close_grid_fullscreen"):
+                        st.session_state["grid_fullscreen"] = False
+                else:
+                    if st.button("Schermo intero", key="open_grid_fullscreen"):
+                        st.session_state["grid_fullscreen"] = True
+
                 AgGrid(
                     filtered_df[display_cols],
                     gridOptions=go,
@@ -952,6 +970,7 @@ if avvia:
                     key="results_grid",
                     enable_enterprise_modules=True,
                 )
+                st.markdown("</div>", unsafe_allow_html=True)
 
                 # Esportazione dati
                 csv_data = filtered_df.to_csv(index=False, sep=";").encode("utf-8")
