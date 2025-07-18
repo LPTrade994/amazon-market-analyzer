@@ -950,6 +950,7 @@ if avvia:
                     update_mode=GridUpdateMode.NO_UPDATE,
                     theme="streamlit",
                     key="results_grid",
+                    enable_enterprise_modules=True,
                 )
 
                 # Esportazione dati
