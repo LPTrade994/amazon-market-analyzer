@@ -392,3 +392,15 @@ hr {
 [data-testid="stNotification"] a { /* Link dentro le notifiche */
     color: #0d6efd !important;
 }
+
+/* Container fullscreen for result grid */
+#results_grid_container.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9999;
+    overflow: auto;
+    background-color: #121212;
+}
