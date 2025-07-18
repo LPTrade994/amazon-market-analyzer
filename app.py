@@ -17,6 +17,7 @@ import altair as alt
 import io
 import json
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from st_aggrid.shared import ColumnsAutoSizeMode
 from streamlit_extras.colored_header import colored_header
 from loaders import (
     load_data,
@@ -941,15 +942,13 @@ if avvia:
                 # Mostra la tabella completa (senza paginazione) con AgGrid
                 go = GridOptionsBuilder.from_dataframe(filtered_df[display_cols])
                 go.configure_default_column(sortable=True, filter=True)
-                go.configure_grid_options(
-                    enableRangeSelection=True,
-                    autoSizeStrategy={"type": "fitGridWidth"},
-                )
+                go.configure_grid_options(enableRangeSelection=True)
                 go = go.build()
                 AgGrid(
                     filtered_df[display_cols],
                     gridOptions=go,
                     fit_columns_on_grid_load=False,
+                    columns_auto_size_mode=ColumnsAutoSizeMode.FIT_ALL_COLUMNS_TO_VIEW,
                     update_mode=GridUpdateMode.NO_UPDATE,
                     theme="streamlit",
                     key="results_grid",
