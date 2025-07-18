@@ -941,15 +941,20 @@ if avvia:
                 # Mostra la tabella completa (senza paginazione) con AgGrid
                 go = GridOptionsBuilder.from_dataframe(filtered_df[display_cols])
                 go.configure_default_column(sortable=True, filter=True)
-                go.configure_grid_options(enableRangeSelection=True)
+                go.configure_grid_options(
+                    enableRangeSelection=True,
+                    autoSizeStrategy={"type": "fitGridWidth"},
+                )
                 go = go.build()
                 AgGrid(
                     filtered_df[display_cols],
                     gridOptions=go,
-                    fit_columns_on_grid_load=True,
+                    fit_columns_on_grid_load=False,
                     update_mode=GridUpdateMode.NO_UPDATE,
                     theme="streamlit",
                     key="results_grid",
+                    enable_enterprise_modules=True,
+                    show_toolbar=True,
                 )
 
                 # Esportazione dati
