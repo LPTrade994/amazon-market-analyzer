@@ -5,7 +5,14 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from loaders import load_keepa
 import pandas as pd
-from score import margin_score, demand_score, competition_score, volatility_score, risk_score
+from score import (
+    margin_score,
+    demand_score,
+    competition_score,
+    volatility_score,
+    risk_score,
+    aggregate_opportunities,
+)
 
 
 def test_subscores_range():
@@ -24,3 +31,18 @@ def test_subscores_range():
     for func in [margin_score, demand_score, competition_score, volatility_score, risk_score]:
         scores = func(df)
         assert ((0.0 <= scores) & (scores <= 1.0)).all()
+
+
+def test_aggregate_opportunities():
+    df = pd.DataFrame(
+        {
+            "ASIN": ["A1", "A1", "A2"],
+            "Opportunity_Score": [10, 20, 15],
+            "Locale (comp)": ["DE", "FR", "IT"],
+        }
+    )
+    agg = aggregate_opportunities(df)
+    assert len(agg) == 2
+    a1 = agg[agg["ASIN"] == "A1"].iloc[0]
+    assert a1["Opportunity_Score"] == 20
+    assert a1["Best_Market"] == "FR"
