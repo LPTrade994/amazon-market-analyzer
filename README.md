@@ -34,7 +34,7 @@ PASSWORD = "your_password"
 
 ## Keepa Export Files
 
-The application expects Keepa CSV/XLSX exports for both the origin marketplace and the comparison marketplaces. Essential headers include:
+The application expects Keepa CSV/XLSX exports for both the origin marketplace and the comparison marketplaces. Multiple comparison files can be uploaded at once and will be merged automatically. Essential headers include:
 
 - `ASIN`
 - `Title`
@@ -51,6 +51,7 @@ These headers must be present (with `(base)` or `(comp)` suffixes after upload) 
 - **Advanced Filters** – limit results by sales rank, offer count, price range and minimum margins.
 - **Shipping & VAT Handling** – calculate net margins including shipping costs and market‑specific VAT rates.
 - **Interactive Dashboard** – visualize scores, margins and volume with histograms and scatter plots; save/load parameter "recipes" for repeated analyses.
+- **Cross-market Ranking** – upload multiple comparison lists and view a consolidated table showing the best marketplace and score for each ASIN.
 
 
 ## VAT and Discount Logic

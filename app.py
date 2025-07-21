@@ -33,6 +33,7 @@ from score import (
     format_trend,
     classify_opportunity,
     compute_scores,
+    aggregate_opportunities,
 )
 from utils import load_preset, save_preset
 from ui import apply_dark_theme
@@ -79,6 +80,8 @@ if "recipes" not in st.session_state:
 # Inizializzazione dei dati filtrati per la sessione
 if "filtered_data" not in st.session_state:
     st.session_state["filtered_data"] = None
+if "ranked_data" not in st.session_state:
+    st.session_state["ranked_data"] = None
 
 # State for fullscreen grid view
 if "grid_fullscreen" not in st.session_state:
@@ -89,8 +92,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_main1, tab_main2, tab_main3 = st.tabs(
-    ["📋 ASIN Caricati", "📊 Analisi Opportunità", "📎 Risultati Dettagliati"]
+tab_main1, tab_main2, tab_main3, tab_rank = st.tabs(
+    [
+        "📋 ASIN Caricati",
+        "📊 Analisi Opportunità",
+        "📎 Risultati Dettagliati",
+        "🏆 Classifica prodotti",
+    ]
 )
 
 #################################
@@ -658,8 +666,12 @@ if avvia:
         if col in df_finale.columns:
             df_finale[col] = df_finale[col].round(2)
 
+    # Classifica cross-country per ASIN
+    df_ranked = aggregate_opportunities(df_finale)
+
     # Salviamo i dati nella sessione per i filtri interattivi
     st.session_state["filtered_data"] = df_finale
+    st.session_state["ranked_data"] = df_ranked
 
     #################################
     # Dashboard Interattiva
@@ -1008,6 +1020,17 @@ if avvia:
             st.info(
                 "👈 Clicca su 'Calcola Opportunity Score' nella barra laterale per visualizzare i risultati."
             )
+
+    # Classifica prodotti per ASIN
+    with tab_rank:
+        ranked = st.session_state.get("ranked_data")
+        if ranked is not None and not ranked.empty:
+            st.markdown('<div class="result-container">', unsafe_allow_html=True)
+            st.subheader("🏆 Classifica prodotti")
+            st.dataframe(ranked, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info("👈 Calcola le opportunità per vedere la classifica.")
 
 # Aggiunta dell'help
 with st.expander("ℹ️ Come funziona l'Opportunity Score"):

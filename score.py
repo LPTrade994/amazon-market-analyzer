@@ -118,3 +118,23 @@ def compute_scores(df: pd.DataFrame, weights: Dict[str, float]) -> pd.DataFrame:
     score = sum(weights.get(k, 1.0) * subs[k] for k in subs)
     df["final_score"] = _minmax(score) * 100
     return df
+
+
+def aggregate_opportunities(df: pd.DataFrame) -> pd.DataFrame:
+    """Return one row per ASIN with the best market and score."""
+    if df is None or df.empty or "ASIN" not in df.columns:
+        return pd.DataFrame(columns=["ASIN", "Best_Market", "Opportunity_Score"])
+
+    if "Opportunity_Score" not in df.columns:
+        return pd.DataFrame(columns=["ASIN", "Best_Market", "Opportunity_Score"])
+
+    idx = df.groupby("ASIN") ["Opportunity_Score"].idxmax()
+    best = df.loc[idx].copy()
+    best = best.rename(columns={"Locale (comp)": "Best_Market"})
+
+    cols = ["ASIN"]
+    if "Title (base)" in best.columns:
+        cols.append("Title (base)")
+    cols += ["Best_Market", "Opportunity_Score"]
+
+    return best[cols].sort_values("Opportunity_Score", ascending=False).reset_index(drop=True)
