@@ -41,36 +41,331 @@ from ui import apply_dark_theme
 apply_dark_theme()
 
 # Order of columns shown in the result grid
+# Primary columns in the desired order. Any additional columns will be
+# appended after these.
 DISPLAY_COLS_ORDER = [
-    # Product information
     "Locale (base)",
     "Locale (comp)",
     "Title (base)",
     "ASIN",
-    "Brand (base)",
-    "Package: Dimension (cm³) (base)",
-    # Pricing details
+    "Margine_Stimato",
+    "Bought_Comp",
     "Price_Base",
     "Acquisto_Netto",
     "Price_Comp",
     "Vendita_Netto",
-    # Margin information
-    "Margine_Stimato",
-    "Shipping_Cost",
-    "Margine_Netto",
-    "Margine_Netto_%",
-    # Other metrics
-    "Weight_kg",
-    "SalesRank_Comp",
-    "Trend",
-    "Bought_Comp",
-    "NewOffer_Comp",
-    "Volume_Score",
     "Opportunity_Score",
     "Opportunity_Class",
+    "SalesRank_Comp",
+    "Trend",
+    "NewOffer_Comp",
+    "Volume_Score",
+    "Weight_kg",
+    "Package: Dimension (cm³) (base)",
     "IVA_Origine",
     "IVA_Confronto",
 ]
+
+
+def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shipping: bool) -> None:
+    """Render the dashboard and detailed results grids."""
+    #################################
+    # Dashboard Interattiva
+    #################################
+    with tab_main2:
+        st.markdown('<div class="result-container">', unsafe_allow_html=True)
+        st.subheader("📊 Dashboard delle Opportunità")
+
+        # Metriche principali
+        if not df_finale.empty:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Prodotti Trovati", len(df_finale))
+            with col2:
+                st.metric(
+                    "Margine Netto Medio (%)",
+                    f"{df_finale['Margine_Netto_%'].mean():.2f}%",
+                )
+            with col3:
+                st.metric(
+                    "Margine Netto Medio (€)",
+                    f"{df_finale['Margine_Netto'].mean():.2f}€",
+                )
+            with col4:
+                st.metric(
+                    "Opportunity Score Massimo",
+                    f"{df_finale['Opportunity_Score'].max():.2f}",
+                )
+
+            st.info(
+                "Aliquote IVA determinate automaticamente per ogni riga | "
+                + ("✅ Spedizione Inclusa" if include_shipping else "❌ Spedizione Esclusa")
+            )
+
+            dark_colors = {
+                "Eccellente": "#2ecc71",
+                "Buona": "#27ae60",
+                "Discreta": "#f39c12",
+                "Bassa": "#e74c3c",
+            }
+
+            st.subheader("Distribuzione Opportunity Score")
+            hist = (
+                alt.Chart(df_finale.reset_index())
+                .mark_bar()
+                .encode(
+                    alt.X(
+                        "Opportunity_Score:Q",
+                        bin=alt.Bin(maxbins=20),
+                        title="Opportunity Score",
+                    ),
+                    alt.Y("count()", title="Numero di Prodotti"),
+                    color=alt.Color(
+                        "Opportunity_Class:N",
+                        scale=alt.Scale(domain=list(dark_colors.keys()), range=list(dark_colors.values())),
+                    ),
+                )
+                .properties(height=250)
+            )
+            st.altair_chart(hist, use_container_width=True)
+
+            st.subheader("Analisi Multifattoriale")
+            chart = (
+                alt.Chart(df_finale.reset_index())
+                .mark_circle()
+                .encode(
+                    x=alt.X("Margine_Netto_%:Q", title="Margine Netto (%)"),
+                    y=alt.Y("Opportunity_Score:Q", title="Opportunity Score"),
+                    size=alt.Size("Volume_Score:Q", title="Volume Stimato", scale=alt.Scale(range=[20, 200])),
+                    color=alt.Color("Locale (comp):N", title="Mercato Confronto", scale=alt.Scale(scheme="category10")),
+                    tooltip=[
+                        "Title (base)",
+                        "ASIN",
+                        "Margine_Netto_%",
+                        "Margine_Netto",
+                        "Shipping_Cost",
+                        "SalesRank_Comp",
+                        "Opportunity_Score",
+                        "Trend",
+                    ],
+                )
+                .interactive()
+            )
+            st.altair_chart(chart, use_container_width=True)
+
+            st.subheader("Analisi per Mercato")
+            if "Locale (comp)" in df_finale.columns:
+                market_analysis = (
+                    df_finale.groupby("Locale (comp)")
+                    .agg({
+                        "ASIN": "count",
+                        "Margine_Netto_%": "mean",
+                        "Margine_Netto": "mean",
+                        "Shipping_Cost": "mean",
+                        "Opportunity_Score": "mean",
+                    })
+                    .reset_index()
+                )
+                market_analysis.columns = [
+                    "Mercato",
+                    "Prodotti",
+                    "Margine Netto Medio (%)",
+                    "Margine Netto Medio (€)",
+                    "Costo Spedizione Medio (€)",
+                    "Opportunity Score Medio",
+                ]
+                market_analysis = market_analysis.round(2)
+                st.dataframe(market_analysis, use_container_width=True)
+
+                market_chart = (
+                    alt.Chart(market_analysis)
+                    .mark_bar()
+                    .encode(
+                        x="Mercato:N",
+                        y="Opportunity Score Medio:Q",
+                        color=alt.Color("Mercato:N", scale=alt.Scale(scheme="category10")),
+                        tooltip=[
+                            "Mercato",
+                            "Prodotti",
+                            "Margine Netto Medio (%)",
+                            "Margine Netto Medio (€)",
+                            "Costo Spedizione Medio (€)",
+                            "Opportunity Score Medio",
+                        ],
+                    )
+                    .properties(height=300)
+                )
+                st.altair_chart(market_chart, use_container_width=True)
+        else:
+            st.info("Nessun prodotto trovato con i filtri applicati.")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Risultati dettagliati e filtri interattivi
+    with tab_main3:
+        if df_finale is not None and not df_finale.empty:
+            st.markdown('<div class="result-container">', unsafe_allow_html=True)
+            st.subheader("🔍 Esplora i Risultati")
+
+            st.markdown('<div class="filter-group">', unsafe_allow_html=True)
+            col1, col2, col3 = st.columns(3)
+
+            filtered_df = df_finale.copy()
+
+            with col1:
+                if "Locale (comp)" in filtered_df.columns:
+                    markets = ["Tutti"] + sorted(filtered_df["Locale (comp)"].unique().tolist())
+                    selected_market = st.selectbox("Filtra per Mercato", markets)
+                    if selected_market != "Tutti":
+                        filtered_df = filtered_df[filtered_df["Locale (comp)"] == selected_market]
+
+            with col2:
+                if "Brand (base)" in filtered_df.columns:
+                    brands = ["Tutti"] + sorted(filtered_df["Brand (base)"].unique().tolist())
+                    selected_brand = st.selectbox("Filtra per Brand", brands)
+                    if selected_brand != "Tutti":
+                        filtered_df = filtered_df[filtered_df["Brand (base)"] == selected_brand]
+
+            with col3:
+                if "Opportunity_Class" in filtered_df.columns:
+                    classes = ["Tutti"] + sorted(filtered_df["Opportunity_Class"].unique().tolist())
+                    selected_class = st.selectbox("Filtra per Qualità Opportunità", classes)
+                    if selected_class != "Tutti":
+                        filtered_df = filtered_df[filtered_df["Opportunity_Class"] == selected_class]
+
+            col1, col2 = st.columns(2)
+            with col1:
+                min_op_score = st.slider(
+                    "Opportunity Score Minimo",
+                    min_value=float(filtered_df["Opportunity_Score"].min()),
+                    max_value=float(filtered_df["Opportunity_Score"].max()),
+                    value=float(filtered_df["Opportunity_Score"].min()),
+                )
+                filtered_df = filtered_df[filtered_df["Opportunity_Score"] >= min_op_score]
+
+            with col2:
+                min_margin = st.slider(
+                    "Margine Netto Minimo (€)",
+                    min_value=float(filtered_df["Margine_Netto"].min()),
+                    max_value=float(filtered_df["Margine_Netto"].max()),
+                    value=float(filtered_df["Margine_Netto"].min()),
+                )
+                filtered_df = filtered_df[filtered_df["Margine_Netto"] >= min_margin]
+
+            search_term = st.text_input("Cerca per ASIN o Titolo")
+            if search_term:
+                mask = filtered_df["ASIN"].str.contains(search_term, case=False, na=False) | filtered_df[
+                    "Title (base)"
+                ].str.contains(search_term, case=False, na=False)
+                filtered_df = filtered_df[mask]
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            if not filtered_df.empty:
+                def highlight_opportunity(val):
+                    if val == "Eccellente":
+                        return "background-color: #153d2e; color: #2ecc71; font-weight: bold"
+                    elif val == "Buona":
+                        return "background-color: #14432d; color: #27ae60; font-weight: bold"
+                    elif val == "Discreta":
+                        return "background-color: #402d10; color: #f39c12; font-weight: bold"
+                    else:
+                        return "background-color: #3d1a15; color: #e74c3c; font-weight: bold"
+
+                def format_with_html(df):
+                    styled = df.style.map(
+                        lambda x: highlight_opportunity(x)
+                        if x in ["Eccellente", "Buona", "Discreta", "Bassa"]
+                        else "",
+                        subset=["Opportunity_Class"],
+                    )
+                    return styled.format(
+                        {
+                            "Price_Base": "€{:.2f}",
+                            "Acquisto_Netto": "€{:.2f}",
+                            "Price_Comp": "€{:.2f}",
+                            "Vendita_Netto": "€{:.2f}",
+                            "Margine_Stimato": "€{:.2f}",
+                            "Shipping_Cost": "€{:.2f}",
+                            "Margine_Netto": "€{:.2f}",
+                            "Margine_Netto_%": "{:.2f}%",
+                            "Opportunity_Score": "{:.2f}",
+                            "Volume_Score": "{:.2f}",
+                            "Weight_kg": "{:.2f} kg",
+                        }
+                    )
+
+                st.markdown(f"**{len(filtered_df)} prodotti trovati**")
+
+                display_cols = [c for c in DISPLAY_COLS_ORDER if c in filtered_df.columns]
+                extra_display = [c for c in filtered_df.columns if c not in display_cols]
+                filtered_df = filtered_df[display_cols + extra_display]
+
+                go = GridOptionsBuilder.from_dataframe(filtered_df)
+                go.configure_default_column(sortable=True, filter=True)
+                go.configure_grid_options(enableRangeSelection=True)
+                go.configure_grid_options(autoSizeStrategy={"type": "fitGridWidth"})
+                go = go.build()
+
+                container_cls = "fullscreen" if st.session_state.get("grid_fullscreen") else ""
+                st.markdown(f'<div id="results_grid_container" class="{container_cls}">', unsafe_allow_html=True)
+
+                if st.session_state.get("grid_fullscreen"):
+                    if st.button("Chiudi", key="close_grid_fullscreen"):
+                        st.session_state["grid_fullscreen"] = False
+                else:
+                    if st.button("Schermo intero", key="open_grid_fullscreen"):
+                        st.session_state["grid_fullscreen"] = True
+
+                AgGrid(
+                    filtered_df,
+                    gridOptions=go,
+                    update_mode=GridUpdateMode.NO_UPDATE,
+                    theme="streamlit",
+                    key="results_grid",
+                    enable_enterprise_modules=True,
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                csv_data = filtered_df.to_csv(index=False, sep=";").encode("utf-8")
+                excel_data = io.BytesIO()
+                filtered_df.to_excel(excel_data, index=False)
+                excel_data.seek(0)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.download_button(
+                        label="📥 Scarica CSV",
+                        data=csv_data,
+                        file_name="risultato_opportunity_arbitrage.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                    )
+                with col2:
+                    st.download_button(
+                        label="📥 Scarica Excel",
+                        data=excel_data,
+                        file_name="risultato_opportunity_arbitrage.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+            else:
+                st.warning("Nessun prodotto corrisponde ai filtri selezionati.")
+
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info(
+                "👈 Clicca su 'Calcola Opportunity Score' nella barra laterale per visualizzare i risultati."
+            )
+
+    with tab_rank:
+        if df_ranked is not None and not df_ranked.empty:
+            st.markdown('<div class="result-container">', unsafe_allow_html=True)
+            st.subheader("🏆 Classifica prodotti")
+            st.dataframe(df_ranked, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info("👈 Calcola le opportunità per vedere la classifica.")
 
 
 # Inizializzazione delle "ricette" in session_state
@@ -82,6 +377,12 @@ if "filtered_data" not in st.session_state:
     st.session_state["filtered_data"] = None
 if "ranked_data" not in st.session_state:
     st.session_state["ranked_data"] = None
+
+# Flag to indicate if a previous analysis is available
+analysis_available = (
+    st.session_state["filtered_data"] is not None
+    and not st.session_state["filtered_data"].empty
+)
 
 # State for fullscreen grid view
 if "grid_fullscreen" not in st.session_state:
@@ -642,9 +943,9 @@ if avvia:
 
     # Selezione delle colonne finali da visualizzare
     cols_final = [c for c in DISPLAY_COLS_ORDER if c in df_merged.columns]
-    # Manteniamo eventuali colonne aggiuntive utili ma non mostrate
-    extra_cols = ["Opportunity_Tag", "SalesRank_30d"]
-    cols_final += [c for c in extra_cols if c in df_merged.columns]
+    # Qualsiasi colonna non inclusa nell'ordine prioritario viene aggiunta in coda
+    extra_cols = [c for c in df_merged.columns if c not in cols_final]
+    cols_final += extra_cols
     df_finale = df_merged[cols_final].copy()
 
     # Arrotonda i valori numerici principali a 2 decimali
@@ -672,365 +973,15 @@ if avvia:
     # Salviamo i dati nella sessione per i filtri interattivi
     st.session_state["filtered_data"] = df_finale
     st.session_state["ranked_data"] = df_ranked
+    analysis_available = True
 
-    #################################
-    # Dashboard Interattiva
-    #################################
-    with tab_main2:
-        st.markdown('<div class="result-container">', unsafe_allow_html=True)
-        st.subheader("📊 Dashboard delle Opportunità")
-
-        # Metriche principali
-        if not df_finale.empty:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Prodotti Trovati", len(df_finale))
-            with col2:
-                st.metric(
-                    "Margine Netto Medio (%)",
-                    f"{df_finale['Margine_Netto_%'].mean():.2f}%",
-                )
-            with col3:
-                st.metric(
-                    "Margine Netto Medio (€)",
-                    f"{df_finale['Margine_Netto'].mean():.2f}€",
-                )
-            with col4:
-                st.metric(
-                    "Opportunity Score Massimo",
-                    f"{df_finale['Opportunity_Score'].max():.2f}",
-                )
-
-            # Riepilogo impostazioni
-            st.info(
-                "Aliquote IVA determinate automaticamente per ogni riga | "
-                + (
-                    "✅ Spedizione Inclusa"
-                    if include_shipping
-                    else "❌ Spedizione Esclusa"
-                )
-            )
-
-            # Configura i colori per il tema dark in Altair
-            dark_colors = {
-                "Eccellente": "#2ecc71",
-                "Buona": "#27ae60",
-                "Discreta": "#f39c12",
-                "Bassa": "#e74c3c",
-            }
-
-            # Grafico di distribuzione degli Opportunity Score
-            st.subheader("Distribuzione Opportunity Score")
-            hist = (
-                alt.Chart(df_finale.reset_index())
-                .mark_bar()
-                .encode(
-                    alt.X(
-                        "Opportunity_Score:Q",
-                        bin=alt.Bin(maxbins=20),
-                        title="Opportunity Score",
-                    ),
-                    alt.Y("count()", title="Numero di Prodotti"),
-                    color=alt.Color(
-                        "Opportunity_Class:N",
-                        scale=alt.Scale(
-                            domain=list(dark_colors.keys()),
-                            range=list(dark_colors.values()),
-                        ),
-                    ),
-                )
-                .properties(height=250)
-            )
-            st.altair_chart(hist, use_container_width=True)
-
-            # Grafico Scatter: Margine Netto (%) vs Opportunity Score con dimensione per Volume
-            st.subheader("Analisi Multifattoriale")
-            chart = (
-                alt.Chart(df_finale.reset_index())
-                .mark_circle()
-                .encode(
-                    x=alt.X("Margine_Netto_%:Q", title="Margine Netto (%)"),
-                    y=alt.Y("Opportunity_Score:Q", title="Opportunity Score"),
-                    size=alt.Size(
-                        "Volume_Score:Q",
-                        title="Volume Stimato",
-                        scale=alt.Scale(range=[20, 200]),
-                    ),
-                    color=alt.Color(
-                        "Locale (comp):N",
-                        title="Mercato Confronto",
-                        scale=alt.Scale(scheme="category10"),
-                    ),
-                    tooltip=[
-                        "Title (base)",
-                        "ASIN",
-                        "Margine_Netto_%",
-                        "Margine_Netto",
-                        "Shipping_Cost",
-                        "SalesRank_Comp",
-                        "Opportunity_Score",
-                        "Trend",
-                    ],
-                )
-                .interactive()
-            )
-            st.altair_chart(chart, use_container_width=True)
-
-            # Analisi per Mercato di Confronto
-            st.subheader("Analisi per Mercato")
-            if "Locale (comp)" in df_finale.columns:
-                market_analysis = (
-                    df_finale.groupby("Locale (comp)")
-                    .agg(
-                        {
-                            "ASIN": "count",
-                            "Margine_Netto_%": "mean",
-                            "Margine_Netto": "mean",
-                            "Shipping_Cost": "mean",
-                            "Opportunity_Score": "mean",
-                        }
-                    )
-                    .reset_index()
-                )
-                market_analysis.columns = [
-                    "Mercato",
-                    "Prodotti",
-                    "Margine Netto Medio (%)",
-                    "Margine Netto Medio (€)",
-                    "Costo Spedizione Medio (€)",
-                    "Opportunity Score Medio",
-                ]
-                market_analysis = market_analysis.round(2)
-                st.dataframe(market_analysis, use_container_width=True)
-
-                # Grafico a barre per confronto mercati
-                market_chart = (
-                    alt.Chart(market_analysis)
-                    .mark_bar()
-                    .encode(
-                        x="Mercato:N",
-                        y="Opportunity Score Medio:Q",
-                        color=alt.Color(
-                            "Mercato:N", scale=alt.Scale(scheme="category10")
-                        ),
-                        tooltip=[
-                            "Mercato",
-                            "Prodotti",
-                            "Margine Netto Medio (%)",
-                            "Margine Netto Medio (€)",
-                            "Costo Spedizione Medio (€)",
-                            "Opportunity Score Medio",
-                        ],
-                    )
-                    .properties(height=300)
-                )
-                st.altair_chart(market_chart, use_container_width=True)
-        else:
-            st.info("Nessun prodotto trovato con i filtri applicati.")
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # Risultati dettagliati e filtri interattivi
-    with tab_main3:
-        if (
-            st.session_state["filtered_data"] is not None
-            and not st.session_state["filtered_data"].empty
-        ):
-            st.markdown('<div class="result-container">', unsafe_allow_html=True)
-            st.subheader("🔍 Esplora i Risultati")
-
-            # Filtri interattivi
-            st.markdown('<div class="filter-group">', unsafe_allow_html=True)
-            col1, col2, col3 = st.columns(3)
-
-            filtered_df = st.session_state["filtered_data"].copy()
-
-            with col1:
-                if "Locale (comp)" in filtered_df.columns:
-                    markets = ["Tutti"] + sorted(
-                        filtered_df["Locale (comp)"].unique().tolist()
-                    )
-                    selected_market = st.selectbox("Filtra per Mercato", markets)
-                    if selected_market != "Tutti":
-                        filtered_df = filtered_df[
-                            filtered_df["Locale (comp)"] == selected_market
-                        ]
-
-            with col2:
-                if "Brand (base)" in filtered_df.columns:
-                    brands = ["Tutti"] + sorted(
-                        filtered_df["Brand (base)"].unique().tolist()
-                    )
-                    selected_brand = st.selectbox("Filtra per Brand", brands)
-                    if selected_brand != "Tutti":
-                        filtered_df = filtered_df[
-                            filtered_df["Brand (base)"] == selected_brand
-                        ]
-
-            with col3:
-                if "Opportunity_Class" in filtered_df.columns:
-                    classes = ["Tutti"] + sorted(
-                        filtered_df["Opportunity_Class"].unique().tolist()
-                    )
-                    selected_class = st.selectbox(
-                        "Filtra per Qualità Opportunità", classes
-                    )
-                    if selected_class != "Tutti":
-                        filtered_df = filtered_df[
-                            filtered_df["Opportunity_Class"] == selected_class
-                        ]
-
-            col1, col2 = st.columns(2)
-            with col1:
-                min_op_score = st.slider(
-                    "Opportunity Score Minimo",
-                    min_value=float(filtered_df["Opportunity_Score"].min()),
-                    max_value=float(filtered_df["Opportunity_Score"].max()),
-                    value=float(filtered_df["Opportunity_Score"].min()),
-                )
-                filtered_df = filtered_df[
-                    filtered_df["Opportunity_Score"] >= min_op_score
-                ]
-
-            with col2:
-                min_margin = st.slider(
-                    "Margine Netto Minimo (€)",
-                    min_value=float(filtered_df["Margine_Netto"].min()),
-                    max_value=float(filtered_df["Margine_Netto"].max()),
-                    value=float(filtered_df["Margine_Netto"].min()),
-                )
-                filtered_df = filtered_df[filtered_df["Margine_Netto"] >= min_margin]
-
-            # Cerca per ASIN o titolo
-            search_term = st.text_input("Cerca per ASIN o Titolo")
-            if search_term:
-                mask = filtered_df["ASIN"].str.contains(
-                    search_term, case=False, na=False
-                ) | filtered_df["Title (base)"].str.contains(
-                    search_term, case=False, na=False
-                )
-                filtered_df = filtered_df[mask]
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            # Visualizzazione dei risultati filtrati
-            if not filtered_df.empty:
-                # Formato personalizzato per la tabella dei risultati in tema dark
-                def highlight_opportunity(val):
-                    if val == "Eccellente":
-                        return "background-color: #153d2e; color: #2ecc71; font-weight: bold"
-                    elif val == "Buona":
-                        return "background-color: #14432d; color: #27ae60; font-weight: bold"
-                    elif val == "Discreta":
-                        return "background-color: #402d10; color: #f39c12; font-weight: bold"
-                    else:
-                        return "background-color: #3d1a15; color: #e74c3c; font-weight: bold"
-
-                # Aggiungi la formattazione HTML per le classi di opportunity
-                def format_with_html(df):
-                    styled = df.style.map(  # Cambiato da applymap a map (deprecato)
-                        lambda x: (
-                            highlight_opportunity(x)
-                            if x in ["Eccellente", "Buona", "Discreta", "Bassa"]
-                            else ""
-                        ),
-                        subset=["Opportunity_Class"],
-                    )
-                    return styled.format(
-                        {
-                            "Price_Base": "€{:.2f}",
-                            "Acquisto_Netto": "€{:.2f}",
-                            "Price_Comp": "€{:.2f}",
-                            "Vendita_Netto": "€{:.2f}",
-                            "Margine_Stimato": "€{:.2f}",
-                            "Shipping_Cost": "€{:.2f}",
-                            "Margine_Netto": "€{:.2f}",
-                            "Margine_Netto_%": "{:.2f}%",
-                            "Opportunity_Score": "{:.2f}",
-                            "Volume_Score": "{:.2f}",
-                            "Weight_kg": "{:.2f} kg",
-                        }
-                    )
-
-                # Visualizzazione dei risultati - SENZA PAGINAZIONE
-                st.markdown(f"**{len(filtered_df)} prodotti trovati**")
-
-                # Selezione delle colonne da visualizzare nell'ordine stabilito
-                display_cols = [c for c in DISPLAY_COLS_ORDER if c in filtered_df.columns]
-                filtered_df = filtered_df[display_cols]
-
-                # Mostra la tabella completa (senza paginazione) con AgGrid
-                go = GridOptionsBuilder.from_dataframe(filtered_df)
-                go.configure_default_column(sortable=True, filter=True)
-                go.configure_grid_options(enableRangeSelection=True)
-                go.configure_grid_options(autoSizeStrategy={"type": "fitGridWidth"})
-                go = go.build()
-
-                container_cls = "fullscreen" if st.session_state.get("grid_fullscreen") else ""
-                st.markdown(
-                    f'<div id="results_grid_container" class="{container_cls}">',
-                    unsafe_allow_html=True,
-                )
-
-                if st.session_state.get("grid_fullscreen"):
-                    if st.button("Chiudi", key="close_grid_fullscreen"):
-                        st.session_state["grid_fullscreen"] = False
-                else:
-                    if st.button("Schermo intero", key="open_grid_fullscreen"):
-                        st.session_state["grid_fullscreen"] = True
-
-                AgGrid(
-                    filtered_df,
-                    gridOptions=go,
-                    update_mode=GridUpdateMode.NO_UPDATE,
-                    theme="streamlit",
-                    key="results_grid",
-                    enable_enterprise_modules=True,
-                )
-                st.markdown("</div>", unsafe_allow_html=True)
-
-                # Esportazione dati
-                csv_data = filtered_df.to_csv(index=False, sep=";").encode("utf-8")
-                excel_data = io.BytesIO()
-                filtered_df.to_excel(excel_data, index=False)
-                excel_data.seek(0)
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.download_button(
-                        label="📥 Scarica CSV",
-                        data=csv_data,
-                        file_name="risultato_opportunity_arbitrage.csv",
-                        mime="text/csv",
-                        use_container_width=True,
-                    )
-                with col2:
-                    st.download_button(
-                        label="📥 Scarica Excel",
-                        data=excel_data,
-                        file_name="risultato_opportunity_arbitrage.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                    )
-            else:
-                st.warning("Nessun prodotto corrisponde ai filtri selezionati.")
-
-            st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.info(
-                "👈 Clicca su 'Calcola Opportunity Score' nella barra laterale per visualizzare i risultati."
-            )
-
-    # Classifica prodotti per ASIN
-    with tab_rank:
-        ranked = st.session_state.get("ranked_data")
-        if ranked is not None and not ranked.empty:
-            st.markdown('<div class="result-container">', unsafe_allow_html=True)
-            st.subheader("🏆 Classifica prodotti")
-            st.dataframe(ranked, use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.info("👈 Calcola le opportunità per vedere la classifica.")
+    render_results(df_finale, df_ranked, include_shipping)
+elif analysis_available:
+    render_results(
+        st.session_state["filtered_data"],
+        st.session_state["ranked_data"],
+        include_shipping,
+    )
 
 # Aggiunta dell'help
 with st.expander("ℹ️ Come funziona l'Opportunity Score"):
