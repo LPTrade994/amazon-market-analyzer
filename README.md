@@ -53,6 +53,38 @@ These headers must be present (with `(base)` or `(comp)` suffixes after upload) 
 - **Interactive Dashboard** – visualize scores, margins and volume with histograms and scatter plots; save/load parameter "recipes" for repeated analyses.
 - **Cross-market Ranking** – upload multiple comparison lists and view a consolidated table showing the best marketplace and score for each ASIN.
 
+## Result Column Order
+
+The application displays the results using a predefined column sequence. This
+order ensures that the most important information comes first. Only the
+columns listed in `DISPLAY_COLS_ORDER` are shown:
+
+1. **Locale (base)**
+2. **Locale (comp)**
+3. **Title (base)**
+4. **ASIN**
+5. **Margine_Stimato**
+6. **Margine_Netto_%**
+7. **Margine_Netto**
+8. **Price_Base**
+9. **Acquisto_Netto**
+10. **Shipping_Cost**
+11. **Price_Comp**
+12. **Vendita_Netto**
+13. **Bought_Comp**
+14. **SalesRank_Comp**
+15. **Trend**
+16. **NewOffer_Comp**
+17. **Opportunity_Score**
+18. **Opportunity_Class**
+19. **Volume_Score**
+20. **Weight_kg**
+21. **Package: Dimension (cm³) (base)**
+22. **IVA_Origine**
+23. **IVA_Confronto**
+
+Any additional columns present in your dataset are ignored.
+
 
 ## VAT and Discount Logic
 

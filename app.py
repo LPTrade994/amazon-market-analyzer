@@ -40,25 +40,27 @@ from ui import apply_dark_theme
 
 apply_dark_theme()
 
-# Order of columns shown in the result grid
-# Primary columns in the desired order. Any additional columns will be
-# appended after these.
+# Result grid column order
+# Only the following columns are displayed in this exact sequence.
 DISPLAY_COLS_ORDER = [
     "Locale (base)",
     "Locale (comp)",
     "Title (base)",
     "ASIN",
     "Margine_Stimato",
-    "Bought_Comp",
+    "Margine_Netto_%",
+    "Margine_Netto",
     "Price_Base",
     "Acquisto_Netto",
+    "Shipping_Cost",
     "Price_Comp",
     "Vendita_Netto",
-    "Opportunity_Score",
-    "Opportunity_Class",
+    "Bought_Comp",
     "SalesRank_Comp",
     "Trend",
     "NewOffer_Comp",
+    "Opportunity_Score",
+    "Opportunity_Class",
     "Volume_Score",
     "Weight_kg",
     "Package: Dimension (cm³) (base)",
@@ -298,8 +300,7 @@ def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shi
                 st.markdown(f"**{len(filtered_df)} prodotti trovati**")
 
                 display_cols = [c for c in DISPLAY_COLS_ORDER if c in filtered_df.columns]
-                extra_display = [c for c in filtered_df.columns if c not in display_cols]
-                filtered_df = filtered_df[display_cols + extra_display]
+                filtered_df = filtered_df[display_cols]
 
                 go = GridOptionsBuilder.from_dataframe(filtered_df)
                 go.configure_default_column(sortable=True, filter=True)
@@ -943,9 +944,6 @@ if avvia:
 
     # Selezione delle colonne finali da visualizzare
     cols_final = [c for c in DISPLAY_COLS_ORDER if c in df_merged.columns]
-    # Qualsiasi colonna non inclusa nell'ordine prioritario viene aggiunta in coda
-    extra_cols = [c for c in df_merged.columns if c not in cols_final]
-    cols_final += extra_cols
     df_finale = df_merged[cols_final].copy()
 
     # Arrotonda i valori numerici principali a 2 decimali
