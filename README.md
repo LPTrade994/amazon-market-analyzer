@@ -56,32 +56,34 @@ These headers must be present (with `(base)` or `(comp)` suffixes after upload) 
 ## Result Column Order
 
 The application displays the results using a predefined column sequence. This
-order ensures that the most important information comes first. The default
-order matches the `DISPLAY_COLS_ORDER` list defined in `app.py`:
+order ensures that the most important information comes first. Only the
+columns listed in `DISPLAY_COLS_ORDER` are shown:
 
 1. **Locale (base)**
 2. **Locale (comp)**
 3. **Title (base)**
 4. **ASIN**
 5. **Margine_Stimato**
-6. **Bought_Comp**
-7. **Price_Base**
-8. **Acquisto_Netto**
-9. **Price_Comp**
-10. **Vendita_Netto**
-11. **Opportunity_Score**
-12. **Opportunity_Class**
-13. **SalesRank_Comp**
-14. **Trend**
-15. **NewOffer_Comp**
-16. **Volume_Score**
-17. **Weight_kg**
-18. **Package: Dimension (cm³) (base)**
-19. **IVA_Origine**
-20. **IVA_Confronto**
+6. **Margine_Netto_%**
+7. **Margine_Netto**
+8. **Price_Base**
+9. **Acquisto_Netto**
+10. **Shipping_Cost**
+11. **Price_Comp**
+12. **Vendita_Netto**
+13. **Bought_Comp**
+14. **SalesRank_Comp**
+15. **Trend**
+16. **NewOffer_Comp**
+17. **Opportunity_Score**
+18. **Opportunity_Class**
+19. **Volume_Score**
+20. **Weight_kg**
+21. **Package: Dimension (cm³) (base)**
+22. **IVA_Origine**
+23. **IVA_Confronto**
 
-Any additional columns present in your dataset will be appended after these in
-the final results table.
+Any additional columns present in your dataset are ignored.
 
 
 ## VAT and Discount Logic
