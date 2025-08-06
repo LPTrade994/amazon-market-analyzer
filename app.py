@@ -23,7 +23,6 @@ from loaders import (
     parse_float,
     parse_int,
     parse_weight,
-    parse_bool,
 )
 from score import (
     SHIPPING_COSTS,
@@ -75,7 +74,7 @@ def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shi
     #################################
     # Dashboard Interattiva
     #################################
-    with tab_opportunity:
+    with tab_main2:
         st.markdown('<div class="result-container">', unsafe_allow_html=True)
         st.subheader("📊 Dashboard delle Opportunità")
 
@@ -205,7 +204,7 @@ def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shi
         st.markdown("</div>", unsafe_allow_html=True)
 
     # Risultati dettagliati e filtri interattivi
-    with tab_details:
+    with tab_main3:
         if df_finale is not None and not df_finale.empty:
             st.markdown('<div class="result-container">', unsafe_allow_html=True)
             st.subheader("🔍 Esplora i Risultati")
@@ -395,27 +394,19 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_main1, tab_opportunity, tab_hist, tab_details, tab_rank = st.tabs(
+tab_main1, tab_main2, tab_main3, tab_rank = st.tabs(
     [
         "📋 ASIN Caricati",
         "📊 Analisi Opportunità",
-        "📈 Analisi Storica",
         "📎 Risultati Dettagliati",
         "🏆 Classifica prodotti",
     ]
 )
 
-with tab_hist:
-    st.info("Seleziona 'Analisi Storica (Bargain Hunting)' per visualizzare questa sezione.")
-
 #################################
 # Sidebar: Caricamento file, Prezzo di riferimento, Sconto, Impostazioni e Ricette
 #################################
 with st.sidebar:
-    mode = st.radio(
-        "Selettore di Modalità",
-        ["Arbitraggio Immediato", "Analisi Storica (Bargain Hunting)"],
-    )
     colored_header(
         label="🔄 Caricamento Dati",
         description="Carica i file dei mercati",
@@ -519,116 +510,81 @@ with st.sidebar:
 
     # Includi costi di spedizione nel calcolo
     include_shipping = st.checkbox("Calcola margine netto con spedizione", value=True)
-    simulate_fba = st.checkbox("Simula costi FBA (per analisi competitiva)")
 
     colored_header(
-        label="📈 Opportunity Score" if mode == "Arbitraggio Immediato" else "📈 Bargain Score",
+        label="📈 Opportunity Score",
         description="Pesi e parametri",
         color_name="blue-70",
     )
 
-    if mode == "Arbitraggio Immediato":
-        tab1, tab2 = st.tabs(["Parametri Base", "Parametri Avanzati"])
+    tab1, tab2 = st.tabs(["Parametri Base", "Parametri Avanzati"])
 
-        with tab1:
-            alpha = st.slider(
-                "Peso per Sales Rank (penalità)",
-                0.0,
-                5.0,
-                st.session_state.get("alpha", 1.0),
-                step=0.1,
-                key="alpha",
-            )
-            beta = st.slider(
-                "Peso per 'Bought in past month'",
-                0.0,
-                5.0,
-                st.session_state.get("beta", 1.0),
-                step=0.1,
-                key="beta",
-            )
-            delta = st.slider(
-                "Peso penalizzante per Offer Count",
-                0.0,
-                5.0,
-                st.session_state.get("delta", 1.0),
-                step=0.1,
-                key="delta",
-            )
-            epsilon = st.slider(
-                "Peso per il Margine (%)",
-                0.0,
-                10.0,
-                st.session_state.get("epsilon", 3.0),
-                step=0.1,
-                key="epsilon",
-            )  # Valore predefinito aumentato
-            zeta = st.slider(
-                "Peso per Trend Sales Rank",
-                0.0,
-                5.0,
-                st.session_state.get("zeta", 1.0),
-                step=0.1,
-                key="zeta",
-            )
+    with tab1:
+        alpha = st.slider(
+            "Peso per Sales Rank (penalità)",
+            0.0,
+            5.0,
+            st.session_state.get("alpha", 1.0),
+            step=0.1,
+            key="alpha",
+        )
+        beta = st.slider(
+            "Peso per 'Bought in past month'",
+            0.0,
+            5.0,
+            st.session_state.get("beta", 1.0),
+            step=0.1,
+            key="beta",
+        )
+        delta = st.slider(
+            "Peso penalizzante per Offer Count",
+            0.0,
+            5.0,
+            st.session_state.get("delta", 1.0),
+            step=0.1,
+            key="delta",
+        )
+        epsilon = st.slider(
+            "Peso per il Margine (%)",
+            0.0,
+            10.0,
+            st.session_state.get("epsilon", 3.0),
+            step=0.1,
+            key="epsilon",
+        )  # Valore predefinito aumentato
+        zeta = st.slider(
+            "Peso per Trend Sales Rank",
+            0.0,
+            5.0,
+            st.session_state.get("zeta", 1.0),
+            step=0.1,
+            key="zeta",
+        )
 
-        with tab2:
-            gamma = st.slider(
-                "Peso per volume di vendita",
-                0.0,
-                5.0,
-                st.session_state.get("gamma", 2.0),
-                step=0.1,
-                key="gamma",
-            )
-            theta = st.slider(
-                "Peso per margine assoluto (€)",
-                0.0,
-                5.0,
-                st.session_state.get("theta", 1.5),
-                step=0.1,
-                key="theta",
-            )
-            min_margin_multiplier = st.slider(
-                "Moltiplicatore margine minimo",
-                1.0,
-                3.0,
-                st.session_state.get("min_margin_multiplier", 1.2),
-                step=0.1,
-                key="min_margin_multiplier",
-            )
-    else:
-        bargain_price = st.slider(
-            "Peso anomalia di prezzo",
+    with tab2:
+        gamma = st.slider(
+            "Peso per volume di vendita",
             0.0,
             5.0,
-            st.session_state.get("bargain_price", 1.0),
+            st.session_state.get("gamma", 2.0),
             step=0.1,
-            key="bargain_price",
+            key="gamma",
         )
-        bargain_profit = st.slider(
-            "Peso redditività",
+        theta = st.slider(
+            "Peso per margine assoluto (€)",
             0.0,
             5.0,
-            st.session_state.get("bargain_profit", 1.0),
+            st.session_state.get("theta", 1.5),
             step=0.1,
-            key="bargain_profit",
+            key="theta",
         )
-        bargain_velocity = st.slider(
-            "Peso velocità di vendita",
-            0.0,
-            5.0,
-            st.session_state.get("bargain_velocity", 1.0),
+        min_margin_multiplier = st.slider(
+            "Moltiplicatore margine minimo",
+            1.0,
+            3.0,
+            st.session_state.get("min_margin_multiplier", 1.2),
             step=0.1,
-            key="bargain_velocity",
-        )
-        bargain_risk = st.slider(
-            "Peso rischio/stabilità",
-            0.0,
-            5.0,
-            st.session_state.get("bargain_risk", 1.0),
-            step=0.1,
-            key="bargain_risk",
+            key="min_margin_multiplier",
         )
 
     colored_header(
@@ -651,18 +607,6 @@ with st.sidebar:
             "Margine minimo (%)", min_value=0.0, value=15.0
         )
         min_margin_abs = st.number_input("Margine minimo (€)", min_value=0.0, value=5.0)
-        category_options = []
-        if df_base is not None and "Categories: Root" in df_base.columns:
-            category_options = (
-                df_base["Categories: Root"].dropna().unique().tolist()
-            )
-            category_options = sorted(category_options)
-        selected_categories = st.multiselect(
-            "Categories: Root", options=category_options
-        )
-        exclude_hazmat = st.checkbox(
-            "Escludi prodotti HazMat", value=False
-        )
 
     colored_header(
         label="📋 Ricette",
@@ -756,10 +700,6 @@ with tab_main1:
 # Elaborazione Completa e Calcolo Opportunity Score
 #################################
 if avvia:
-    if mode == "Analisi Storica (Bargain Hunting)":
-        with tab_hist:
-            st.warning("Modalità Bargain Hunting non ancora implementata.")
-        st.stop()
     if not files_base:
         with tab_main1:
             st.error("Carica almeno un file di Lista di Origine.")
@@ -849,56 +789,6 @@ if avvia:
         "Sales Rank: 30 days avg. (comp)", pd.Series(np.nan)
     ).apply(parse_int)
 
-    df_merged["SalesRank_Drops_90d"] = df_merged.get(
-        "Sales Rank: Drops last 90 days (comp)", pd.Series(np.nan)
-    ).apply(parse_int)
-    df_merged["SalesRank_Drops_180d"] = df_merged.get(
-        "Sales Rank: Drops last 180 days (comp)", pd.Series(np.nan)
-    ).apply(parse_int)
-    df_merged["MonthlySoldChange_90d_pct"] = df_merged.get(
-        "90 days change % monthly sold (comp)", pd.Series(np.nan)
-    ).apply(parse_float)
-
-    df_merged["NewOffer_90d_Avg"] = df_merged.get(
-        "New Offer Count: 90 days avg. (comp)", pd.Series(np.nan)
-    ).apply(parse_int)
-    df_merged["BuyBox_Pct_Amazon_90d"] = df_merged.get(
-        "Buy Box: % Amazon 90 days (comp)", pd.Series(np.nan)
-    ).apply(parse_float)
-    df_merged["BuyBox_WinnerCount_90d"] = df_merged.get(
-        "Buy Box: Winner Count 90 days (comp)", pd.Series(np.nan)
-    ).apply(parse_int)
-
-    df_merged["BuyBox_StdDev_90d"] = df_merged.get(
-        "Buy Box: Standard Deviation 90 days (comp)", pd.Series(np.nan)
-    ).apply(parse_float)
-    df_merged["BuyBox_StdDev_365d"] = df_merged.get(
-        "Buy Box: Standard Deviation 365 days (comp)", pd.Series(np.nan)
-    ).apply(parse_float)
-    df_merged["Return_Rate"] = df_merged.get(
-        "Return Rate (comp)", pd.Series(np.nan)
-    ).apply(parse_float)
-    df_merged["Listed_since"] = df_merged.get("Listed since (comp)")
-    df_merged["Release_Date"] = df_merged.get("Release Date (comp)")
-    df_merged["Lightning_Deals_Current"] = df_merged.get(
-        "Lightning Deals: Current (comp)", pd.Series("False")
-    ).apply(parse_bool)
-    df_merged["BuyBox_IsLowest_90d"] = df_merged.get(
-        "Buy Box 🚚: Is Lowest 90 days (comp)", pd.Series("False")
-    ).apply(parse_bool)
-    df_merged["FBA_PickPack_Fee"] = df_merged.get(
-        "FBA Pick&Pack Fee (comp)", pd.Series(0)
-    ).apply(parse_float)
-    df_merged["Categories_Root"] = df_merged.get(
-        "Categories: Root (base)", df_merged.get("Categories: Root (comp)")
-    )
-    df_merged["Variation_Count"] = df_merged.get(
-        "Variation Count (comp)", pd.Series(np.nan)
-    ).apply(parse_int)
-    df_merged["Is_HazMat"] = df_merged.get(
-        "Is HazMat (base)", df_merged.get("Is HazMat (comp)", pd.Series("False"))
-    ).apply(parse_bool)
-
     # Estrai informazioni sul peso
     # Cerca in varie colonne che potrebbero contenere informazioni sul peso
     possible_weight_cols = [
@@ -985,17 +875,6 @@ if avvia:
         df_merged["Margine_Netto"] = df_merged["Margine_Stimato"]
         df_merged["Margine_Netto_%"] = df_merged["Margine_%"]
 
-    if simulate_fba:
-        df_merged["Margine_Netto"] = df_merged["Margine_Netto"] - df_merged["FBA_PickPack_Fee"].fillna(0)
-        df_merged["Margine_Netto_%"] = (
-            df_merged["Margine_Netto"] / df_merged["Acquisto_Netto"]
-        ) * 100
-
-    if selected_categories:
-        df_merged = df_merged[df_merged["Categories_Root"].isin(selected_categories)]
-    if exclude_hazmat:
-        df_merged = df_merged[~df_merged["Is_HazMat"]]
-
     # Margine percentuale lordo per riferimento
     df_merged["Margin_Pct_Lordo"] = (
         (df_merged["Price_Comp"] - df_merged["Price_Base"]) / df_merged["Price_Base"]
@@ -1011,27 +890,6 @@ if avvia:
         & (df_merged["Price_Comp"].between(min_buybox_price, max_buybox_price))
     )
     df_merged = df_merged[mask]
-
-    df_merged["Amazon_Penalty"] = np.where(
-        df_merged["BuyBox_Pct_Amazon_90d"].fillna(0) > 70,
-        df_merged["BuyBox_Pct_Amazon_90d"].fillna(0) / 100,
-        0,
-    )
-    df_merged["Competitor_Pressure_Index"] = df_merged["NewOffer_Comp"] / df_merged["NewOffer_90d_Avg"].replace(0, np.nan)
-    df_merged["Competitor_Penalty"] = df_merged["Competitor_Pressure_Index"].apply(
-        lambda x: max(0, x - 1.2) if pd.notna(x) else 0
-    )
-    df_merged["Return_Penalty"] = df_merged["Return_Rate"].fillna(0) / 100
-    max_var = df_merged["Variation_Count"].fillna(0).max()
-    if max_var == 0:
-        max_var = 1
-    df_merged["Variation_Penalty"] = df_merged["Variation_Count"].fillna(0) / max_var
-    df_merged["Risk_Penalty"] = (
-        df_merged["Amazon_Penalty"]
-        + df_merged["Competitor_Penalty"]
-        + df_merged["Return_Penalty"]
-        + df_merged["Variation_Penalty"]
-    )
 
     # Calcolo del bonus/penalità per il Trend del Sales Rank
     df_merged["Trend_Bonus"] = np.log(

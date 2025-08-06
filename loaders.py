@@ -65,12 +65,7 @@ def parse_float(value: Any) -> float:
     """Convert a string to ``float`` handling common number formats."""
     if not isinstance(value, str):
         return math.nan
-    cleaned = (
-        value.replace("€", "")
-        .replace("%", "")
-        .replace(",", ".")
-        .strip()
-    )
+    cleaned = value.replace("€", "").replace(",", ".").strip()
     try:
         return float(cleaned)
     except Exception:
@@ -107,10 +102,3 @@ def parse_weight(text: Any) -> float:
         except ValueError:
             return math.nan
     return math.nan
-
-
-def parse_bool(value: Any) -> bool:
-    """Parse common textual boolean representations."""
-    if isinstance(value, str):
-        return value.strip().lower() in {"true", "1", "yes", "y", "si", "s"}
-    return bool(value)
