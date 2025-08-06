@@ -37,6 +37,7 @@ from score import (
 )
 from utils import load_preset, save_preset
 from ui import apply_dark_theme
+from services.backtest import backtest_opportunities
 
 apply_dark_theme()
 
@@ -67,6 +68,55 @@ DISPLAY_COLS_ORDER = [
     "IVA_Origine",
     "IVA_Confronto",
 ]
+
+AVAILABLE_LOCALES = ["it", "fr", "de", "es", "uk"]
+
+
+def to_csv(df: pd.DataFrame) -> bytes:
+    """Return a UTF-8 encoded CSV for download."""
+    return df.to_csv(index=False).encode("utf-8")
+
+
+@st.cache_data(show_spinner=False)
+def load_multiple_files(uploads):
+    """Load multiple Keepa exports and attach snapshot dates."""
+    if not uploads:
+        return pd.DataFrame()
+
+    frames = []
+    progress = st.progress(0)
+    total = len(uploads)
+    for idx, uploaded in enumerate(uploads, 1):
+        data = uploaded.read()
+        buffer = io.BytesIO(data)
+        buffer.name = uploaded.name
+
+        date_match = re.search(r"(\d{4}-\d{2}-\d{2})", uploaded.name)
+        snapshot_date = pd.to_datetime(date_match.group(1)) if date_match else None
+
+        if snapshot_date is None and uploaded.name.lower().endswith(".xlsx"):
+            xls = pd.ExcelFile(buffer)
+            for sheet in xls.sheet_names:
+                m = re.search(r"(\d{4}-\d{2}-\d{2})", sheet)
+                if m:
+                    snapshot_date = pd.to_datetime(m.group(1))
+                    break
+            buffer.seek(0)
+
+        df = load_data(buffer, snapshot_date=snapshot_date)
+        required = ["ASIN", "Locale", "Sales_Rank_Current", "Offer_Count_Current"]
+        missing = [c for c in required if c not in df.columns]
+        if "Price_BuyBox_New" not in df.columns and "Price_Amazon_New" not in df.columns:
+            missing.append("Price_BuyBox_New or Price_Amazon_New")
+        if missing:
+            st.warning(f"{uploaded.name} manca i campi: {', '.join(missing)}")
+            continue
+        frames.append(df)
+        progress.progress(idx / total)
+    progress.empty()
+    if frames:
+        return pd.concat(frames, ignore_index=True)
+    return pd.DataFrame()
 
 
 def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shipping: bool) -> None:
@@ -394,12 +444,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_main1, tab_main2, tab_main3, tab_rank = st.tabs(
+tab_main1, tab_main2, tab_main3, tab_rank, tab_backtest = st.tabs(
     [
         "📋 ASIN Caricati",
         "📊 Analisi Opportunità",
         "📎 Risultati Dettagliati",
         "🏆 Classifica prodotti",
+        "📈 Backtest",
     ]
 )
 
@@ -980,6 +1031,95 @@ elif analysis_available:
         st.session_state["ranked_data"],
         include_shipping,
     )
+
+with tab_backtest:
+    uploads = st.file_uploader(
+        "Carica export storici Keepa",
+        type=["csv", "xlsx"],
+        accept_multiple_files=True,
+    )
+    if uploads:
+        df_all = load_multiple_files(uploads)
+        base_locale = st.selectbox(
+            "Mercato di acquisto (base_locale)",
+            options=AVAILABLE_LOCALES,
+        )
+        target_locales = st.multiselect(
+            "Mercati di vendita (target_locales)",
+            options=AVAILABLE_LOCALES,
+            default=["fr", "de", "es"],
+        )
+        gift_card_discount_pct = st.number_input(
+            "Sconto gift card (%)",
+            value=5.0,
+            step=0.5,
+        )
+        min_profit_eur = st.number_input(
+            "Profitto minimo (€)",
+            value=5.0,
+            step=1.0,
+        )
+        min_margin_pct = st.number_input(
+            "Margine minimo (%)",
+            value=10.0,
+            step=1.0,
+        )
+        max_sales_rank = st.number_input(
+            "Sales rank massimo",
+            value=100000,
+            step=1000,
+        )
+        date_range = st.date_input("Intervallo date", value=[])
+        start_date = end_date = None
+        if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+            start_date, end_date = date_range
+        elif isinstance(date_range, (list, tuple)) and len(date_range) == 1:
+            start_date = end_date = date_range[0]
+        elif hasattr(date_range, "year"):
+            start_date = end_date = date_range
+
+        params = dict(
+            base_locale=base_locale,
+            target_locales=target_locales,
+            discount_pct=gift_card_discount_pct,
+            min_profit_eur=min_profit_eur,
+            min_margin_pct=min_margin_pct,
+            max_sales_rank=int(max_sales_rank),
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        if st.button("Run Backtest"):
+            with st.spinner("Analisi in corso..."):
+                df_res, stats = backtest_opportunities(df_all, **params)
+            st.subheader("Risultati")
+            if not df_res.empty:
+                go = GridOptionsBuilder.from_dataframe(df_res)
+                go.configure_default_column(sortable=True, filter=True)
+                AgGrid(
+                    df_res,
+                    gridOptions=go.build(),
+                    update_mode=GridUpdateMode.NO_UPDATE,
+                    theme="streamlit",
+                )
+                st.download_button("Scarica CSV", to_csv(df_res), "backtest.csv")
+                st.subheader("Statistiche")
+                st.write(pd.DataFrame(stats))
+                chart = (
+                    alt.Chart(df_res)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X(
+                            "potential_profit_eur",
+                            bin=alt.Bin(maxbins=20),
+                            title="Profitto potenziale (€)",
+                        ),
+                        y=alt.Y("count()", title="Occorrenze"),
+                    )
+                )
+                st.altair_chart(chart, use_container_width=True)
+            else:
+                st.info("Nessuna opportunità trovata nel periodo selezionato.")
 
 # Aggiunta dell'help
 with st.expander("ℹ️ Come funziona l'Opportunity Score"):
