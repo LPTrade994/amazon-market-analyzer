@@ -101,7 +101,14 @@ def volatility_score(df: pd.DataFrame) -> pd.Series:
 
 
 def risk_score(df: pd.DataFrame) -> pd.Series:
-    return _minmax(df["ROI_Factor"].fillna(0))
+    base = df["ROI_Factor"].fillna(0)
+    penalty = df.get("Risk_Penalty")
+    if penalty is None:
+        penalty = pd.Series(0, index=df.index)
+    else:
+        penalty = penalty.fillna(0)
+    combined = base - penalty
+    return _minmax(combined)
 
 
 @st.cache_data(show_spinner=False)
@@ -117,6 +124,23 @@ def compute_scores(df: pd.DataFrame, weights: Dict[str, float]) -> pd.DataFrame:
     }
     score = sum(weights.get(k, 1.0) * subs[k] for k in subs)
     df["final_score"] = _minmax(score) * 100
+    return df
+
+
+@st.cache_data(show_spinner=False)
+def compute_bargain_score(df: pd.DataFrame, weights: Dict[str, float]) -> pd.DataFrame:
+    """Compute the Bargain Score used in historical analysis."""
+    df = df.copy()
+    factors = {
+        "price": _minmax(df.get("Price_Anomaly", pd.Series(0, index=df.index)).fillna(0)),
+        "profit": _minmax(df.get("Margin_Potential", pd.Series(0, index=df.index)).fillna(0)),
+        "velocity": _minmax(df.get("Sales_Velocity", pd.Series(0, index=df.index)).fillna(0)),
+        # lower risk is better
+        "stability": 1
+        - _minmax(df.get("Risk_Factors", pd.Series(0, index=df.index)).fillna(0)),
+    }
+    score = sum(weights.get(k, 1.0) * factors[k] for k in factors)
+    df["bargain_score"] = _minmax(score) * 100
     return df
 
 
