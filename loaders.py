@@ -12,17 +12,8 @@ import duckdb
 import streamlit as st
 
 
-def load_data(uploaded_file: Any, snapshot_date: Optional[Any] = None) -> Optional[pd.DataFrame]:
+def load_data(uploaded_file: Any) -> Optional[pd.DataFrame]:
     """Load a CSV or XLSX file into a pandas DataFrame.
-
-    Parameters
-    ----------
-    uploaded_file:
-        Streamlit ``UploadedFile`` or file-like object.
-    snapshot_date:
-        Optional snapshot date to attach as a new column. If provided, the
-        value is converted to :class:`pandas.Timestamp` and stored under the
-        column name ``snapshot_date``.
 
     This function imports pandas lazily to avoid requiring it at import time.
     It returns ``None`` if ``uploaded_file`` is falsy.
@@ -41,7 +32,6 @@ def load_data(uploaded_file: Any, snapshot_date: Optional[Any] = None) -> Option
             uploaded_file.seek(0)
             df = pd.read_csv(uploaded_file, sep=",", dtype=str)
     df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
-    df["snapshot_date"] = pd.to_datetime(snapshot_date) if snapshot_date is not None else pd.NaT
     return df
 
 
