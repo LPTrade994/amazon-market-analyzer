@@ -1367,13 +1367,17 @@ with tab_deals:
         if math.isfinite(min_under):
             mask &= deals_df["UnderPct"].fillna(-1e9) >= min_under
         mask &= (
-            deals_df.get("Sales Rank: Current", np.nan)
+            deals_df.get(
+                "Sales Rank: Current", pd.Series(np.nan, index=deals_df.index)
+            )
             .apply(float_or_nan)
             .fillna(1e12)
             <= max_rank
         )
         mask &= (
-            deals_df.get("New Offer Count: Current", np.nan)
+            deals_df.get(
+                "New Offer Count: Current", pd.Series(np.nan, index=deals_df.index)
+            )
             .apply(float_or_nan)
             .fillna(1e9)
             <= max_offers
@@ -1382,7 +1386,12 @@ with tab_deals:
         if excl_amz_bb:
             mask &= deals_df.apply(lambda r: pct_amz_bb(r) <= 50.0, axis=1)
         if only_amz_oos:
-            mask &= deals_df.get("Amazon: 90 days OOS", 0).fillna(0) > 0
+            mask &= (
+                deals_df.get(
+                    "Amazon: 90 days OOS", pd.Series(0, index=deals_df.index)
+                ).fillna(0)
+                > 0
+            )
 
         deals_f = deals_df[mask].copy()
 
