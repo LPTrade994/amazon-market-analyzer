@@ -1219,6 +1219,9 @@ if avvia:
     # Ordiniamo i risultati per Opportunity Score decrescente
     df_merged = df_merged.sort_values("Opportunity_Score", ascending=False)
 
+    # Salva il dataset completo nella sessione per utilizzi futuri
+    st.session_state["full_data"] = df_merged
+
     # Selezione delle colonne finali da visualizzare
     cols_final = [c for c in DISPLAY_COLS_ORDER if c in df_merged.columns]
     df_finale = df_merged[cols_final].copy()
@@ -1308,7 +1311,7 @@ with st.expander("ℹ️ Come funziona l'Opportunity Score"):
     )
 
 # Tab Affari Storici
-df_final = st.session_state.get("filtered_data")
+df_final = st.session_state.get("full_data")
 
 with tab_deals:
     st.subheader("Affari Storici")
