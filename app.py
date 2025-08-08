@@ -268,9 +268,9 @@ def compute_historic_deals(df: pd.DataFrame) -> pd.DataFrame:
     ) / work["FairPrice"]
     work.loc[~np.isfinite(work["UnderPct"]), "UnderPct"] = np.nan
 
-    work["ReferralFeePct"] = work.get("Referral Fee %", pd.Series(np.nan)).apply(
-        float_or_nan
-    ).fillna(0.0)
+    work["ReferralFeePct"] = work.get(
+        "Referral Fee %", pd.Series(np.nan, index=work.index)
+    ).apply(float_or_nan).fillna(0.0)
     work["ReferralFee€"] = work["NetSale"] * (work["ReferralFeePct"] / 100.0)
     work["Fulfillment€"] = work.apply(estimate_fulfillment_fee, axis=1)
     work["NetProceed€"] = (
@@ -304,22 +304,34 @@ def compute_historic_deals(df: pd.DataFrame) -> pd.DataFrame:
     work["Competition"] = work.apply(competition_score, axis=1)
 
     work["Badge_AMZ_OOS"] = (
-        work.get("Amazon: 90 days OOS", 0).fillna(0) > 0
+        work.get("Amazon: 90 days OOS", pd.Series(0, index=work.index)).fillna(0) > 0
     )
-    amzbb90 = work.get("Buy Box: % Amazon 90 days")
-    amzbb90 = amzbb90.apply(float_or_nan) if amzbb90 is not None else 0
+    amzbb90 = work.get("Buy Box: % Amazon 90 days", pd.Series(0, index=work.index))
+    amzbb90 = amzbb90.apply(float_or_nan)
     work["Badge_BB_Amazon"] = amzbb90.fillna(0) > 50
     work["Badge_Coupon"] = (
-        work.get("One Time Coupon: Absolute").apply(euro_to_float).fillna(0) > 0
+        work.get("One Time Coupon: Absolute", pd.Series(0, index=work.index))
+        .apply(euro_to_float)
+        .fillna(0)
+        > 0
     ) | (
-        work.get("One Time Coupon: Percentage").apply(float_or_nan).fillna(0) > 0
+        work.get("One Time Coupon: Percentage", pd.Series(0, index=work.index))
+        .apply(float_or_nan)
+        .fillna(0)
+        > 0
     )
     work["Badge_Prime"] = (
-        work.get("Prime Eligible (Buy Box)", False).astype(str).str.lower().eq("yes")
+        work.get("Prime Eligible (Buy Box)", pd.Series(False, index=work.index))
+        .astype(str)
+        .str.lower()
+        .eq("yes")
     )
     work["Badge_VolHigh"] = False
-    work["Badge_MAP"] = work.get("MAP restriction", "").astype(str).str.lower().eq(
-        "yes"
+    work["Badge_MAP"] = (
+        work.get("MAP restriction", pd.Series("", index=work.index))
+        .astype(str)
+        .str.lower()
+        .eq("yes")
     )
 
     return work
@@ -1355,13 +1367,17 @@ with tab_deals:
         if math.isfinite(min_under):
             mask &= deals_df["UnderPct"].fillna(-1e9) >= min_under
         mask &= (
-            deals_df.get("Sales Rank: Current", np.nan)
+            deals_df.get(
+                "Sales Rank: Current", pd.Series(np.nan, index=deals_df.index)
+            )
             .apply(float_or_nan)
             .fillna(1e12)
             <= max_rank
         )
         mask &= (
-            deals_df.get("New Offer Count: Current", np.nan)
+            deals_df.get(
+                "New Offer Count: Current", pd.Series(np.nan, index=deals_df.index)
+            )
             .apply(float_or_nan)
             .fillna(1e9)
             <= max_offers
@@ -1370,7 +1386,12 @@ with tab_deals:
         if excl_amz_bb:
             mask &= deals_df.apply(lambda r: pct_amz_bb(r) <= 50.0, axis=1)
         if only_amz_oos:
-            mask &= deals_df.get("Amazon: 90 days OOS", 0).fillna(0) > 0
+            mask &= (
+                deals_df.get(
+                    "Amazon: 90 days OOS", pd.Series(0, index=deals_df.index)
+                ).fillna(0)
+                > 0
+            )
 
         deals_f = deals_df[mask].copy()
 
