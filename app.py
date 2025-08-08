@@ -17,6 +17,7 @@ import altair as alt
 import io
 import json
 import math, statistics
+import warnings
 from typing import Optional, Dict, Any
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from streamlit_extras.colored_header import colored_header
@@ -41,6 +42,14 @@ from utils import load_preset, save_preset
 from ui import apply_dark_theme
 
 apply_dark_theme()
+
+# Suppress noisy openpyxl warnings about missing default styles
+warnings.filterwarnings(
+    "ignore",
+    message="Workbook contains no default style",
+    category=UserWarning,
+    module="openpyxl",
+)
 
 # Result grid column order
 # Only the following columns are displayed in this exact sequence.
@@ -1395,144 +1404,147 @@ with tab_deals:
 
         deals_f = deals_df[mask].copy()
 
-        S_under = scale_0_100(deals_f["UnderPct"])
-        S_marg = scale_0_100(deals_f["Marg%"])
-        S_dem = scale_0_100(deals_f["Demand"])
-        S_comp = scale_0_100(deals_f["Competition"])
-        S_vol = scale_0_100(deals_f["Volatility"])
+        if deals_f.empty:
+            st.info("Nessun affare storico trovato con i filtri correnti.")
+        else:
+            S_under = scale_0_100(deals_f["UnderPct"])
+            S_marg = scale_0_100(deals_f["Marg%"])
+            S_dem = scale_0_100(deals_f["Demand"])
+            S_comp = scale_0_100(deals_f["Competition"])
+            S_vol = scale_0_100(deals_f["Volatility"])
 
-        deals_f["DealScore"] = (
-            w1 * S_under
-            + w2 * S_marg
-            + w3 * S_dem
-            - w4 * S_comp
-            - w5 * S_vol
-        )
-        deals_f["DealScore"] = scale_0_100(deals_f["DealScore"])
+            deals_f["DealScore"] = (
+                w1 * S_under
+                + w2 * S_marg
+                + w3 * S_dem
+                - w4 * S_comp
+                - w5 * S_vol
+            )
+            deals_f["DealScore"] = scale_0_100(deals_f["DealScore"])
 
-        k1, k2, k3, k4 = st.columns(4)
-        with k1:
-            st.metric("Prodotti (filtrati)", len(deals_f))
-        with k2:
-            st.metric(
-                "Margine medio %",
-                f"{np.nanmean(deals_f['Marg%']) * 100:0.1f}%",
-            )
-        with k3:
-            st.metric(
-                "Sottoprezzo medio %",
-                f"{np.nanmean(deals_f['UnderPct']) * 100:0.1f}%",
-            )
-        with k4:
-            st.metric(
-                "DealScore medio",
-                f"{np.nanmean(deals_f['DealScore']):0.1f}",
-            )
-
-        try:
-            scatter = (
-                alt.Chart(deals_f.reset_index())
-                .mark_circle()
-                .encode(
-                    x=alt.X("UnderPct:Q", title="Sottoprezzo %"),
-                    y=alt.Y("Marg%:Q", title="Margine %"),
-                    color=alt.Color("DealScore:Q"),
-                    size=alt.Size("Demand:Q"),
-                    tooltip=[
-                        "ASIN:N",
-                        "Title:N",
-                        "UnderPct:Q",
-                        "Marg%:Q",
-                        "DealScore:Q",
-                    ],
+            k1, k2, k3, k4 = st.columns(4)
+            with k1:
+                st.metric("Prodotti (filtrati)", len(deals_f))
+            with k2:
+                st.metric(
+                    "Margine medio %",
+                    f"{np.nanmean(deals_f['Marg%']) * 100:0.1f}%",
                 )
-                .interactive()
-            )
-            st.altair_chart(scatter, use_container_width=True)
-
-            hist = (
-                alt.Chart(deals_f)
-                .mark_bar()
-                .encode(
-                    x=alt.X("DealScore:Q", bin=alt.Bin(maxbins=30), title="DealScore"),
-                    y="count()",
+            with k3:
+                st.metric(
+                    "Sottoprezzo medio %",
+                    f"{np.nanmean(deals_f['UnderPct']) * 100:0.1f}%",
                 )
-            )
-            st.altair_chart(hist, use_container_width=True)
-        except Exception:
-            pass
+            with k4:
+                st.metric(
+                    "DealScore medio",
+                    f"{np.nanmean(deals_f['DealScore']):0.1f}",
+                )
 
-        show_cols = [
-            c
+            try:
+                scatter = (
+                    alt.Chart(deals_f.reset_index())
+                    .mark_circle()
+                    .encode(
+                        x=alt.X("UnderPct:Q", title="Sottoprezzo %"),
+                        y=alt.Y("Marg%:Q", title="Margine %"),
+                        color=alt.Color("DealScore:Q"),
+                        size=alt.Size("Demand:Q"),
+                        tooltip=[
+                            "ASIN:N",
+                            "Title:N",
+                            "UnderPct:Q",
+                            "Marg%:Q",
+                            "DealScore:Q",
+                        ],
+                    )
+                    .interactive()
+                )
+                st.altair_chart(scatter, use_container_width=True)
+
+                hist = (
+                    alt.Chart(deals_f)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X("DealScore:Q", bin=alt.Bin(maxbins=30), title="DealScore"),
+                        y="count()",
+                    )
+                )
+                st.altair_chart(hist, use_container_width=True)
+            except Exception:
+                pass
+
+            show_cols = [
+                c
+                for c in [
+                    "Locale",
+                    "ASIN",
+                    "Title",
+                    "PriceNowGrossAfterDisc",
+                    "FairPrice",
+                    "UnderPct",
+                    "NetSale",
+                    "ReferralFee€",
+                    "Fulfillment€",
+                    "NetProceed€",
+                    "Acquisto_Netto",
+                    "Marg€",
+                    "Marg%",
+                    "Demand",
+                    "Competition",
+                    "Volatility",
+                    "DealScore",
+                    "URL: Amazon",
+                    "Brand",
+                ]
+                if c in deals_f.columns
+            ]
+
+            disp = deals_f.copy()
             for c in [
-                "Locale",
-                "ASIN",
-                "Title",
                 "PriceNowGrossAfterDisc",
                 "FairPrice",
-                "UnderPct",
                 "NetSale",
                 "ReferralFee€",
                 "Fulfillment€",
                 "NetProceed€",
                 "Acquisto_Netto",
                 "Marg€",
-                "Marg%",
-                "Demand",
-                "Competition",
-                "Volatility",
-                "DealScore",
-                "URL: Amazon",
-                "Brand",
-            ]
-            if c in deals_f.columns
-        ]
+            ]:
+                if c in disp.columns:
+                    disp[c] = disp[c].map(
+                        lambda v: f"€ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                        if pd.notna(v)
+                        else v
+                    )
+            disp = disp.sort_values("DealScore", ascending=False)
+            st.dataframe(disp[show_cols], use_container_width=True)
 
-        disp = deals_f.copy()
-        for c in [
-            "PriceNowGrossAfterDisc",
-            "FairPrice",
-            "NetSale",
-            "ReferralFee€",
-            "Fulfillment€",
-            "NetProceed€",
-            "Acquisto_Netto",
-            "Marg€",
-        ]:
-            if c in disp.columns:
-                disp[c] = disp[c].map(
-                    lambda v: f"€ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                    if pd.notna(v)
-                    else v
-                )
-        disp = disp.sort_values("DealScore", ascending=False)
-        st.dataframe(disp[show_cols], use_container_width=True)
-
-        cexp1, cexp2 = st.columns(2)
-        with cexp1:
-            csv = deals_f.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Scarica CSV (Affari Storici)",
-                csv,
-                file_name="affari_storici.csv",
-                mime="text/csv",
-            )
-        with cexp2:
-            try:
-                import io
-                from pandas import ExcelWriter
-
-                bio = io.BytesIO()
-                with pd.ExcelWriter(bio, engine="xlsxwriter") as writer:
-                    deals_f.to_excel(writer, index=False, sheet_name="AffariStorici")
+            cexp1, cexp2 = st.columns(2)
+            with cexp1:
+                csv = deals_f.to_csv(index=False).encode("utf-8")
                 st.download_button(
-                    "Scarica XLSX (Affari Storici)",
-                    bio.getvalue(),
-                    file_name="affari_storici.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "Scarica CSV (Affari Storici)",
+                    csv,
+                    file_name="affari_storici.csv",
+                    mime="text/csv",
                 )
-            except Exception:
-                pass
+            with cexp2:
+                try:
+                    import io
+                    from pandas import ExcelWriter
+
+                    bio = io.BytesIO()
+                    with pd.ExcelWriter(bio, engine="xlsxwriter") as writer:
+                        deals_f.to_excel(writer, index=False, sheet_name="AffariStorici")
+                    st.download_button(
+                        "Scarica XLSX (Affari Storici)",
+                        bio.getvalue(),
+                        file_name="affari_storici.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                except Exception:
+                    pass
 
 # Footer
 st.markdown(
