@@ -254,7 +254,11 @@ def compute_historic_deals(df: pd.DataFrame) -> pd.DataFrame:
         ),
         axis=1,
     )
-
+    if "Locale" not in work.columns:
+        work["Locale"] = (
+            work.get("Locale (comp)", pd.Series("", index=work.index)).fillna("").astype(str)
+            + work.get("Locale (base)", pd.Series("", index=work.index)).fillna("").astype(str)
+        )
     work["VAT"] = work["Locale"].apply(get_vat_for_locale)
     work["NetSale"] = work["PriceNowGrossAfterDisc"] / (1.0 + work["VAT"])
 
