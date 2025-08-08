@@ -16,6 +16,8 @@ import re
 import altair as alt
 import io
 import json
+import math, statistics
+from typing import Optional, Dict, Any
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 from streamlit_extras.colored_header import colored_header
 from loaders import (
@@ -68,6 +70,263 @@ DISPLAY_COLS_ORDER = [
     "IVA_Confronto",
 ]
 
+
+# Helper functions
+def float_or_nan(x) -> float:
+    try:
+        if x is None:
+            return float("nan")
+        if isinstance(x, (int, float)):
+            return float(x)
+        s = (
+            str(x)
+            .strip()
+            .replace("%", "")
+            .replace("\u202f", "")
+            .replace(" ", "")
+        )
+        s = s.replace(".", "").replace(",", ".") if s.count(",") and s.count(".") <= 1 else s
+        return float(s)
+    except Exception:
+        return float("nan")
+
+
+def euro_to_float(x: Any) -> float:
+    if x is None or (isinstance(x, float) and math.isnan(x)):
+        return float("nan")
+    s = str(x).replace("€", "").strip()
+    return float_or_nan(s)
+
+
+def apply_discounts(price_gross: float, coupon_abs, coupon_pct, business_pct) -> float:
+    p = float(price_gross) if math.isfinite(price_gross) else float("nan")
+    if not math.isfinite(p):
+        return p
+    ca = euro_to_float(coupon_abs)
+    cp = float_or_nan(coupon_pct)
+    bp = float_or_nan(business_pct)
+    if math.isfinite(ca) and ca > 0:
+        p = max(0.0, p - ca)
+    if math.isfinite(cp) and cp > 0:
+        p = p * (1.0 - cp / 100.0)
+    if math.isfinite(bp) and bp > 0:
+        p = p * (1.0 - bp / 100.0)
+    return max(0.0, p)
+
+
+def pick_current_price(row: pd.Series) -> float:
+    # priorità: BB -> Amazon -> New -> New FBM current (se disponibile)
+    for col in [
+        "Buy Box 🚚: Current",
+        "Amazon: Current",
+        "New: Current",
+        "New, 3rd Party FBM 🚚: Current",
+    ]:
+        if (
+            col in row
+            and math.isfinite(euro_to_float(row[col]))
+            and euro_to_float(row[col]) > 0
+        ):
+            return euro_to_float(row[col])
+    return float("nan")
+
+
+def fair_price_row(row: pd.Series) -> float:
+    # mediana robusta delle medie storiche (BB/Amazon/New su 90/180/365)
+    cols = [
+        "Buy Box 🚚: 90 days avg.",
+        "Buy Box 🚚: 180 days avg.",
+        "Buy Box 🚚: 365 days avg.",
+        "Amazon: 90 days avg.",
+        "Amazon: 180 days avg.",
+        "Amazon: 365 days avg.",
+        "New: 90 days avg.",
+        "New: 180 days avg.",
+        "New: 365 days avg.",
+    ]
+    vals = [euro_to_float(row.get(c)) for c in cols if c in row]
+    vals = [v for v in vals if math.isfinite(v) and v > 0]
+    if not vals:
+        return float("nan")
+    fair = statistics.median(sorted(vals))
+    # clamp entro min/max storico BB se disponibili
+    low = euro_to_float(row.get("Buy Box 🚚: Lowest"))
+    high = euro_to_float(row.get("Buy Box 🚚: Highest"))
+    if math.isfinite(low) and fair < low:
+        fair = low
+    if math.isfinite(high) and fair > high:
+        fair = high
+    return fair
+
+
+def get_vat_for_locale(locale_raw: str) -> float:
+    # RIUSA la tua mappa IVA se esiste (VAT_RATES + normalize_locale).
+    try:
+        loc = normalize_locale(locale_raw)
+        return VAT_RATES.get(loc, 0.22)
+    except Exception:
+        return 0.22
+
+
+def estimate_fulfillment_fee(row: pd.Series) -> float:
+    # Se c'è FBA Pick&Pack Fee usalo, altrimenti stima FBM via peso e tua funzione di spedizione
+    fba = float_or_nan(row.get("FBA Pick&Pack Fee"))
+    if math.isfinite(fba) and fba > 0:
+        return fba
+    # FBM: calcola costo spedizione dalla tua funzione principale, usando peso pacco/item
+    grams = float_or_nan(row.get("Package: Weight (g)"))
+    if not math.isfinite(grams) or grams <= 0:
+        grams = float_or_nan(row.get("Item: Weight (g)"))
+    if not math.isfinite(grams) or grams <= 0:
+        grams = 1000.0  # fallback = 1 kg
+    kg = grams / 1000.0
+    try:
+        return calculate_shipping_cost(kg)
+    except Exception:
+        if kg <= 1:
+            return 5.0
+        elif kg <= 2:
+            return 7.0
+        elif kg <= 5:
+            return 10.0
+        else:
+            return 15.0
+
+
+def demand_score(row: pd.Series) -> float:
+    rank_c = float_or_nan(row.get("Sales Rank: Current"))
+    rank_90 = float_or_nan(row.get("Sales Rank: 90 days avg."))
+    bought = float_or_nan(row.get("Bought in past month"))
+    rev_now = float_or_nan(row.get("Reviews: Rating Count"))
+    rev_90 = float_or_nan(row.get("Reviews: Rating Count - 90 days avg."))
+
+    def vol(r):
+        if not math.isfinite(r) or r <= 0:
+            return 0.0
+        return max(0.0, min(100.0, 1000.0 / math.log(r + 10.0)))
+
+    base = vol(rank_c)
+    if math.isfinite(rank_c) and math.isfinite(rank_90) and rank_c < rank_90:
+        base *= 1.10
+    if math.isfinite(bought) and bought > 0:
+        base += min(30.0, 10.0 * math.log(1.0 + bought))
+    if math.isfinite(rev_now) and math.isfinite(rev_90) and rev_now > rev_90:
+        base += min(10.0, (rev_now - rev_90) * 0.02)
+    return float(max(0.0, min(100.0, base)))
+
+
+def competition_score(row: pd.Series) -> float:
+    offers = float_or_nan(row.get("New Offer Count: Current"))
+    amz90 = float_or_nan(row.get("Buy Box: % Amazon 90 days"))
+    amz180 = float_or_nan(row.get("Buy Box: % Amazon 180 days"))
+    amz = max(
+        amz90 if math.isfinite(amz90) else 0.0,
+        amz180 if math.isfinite(amz180) else 0.0,
+    )
+    unq = 100.0 if str(row.get("Buy Box: Unqualified")).strip().lower() == "yes" else 0.0
+    off_pen = min(100.0, (offers / 50.0) * 50.0) if math.isfinite(offers) else 0.0
+    amz_pen = min(100.0, amz) if math.isfinite(amz) else 0.0
+    return float(max(0.0, min(100.0, 0.6 * off_pen + 0.4 * amz_pen + 0.5 * unq)))
+
+
+def scale_0_100(series: pd.Series) -> pd.Series:
+    s = series.astype(float).replace([np.inf, -np.inf], np.nan)
+    mn, mx = s.min(skipna=True), s.max(skipna=True)
+    if not math.isfinite(mn) or not math.isfinite(mx) or mx == mn:
+        return pd.Series([50.0] * len(s), index=s.index)
+    return (s - mn) * 100.0 / (mx - mn)
+
+
+@st.cache_data(show_spinner=False)
+def compute_historic_deals(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    work = df.copy()
+
+    work["PriceNowGross"] = work.apply(pick_current_price, axis=1)
+    work["PriceNowGrossAfterDisc"] = work.apply(
+        lambda r: apply_discounts(
+            r["PriceNowGross"],
+            r.get("One Time Coupon: Absolute"),
+            r.get("One Time Coupon: Percentage"),
+            r.get("Business Discount: Percentage"),
+        ),
+        axis=1,
+    )
+
+    if "Locale" not in work.columns:
+        if "Locale (comp)" in work.columns:
+            work["Locale"] = work["Locale (comp)"]
+        elif "Locale (base)" in work.columns:
+            work["Locale"] = work["Locale (base)"]
+        else:
+            work["Locale"] = ""
+
+    work["VAT"] = work["Locale"].apply(get_vat_for_locale)
+    work["NetSale"] = work["PriceNowGrossAfterDisc"] / (1.0 + work["VAT"])
+
+    work["FairPrice"] = work.apply(fair_price_row, axis=1)
+    work["UnderPct"] = (
+        work["FairPrice"] - work["PriceNowGrossAfterDisc"]
+    ) / work["FairPrice"]
+    work.loc[~np.isfinite(work["UnderPct"]), "UnderPct"] = np.nan
+
+    work["ReferralFeePct"] = work.get("Referral Fee %", pd.Series(np.nan)).apply(
+        float_or_nan
+    ).fillna(0.0)
+    work["ReferralFee€"] = work["NetSale"] * (work["ReferralFeePct"] / 100.0)
+    work["Fulfillment€"] = work.apply(estimate_fulfillment_fee, axis=1)
+    work["NetProceed€"] = (
+        work["NetSale"] - work["ReferralFee€"] - work["Fulfillment€"]
+    )
+
+    if "Acquisto_Netto" not in work.columns:
+        work["Acquisto_Netto"] = np.nan
+
+    work["Marg€"] = work["NetProceed€"] - work["Acquisto_Netto"]
+    work["Marg%"] = np.where(
+        work["Acquisto_Netto"] > 0,
+        work["Marg€"] / work["Acquisto_Netto"],
+        np.nan,
+    )
+
+    work["Demand"] = work.apply(demand_score, axis=1)
+    vol_candidates = []
+    for c in [
+        "Buy Box: Standard Deviation 90 days",
+        "Buy Box: Standard Deviation 30 days",
+        "Buy Box: Standard Deviation 365 days",
+    ]:
+        if c in work.columns:
+            vol_candidates.append(work[c].apply(euro_to_float))
+    work["Volatility"] = (
+        pd.concat(vol_candidates, axis=1).bfill(axis=1).iloc[:, 0]
+        if vol_candidates
+        else np.nan
+    )
+    work["Competition"] = work.apply(competition_score, axis=1)
+
+    work["Badge_AMZ_OOS"] = (
+        work.get("Amazon: 90 days OOS", 0).fillna(0) > 0
+    )
+    amzbb90 = work.get("Buy Box: % Amazon 90 days")
+    amzbb90 = amzbb90.apply(float_or_nan) if amzbb90 is not None else 0
+    work["Badge_BB_Amazon"] = amzbb90.fillna(0) > 50
+    work["Badge_Coupon"] = (
+        work.get("One Time Coupon: Absolute").apply(euro_to_float).fillna(0) > 0
+    ) | (
+        work.get("One Time Coupon: Percentage").apply(float_or_nan).fillna(0) > 0
+    )
+    work["Badge_Prime"] = (
+        work.get("Prime Eligible (Buy Box)", False).astype(str).str.lower().eq("yes")
+    )
+    work["Badge_VolHigh"] = False
+    work["Badge_MAP"] = work.get("MAP restriction", "").astype(str).str.lower().eq(
+        "yes"
+    )
+
+    return work
 
 def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shipping: bool) -> None:
     """Render the dashboard and detailed results grids."""
@@ -394,12 +653,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_main1, tab_main2, tab_main3, tab_rank = st.tabs(
+tab_main1, tab_main2, tab_main3, tab_rank, tab_deals = st.tabs(
     [
         "📋 ASIN Caricati",
         "📊 Analisi Opportunità",
         "📎 Risultati Dettagliati",
         "🏆 Classifica prodotti",
+        "📉 Affari Storici",
     ]
 )
 
@@ -1029,6 +1289,233 @@ with st.expander("ℹ️ Come funziona l'Opportunity Score"):
     Il margine stimato tiene conto di queste differenze, permettendoti di calcolare correttamente il potenziale guadagno anche quando il mercato di origine è diverso da quello italiano.
     """
     )
+
+# Tab Affari Storici
+df_final = st.session_state.get("filtered_data")
+
+with tab_deals:
+    st.subheader("Affari Storici")
+
+    colw1, colw2, colw3, colw4, colw5 = st.columns(5)
+    with colw1:
+        w1 = st.slider("Peso Sottoprezzo", 0.0, 1.0, 0.30, 0.05)
+    with colw2:
+        w2 = st.slider("Peso Margine %", 0.0, 1.0, 0.25, 0.05)
+    with colw3:
+        w3 = st.slider("Peso Domanda", 0.0, 1.0, 0.25, 0.05)
+    with colw4:
+        w4 = st.slider("Penalità Concorrenza", 0.0, 1.0, 0.10, 0.05)
+    with colw5:
+        w5 = st.slider("Penalità Volatilità", 0.0, 1.0, 0.10, 0.05)
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        min_marg_eur = st.number_input("Margine minimo €", 0.0, 10000.0, 10.0)
+        min_under = st.number_input(
+            "Sottoprezzo minimo %", 0.0, 1.0, 0.10, format="%.2f"
+        )
+    with c2:
+        min_marg_pct = st.number_input(
+            "Margine minimo %", 0.0, 1.0, 0.10, format="%.2f"
+        )
+        max_rank = st.number_input("Rank massimo", 0.0, 1e7, 200000.0)
+    with c3:
+        max_offers = st.number_input("Max offerte nuove", 0, 1000, 50)
+        max_vol = st.number_input("Max volatilità (std 90d)", 0.0, 10000.0, 50.0)
+
+    excl_amz_bb = st.checkbox(
+        "Escludi se %Amazon in Buy Box > 50%", value=True
+    )
+    only_amz_oos = st.checkbox(
+        "Solo prodotti con Amazon OOS negli ultimi 90 giorni", value=False
+    )
+
+    deals_df = compute_historic_deals(df_final)
+
+    if deals_df.empty:
+        st.info("Nessun dato disponibile per Affari Storici.")
+    else:
+        vol_series = deals_df["Volatility"].replace([np.inf, -np.inf], np.nan)
+        vol_thr = (
+            np.nanpercentile(vol_series.dropna(), 75)
+            if vol_series.notna().any()
+            else np.nan
+        )
+        if math.isfinite(vol_thr):
+            deals_df["Badge_VolHigh"] = deals_df["Volatility"] > vol_thr
+
+        def pct_amz_bb(row):
+            s = [
+                float_or_nan(row.get("Buy Box: % Amazon 90 days")),
+                float_or_nan(row.get("Buy Box: % Amazon 180 days")),
+            ]
+            return max([x for x in s if math.isfinite(x)] + [0.0])
+
+        mask = pd.Series(True, index=deals_df.index)
+        if math.isfinite(min_marg_eur):
+            mask &= deals_df["Marg€"].fillna(-1e9) >= min_marg_eur
+        if math.isfinite(min_marg_pct):
+            mask &= deals_df["Marg%"].fillna(-1e9) >= min_marg_pct
+        if math.isfinite(min_under):
+            mask &= deals_df["UnderPct"].fillna(-1e9) >= min_under
+        mask &= (
+            deals_df.get("Sales Rank: Current", np.nan)
+            .apply(float_or_nan)
+            .fillna(1e12)
+            <= max_rank
+        )
+        mask &= (
+            deals_df.get("New Offer Count: Current", np.nan)
+            .apply(float_or_nan)
+            .fillna(1e9)
+            <= max_offers
+        )
+        mask &= deals_df["Volatility"].fillna(0) <= max_vol
+        if excl_amz_bb:
+            mask &= deals_df.apply(lambda r: pct_amz_bb(r) <= 50.0, axis=1)
+        if only_amz_oos:
+            mask &= deals_df.get("Amazon: 90 days OOS", 0).fillna(0) > 0
+
+        deals_f = deals_df[mask].copy()
+
+        S_under = scale_0_100(deals_f["UnderPct"])
+        S_marg = scale_0_100(deals_f["Marg%"])
+        S_dem = scale_0_100(deals_f["Demand"])
+        S_comp = scale_0_100(deals_f["Competition"])
+        S_vol = scale_0_100(deals_f["Volatility"])
+
+        deals_f["DealScore"] = (
+            w1 * S_under
+            + w2 * S_marg
+            + w3 * S_dem
+            - w4 * S_comp
+            - w5 * S_vol
+        )
+        deals_f["DealScore"] = scale_0_100(deals_f["DealScore"])
+
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            st.metric("Prodotti (filtrati)", len(deals_f))
+        with k2:
+            st.metric(
+                "Margine medio %",
+                f"{np.nanmean(deals_f['Marg%']) * 100:0.1f}%",
+            )
+        with k3:
+            st.metric(
+                "Sottoprezzo medio %",
+                f"{np.nanmean(deals_f['UnderPct']) * 100:0.1f}%",
+            )
+        with k4:
+            st.metric(
+                "DealScore medio",
+                f"{np.nanmean(deals_f['DealScore']):0.1f}",
+            )
+
+        try:
+            scatter = (
+                alt.Chart(deals_f.reset_index())
+                .mark_circle()
+                .encode(
+                    x=alt.X("UnderPct:Q", title="Sottoprezzo %"),
+                    y=alt.Y("Marg%:Q", title="Margine %"),
+                    color=alt.Color("DealScore:Q"),
+                    size=alt.Size("Demand:Q"),
+                    tooltip=[
+                        "ASIN:N",
+                        "Title:N",
+                        "UnderPct:Q",
+                        "Marg%:Q",
+                        "DealScore:Q",
+                    ],
+                )
+                .interactive()
+            )
+            st.altair_chart(scatter, use_container_width=True)
+
+            hist = (
+                alt.Chart(deals_f)
+                .mark_bar()
+                .encode(
+                    x=alt.X("DealScore:Q", bin=alt.Bin(maxbins=30), title="DealScore"),
+                    y="count()",
+                )
+            )
+            st.altair_chart(hist, use_container_width=True)
+        except Exception:
+            pass
+
+        show_cols = [
+            c
+            for c in [
+                "Locale",
+                "ASIN",
+                "Title",
+                "PriceNowGrossAfterDisc",
+                "FairPrice",
+                "UnderPct",
+                "NetSale",
+                "ReferralFee€",
+                "Fulfillment€",
+                "NetProceed€",
+                "Acquisto_Netto",
+                "Marg€",
+                "Marg%",
+                "Demand",
+                "Competition",
+                "Volatility",
+                "DealScore",
+                "URL: Amazon",
+                "Brand",
+            ]
+            if c in deals_f.columns
+        ]
+
+        disp = deals_f.copy()
+        for c in [
+            "PriceNowGrossAfterDisc",
+            "FairPrice",
+            "NetSale",
+            "ReferralFee€",
+            "Fulfillment€",
+            "NetProceed€",
+            "Acquisto_Netto",
+            "Marg€",
+        ]:
+            if c in disp.columns:
+                disp[c] = disp[c].map(
+                    lambda v: f"€ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                    if pd.notna(v)
+                    else v
+                )
+        disp = disp.sort_values("DealScore", ascending=False)
+        st.dataframe(disp[show_cols], use_container_width=True)
+
+        cexp1, cexp2 = st.columns(2)
+        with cexp1:
+            csv = deals_f.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "Scarica CSV (Affari Storici)",
+                csv,
+                file_name="affari_storici.csv",
+                mime="text/csv",
+            )
+        with cexp2:
+            try:
+                import io
+                from pandas import ExcelWriter
+
+                bio = io.BytesIO()
+                with pd.ExcelWriter(bio, engine="xlsxwriter") as writer:
+                    deals_f.to_excel(writer, index=False, sheet_name="AffariStorici")
+                st.download_button(
+                    "Scarica XLSX (Affari Storici)",
+                    bio.getvalue(),
+                    file_name="affari_storici.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            except Exception:
+                pass
 
 # Footer
 st.markdown(
