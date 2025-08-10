@@ -7,9 +7,12 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
+import io
 import pandas as pd
 import duckdb
 import streamlit as st
+
+from schema import validate_and_standardize
 
 
 def load_data(uploaded_file: Any) -> Optional[pd.DataFrame]:
@@ -24,14 +27,39 @@ def load_data(uploaded_file: Any) -> Optional[pd.DataFrame]:
 
     fname = uploaded_file.name.lower()
     if fname.endswith(".xlsx"):
-        df = pd.read_excel(uploaded_file, dtype=str)
+        # Convert XLSX to CSV in-memory to leverage the pyarrow engine
+        xls = pd.read_excel(uploaded_file, dtype=str)
+        buf = io.StringIO()
+        xls.to_csv(buf, index=False)
+        buf.seek(0)
+        df = pd.read_csv(buf, engine="pyarrow", dtype_backend="pyarrow")
     else:
         try:
-            df = pd.read_csv(uploaded_file, sep=";", dtype=str)
+            df = pd.read_csv(
+                uploaded_file,
+                sep=";",
+                engine="pyarrow",
+                dtype_backend="pyarrow",
+            )
         except Exception:
             uploaded_file.seek(0)
-            df = pd.read_csv(uploaded_file, sep=",", dtype=str)
+            df = pd.read_csv(
+                uploaded_file,
+                sep=",",
+                engine="pyarrow",
+                dtype_backend="pyarrow",
+            )
     df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
+    df = validate_and_standardize(df)
+
+    if {"asin", "locale"}.issubset(df.columns):
+        df["_bb_na"] = df["bb_now"].isna()
+        df = df.sort_values(
+            ["asin", "locale", "_bb_na", "last_update"],
+            ascending=[True, True, True, False],
+        )
+        df = df.drop(columns=["_bb_na"]).drop_duplicates(["asin", "locale"], keep="first")
+
     return df
 
 
