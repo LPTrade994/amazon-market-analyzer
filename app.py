@@ -41,6 +41,7 @@ from score import (
 from utils import load_preset, save_preset, hash_file
 from ui import apply_dark_theme
 from costs import compute_costs
+from analysis import amazon_dominance_flag, competition_score as offers_competition_score
 
 
 @st.cache_data(show_spinner=False)
@@ -92,6 +93,8 @@ DISPLAY_COLS_ORDER = [
     "fees",
     "net_eur",
     "net_pct",
+    "amz_dominant",
+    "offers_competition",
 ]
 
 
@@ -360,8 +363,21 @@ def compute_historic_deals(df: pd.DataFrame) -> pd.DataFrame:
 
     return work
 
-def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shipping: bool) -> None:
+def render_results(
+    df_finale: pd.DataFrame,
+    df_ranked: pd.DataFrame,
+    include_shipping: bool,
+    exclude_amz_dom: bool,
+    max_new_offers: int,
+) -> None:
     """Render the dashboard and detailed results grids."""
+    work = df_finale.copy()
+    if exclude_amz_dom and "amz_dominant" in work.columns:
+        work = work[~work["amz_dominant"]]
+    if "offer_new_now" in work.columns:
+        work = work[work["offer_new_now"].fillna(0) <= max_new_offers]
+    df_ranked = aggregate_opportunities(work)
+
     #################################
     # Dashboard Interattiva
     #################################
@@ -370,24 +386,24 @@ def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shi
         st.subheader("📊 Dashboard delle Opportunità")
 
         # Metriche principali
-        if not df_finale.empty:
+        if not work.empty:
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("Prodotti Trovati", len(df_finale))
+                st.metric("Prodotti Trovati", len(work))
             with col2:
                 st.metric(
                     "Margine Netto Medio (%)",
-                    f"{df_finale['Margine_Netto_%'].mean():.2f}%",
+                    f"{work['Margine_Netto_%'].mean():.2f}%",
                 )
             with col3:
                 st.metric(
                     "Margine Netto Medio (€)",
-                    f"{df_finale['Margine_Netto'].mean():.2f}€",
+                    f"{work['Margine_Netto'].mean():.2f}€",
                 )
             with col4:
                 st.metric(
                     "Opportunity Score Massimo",
-                    f"{df_finale['Opportunity_Score'].max():.2f}",
+                    f"{work['Opportunity_Score'].max():.2f}",
                 )
 
             st.info(
@@ -404,7 +420,7 @@ def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shi
 
             st.subheader("Distribuzione Opportunity Score")
             hist = (
-                alt.Chart(df_finale.reset_index())
+                alt.Chart(work.reset_index())
                 .mark_bar()
                 .encode(
                     alt.X(
@@ -424,7 +440,7 @@ def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shi
 
             st.subheader("Analisi Multifattoriale")
             chart = (
-                alt.Chart(df_finale.reset_index())
+                alt.Chart(work.reset_index())
                 .mark_circle()
                 .encode(
                     x=alt.X("Margine_Netto_%:Q", title="Margine Netto (%)"),
@@ -447,9 +463,9 @@ def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shi
             st.altair_chart(chart, use_container_width=True)
 
             st.subheader("Analisi per Mercato")
-            if "Locale (comp)" in df_finale.columns:
+            if "Locale (comp)" in work.columns:
                 market_analysis = (
-                    df_finale.groupby("Locale (comp)")
+                    work.groupby("Locale (comp)")
                     .agg({
                         "ASIN": "count",
                         "Margine_Netto_%": "mean",
@@ -496,14 +512,14 @@ def render_results(df_finale: pd.DataFrame, df_ranked: pd.DataFrame, include_shi
 
     # Risultati dettagliati e filtri interattivi
     with tab_main3:
-        if df_finale is not None and not df_finale.empty:
+        if work is not None and not work.empty:
             st.markdown('<div class="result-container">', unsafe_allow_html=True)
             st.subheader("🔍 Esplora i Risultati")
 
             st.markdown('<div class="filter-group">', unsafe_allow_html=True)
             col1, col2, col3 = st.columns(3)
 
-            filtered_df = df_finale.copy()
+            filtered_df = work.copy()
 
             with col1:
                 if "Locale (comp)" in filtered_df.columns:
@@ -922,6 +938,9 @@ with st.sidebar:
         )
         min_margin_abs = st.number_input("Margine minimo (€)", min_value=0.0, value=5.0)
 
+    exclude_amz_dom = st.checkbox("Escludi Amazon dominante", value=True)
+    max_new_offers = st.slider("Max offerte nuove", 0, 50, 25)
+
     colored_header(
         label="📋 Ricette",
         description="Salva e carica configurazioni",
@@ -1262,6 +1281,9 @@ if avvia:
         ]  # Solo il secondo elemento della tupla
     )
 
+    df_merged["amz_dominant"] = df_merged.apply(amazon_dominance_flag, axis=1)
+    df_merged["offers_competition"] = df_merged.apply(offers_competition_score, axis=1)
+
     # Aggiunta dell'informazione sulle aliquote IVA utilizzate
     df_merged["IVA_Origine"] = df_merged["Locale (base)"].map(
         lambda x: f"{VAT_RATES.get(normalize_locale(x), 0)}%"
@@ -1279,6 +1301,8 @@ if avvia:
     # Selezione delle colonne finali da visualizzare
     cols_final = [c for c in DISPLAY_COLS_ORDER if c in df_merged.columns]
     df_finale = df_merged[cols_final].copy()
+    if "offer_new_now" in df_merged.columns:
+        df_finale["offer_new_now"] = df_merged["offer_new_now"]
 
     # Arrotonda i valori numerici principali a 2 decimali
     cols_to_round = [
@@ -1301,6 +1325,7 @@ if avvia:
         "fees",
         "net_eur",
         "net_pct",
+        "offers_competition",
     ]
     for col in cols_to_round:
         if col in df_finale.columns:
@@ -1314,12 +1339,14 @@ if avvia:
     st.session_state["ranked_data"] = df_ranked
     analysis_available = True
 
-    render_results(df_finale, df_ranked, include_shipping)
+    render_results(df_finale, df_ranked, include_shipping, exclude_amz_dom, max_new_offers)
 elif analysis_available:
     render_results(
         st.session_state["filtered_data"],
         st.session_state["ranked_data"],
         include_shipping,
+        exclude_amz_dom,
+        max_new_offers,
     )
 
 # Aggiunta dell'help
