@@ -41,7 +41,11 @@ from score import (
 from utils import load_preset, save_preset, hash_file
 from ui import apply_dark_theme
 from costs import compute_costs
-from analysis import amazon_dominance_flag, competition_score as offers_competition_score
+from analysis import (
+    amazon_dominance_flag,
+    competition_score as offers_competition_score,
+    best_cross_market_combo,
+)
 
 
 @st.cache_data(show_spinner=False)
@@ -842,6 +846,20 @@ with st.sidebar:
     purchase_price_input = st.number_input("Costo di acquisto (€)", value=0.0, step=0.1)
 
     colored_header(
+        label="🌍 Cross-Market",
+        description="Filtri triangolazione",
+        color_name="blue-70",
+    )
+    sell_targets = st.multiselect(
+        "Mercati di vendita",
+        ["IT", "DE", "FR", "ES", "UK"],
+        default=["IT"],
+    )
+    min_pct = st.number_input("Margine minimo (%)", value=0.0, step=0.1)
+    min_volume = st.number_input("Volume minimo (bought 30d)", value=0.0, step=1.0)
+    max_offers = st.number_input("Max offerte nuove", value=50, step=1)
+
+    colored_header(
         label="📈 Opportunity Score",
         description="Pesi e parametri",
         color_name="blue-70",
@@ -1333,6 +1351,12 @@ if avvia:
 
     # Classifica cross-country per ASIN
     df_ranked = aggregate_opportunities(df_finale)
+
+    triaging_df = best_cross_market_combo(
+        df_finale, sell_targets, min_pct=min_pct, min_volume=min_volume, max_offers=max_offers
+    )
+    st.subheader("Triaging df")
+    st.dataframe(triaging_df, use_container_width=True)
 
     # Salviamo i dati nella sessione per i filtri interattivi
     st.session_state["filtered_data"] = df_finale
