@@ -40,6 +40,7 @@ from score import (
 )
 from utils import load_preset, save_preset, hash_file
 from ui import apply_dark_theme
+from costs import compute_costs
 
 
 @st.cache_data(show_spinner=False)
@@ -84,6 +85,13 @@ DISPLAY_COLS_ORDER = [
     "Package: Dimension (cm³) (base)",
     "IVA_Origine",
     "IVA_Confronto",
+    "sale_price_used",
+    "referral_pct",
+    "fba_fee",
+    "billable_kg",
+    "fees",
+    "net_eur",
+    "net_pct",
 ]
 
 
@@ -797,6 +805,27 @@ with st.sidebar:
     include_shipping = st.checkbox("Calcola margine netto con spedizione", value=True)
 
     colored_header(
+        label="🧮 Cost Model",
+        description="Parametri di costo",
+        color_name="blue-70",
+    )
+    sale_price_source = st.selectbox(
+        "Prezzo di vendita",
+        ["bb_now", "new_now", "amz_now"],
+        index=0,
+    )
+    apply_coupon = st.checkbox("Applica coupon", value=False)
+    apply_biz_discount = st.checkbox("Applica sconto business", value=False)
+    fulfillment = st.selectbox("Fulfillment", ["FBA", "FBM"], index=0)
+    referral_pct = st.number_input("Referral %", value=15.0, step=0.1)
+    fba_fee_input = st.number_input("FBA fee manuale (€)", value=0.0, step=0.1)
+    shipping_out_per_kg = st.number_input("Spedizione uscita €/kg", value=0.0, step=0.1)
+    extra_handling_eur = st.number_input("Extra handling (€)", value=0.0, step=0.1)
+    shipping_inbound_eur = st.number_input("Spedizione inbound (€)", value=0.0, step=0.1)
+    dim_divisor = st.number_input("Divisore volumetrico", value=5000, step=1)
+    purchase_price_input = st.number_input("Costo di acquisto (€)", value=0.0, step=0.1)
+
+    colored_header(
         label="📈 Opportunity Score",
         description="Pesi e parametri",
         color_name="blue-70",
@@ -1190,6 +1219,21 @@ if avvia:
     df_merged["Volume_Score"] = 1000 / df_merged["Norm_Rank"]
     df_merged["ROI_Factor"] = df_merged["Margine_Netto"] / df_merged["Acquisto_Netto"]
 
+    cost_cfg = {
+        "sale_price_source": sale_price_source,
+        "apply_coupon": apply_coupon,
+        "apply_biz_discount": apply_biz_discount,
+        "fulfillment": fulfillment,
+        "extra_handling_eur": extra_handling_eur,
+        "shipping_inbound_eur": shipping_inbound_eur,
+        "dim_divisor": dim_divisor,
+        "shipping_out_per_kg": shipping_out_per_kg,
+        "referral_pct": referral_pct,
+        "fba_fee": fba_fee_input,
+        "purchase_price": purchase_price_input,
+    }
+    df_merged = compute_costs(df_merged, cost_cfg)
+
     weights = {
         "margin": epsilon + theta,
         "demand": beta + gamma,
@@ -1250,6 +1294,13 @@ if avvia:
         "Opportunity_Score",
         "Volume_Score",
         "Weight_kg",
+        "sale_price_used",
+        "referral_pct",
+        "fba_fee",
+        "billable_kg",
+        "fees",
+        "net_eur",
+        "net_pct",
     ]
     for col in cols_to_round:
         if col in df_finale.columns:
