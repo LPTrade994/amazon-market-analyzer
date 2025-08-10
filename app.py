@@ -39,7 +39,7 @@ from score import (
     aggregate_opportunities,
 )
 from utils import load_preset, save_preset, hash_file
-from ui import apply_dark_theme
+from ui import apply_dark_theme, render_triaging_table
 from costs import compute_costs
 from analysis import (
     amazon_dominance_flag,
@@ -197,6 +197,16 @@ def get_vat_for_locale(locale_raw: str) -> float:
         return VAT_RATES.get(loc, 0.22)
     except Exception:
         return 0.22
+
+
+def score_to_class(score: float) -> str:
+    """Map opportunity score to class A/B/C."""
+    label = classify_opportunity(score)[0]
+    if label == "Eccellente":
+        return "A"
+    if label == "Buona":
+        return "B"
+    return "C"
 
 
 def estimate_fulfillment_fee(row: pd.Series) -> float:
@@ -381,6 +391,97 @@ def render_results(
     if "offer_new_now" in work.columns:
         work = work[work["offer_new_now"].fillna(0) <= max_new_offers]
     df_ranked = aggregate_opportunities(work)
+
+    triaging_raw = best_cross_market_combo(
+        work,
+        st.session_state.get("sell_targets", []),
+        min_pct=st.session_state.get("min_pct", 0.0),
+        min_volume=st.session_state.get("min_volume", 0.0),
+        max_offers=st.session_state.get("max_offers"),
+    )
+
+    if not triaging_raw.empty:
+        tooltip_cols = [
+            "bb_now",
+            "bb_30d",
+            "bb_90d",
+            "bb_std_30d",
+            "rank_drops_30d",
+            "rank_drops_90d",
+            "return_rate_pct",
+        ]
+        extras = work.rename(
+            columns={
+                "ASIN": "asin",
+                "Locale (base)": "best_buy_locale",
+                "Locale (comp)": "best_sell_locale",
+            }
+        )
+        extras = extras[[c for c in ["asin", "best_buy_locale", "best_sell_locale", *tooltip_cols] if c in extras.columns]]
+        triaging_raw = triaging_raw.merge(
+            extras,
+            on=["asin", "best_buy_locale", "best_sell_locale"],
+            how="left",
+        )
+
+        def _fmt(v, suffix=""):
+            return f"{v:.2f}{suffix}" if pd.notna(v) else "N/D"
+
+        triaging_raw["tooltip"] = triaging_raw.apply(
+            lambda r: (
+                "BB now "
+                + _fmt(r.get("bb_now"), "€")
+                + " vs 30d "
+                + _fmt(r.get("bb_30d"), "€")
+                + " vs 90d "
+                + _fmt(r.get("bb_90d"), "€")
+                + " | BB std 30d "
+                + _fmt(r.get("bb_std_30d"))
+                + " | Rank drops 30d "
+                + _fmt(r.get("rank_drops_30d"))
+                + " 90d "
+                + _fmt(r.get("rank_drops_90d"))
+                + " | Return rate "
+                + _fmt(r.get("return_rate_pct"), "%")
+            ),
+            axis=1,
+        )
+
+        triaging_raw["class"] = triaging_raw["score_v2"].apply(score_to_class)
+
+        triaging_df = triaging_raw.rename(
+            columns={
+                "asin": "ASIN",
+                "title": "Titolo",
+                "best_buy_locale": "Best Buy",
+                "best_sell_locale": "Best Sell",
+                "net_pct": "Netto %",
+                "net_eur": "Netto €",
+                "rank_now": "Rank",
+                "bought_30d": "Bought",
+                "offer_new_now": "Offerte",
+                "score_v2": "Score",
+            }
+        )[
+            [
+                "ASIN",
+                "Titolo",
+                "Best Buy",
+                "Best Sell",
+                "Netto %",
+                "Netto €",
+                "Rank",
+                "Bought",
+                "Offerte",
+                "Score",
+                "class",
+                "tooltip",
+            ]
+        ]
+    else:
+        triaging_df = triaging_raw
+
+    st.session_state["triaging_data"] = triaging_df
 
     #################################
     # Dashboard Interattiva
@@ -670,6 +771,36 @@ def render_results(
                 "👈 Clicca su 'Calcola Opportunity Score' nella barra laterale per visualizzare i risultati."
             )
 
+    with tab_triage:
+        triage_data = st.session_state.get("triaging_data")
+        st.subheader("🧮 Triaging")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("Flip veloce"):
+                st.session_state["min_volume"] = 200.0
+                st.session_state["max_offers"] = 10
+                st.session_state["delta"] = 5.0
+                st.experimental_rerun()
+        with c2:
+            if st.button("Margine alto"):
+                st.session_state["min_pct"] = 22.0
+                st.session_state["min_volume"] = 30.0
+                st.session_state["max_offers"] = 50
+                st.session_state["delta"] = 1.0
+                st.experimental_rerun()
+        with c3:
+            if st.button("Bilanciato"):
+                st.session_state["min_pct"] = 10.0
+                st.session_state["min_volume"] = 100.0
+                st.session_state["max_offers"] = 25
+                st.session_state["delta"] = 2.0
+                st.experimental_rerun()
+
+        if triage_data is not None and not triage_data.empty:
+            render_triaging_table(triage_data, st.session_state.get("min_pct", 0.0))
+        else:
+            st.info("👈 Calcola le opportunità per visualizzare il triaging.")
+
     with tab_rank:
         if df_ranked is not None and not df_ranked.empty:
             st.markdown('<div class="result-container">', unsafe_allow_html=True)
@@ -690,6 +821,17 @@ if "filtered_data" not in st.session_state:
 if "ranked_data" not in st.session_state:
     st.session_state["ranked_data"] = None
 
+if "sell_targets" not in st.session_state:
+    st.session_state["sell_targets"] = ["IT"]
+if "min_pct" not in st.session_state:
+    st.session_state["min_pct"] = 10.0
+if "min_volume" not in st.session_state:
+    st.session_state["min_volume"] = 100.0
+if "max_offers" not in st.session_state:
+    st.session_state["max_offers"] = 25
+if "delta" not in st.session_state:
+    st.session_state["delta"] = 2.0
+
 # Flag to indicate if a previous analysis is available
 analysis_available = (
     st.session_state["filtered_data"] is not None
@@ -705,11 +847,12 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_main1, tab_main2, tab_main3, tab_rank, tab_deals = st.tabs(
+tab_main1, tab_main2, tab_main3, tab_triage, tab_rank, tab_deals = st.tabs(
     [
         "📋 ASIN Caricati",
         "📊 Analisi Opportunità",
         "📎 Risultati Dettagliati",
+        "🧮 Triaging",
         "🏆 Classifica prodotti",
         "📉 Affari Storici",
     ]
@@ -853,11 +996,27 @@ with st.sidebar:
     sell_targets = st.multiselect(
         "Mercati di vendita",
         ["IT", "DE", "FR", "ES", "UK"],
-        default=["IT"],
+        default=st.session_state.get("sell_targets", ["IT"]),
+        key="sell_targets",
     )
-    min_pct = st.number_input("Margine minimo (%)", value=0.0, step=0.1)
-    min_volume = st.number_input("Volume minimo (bought 30d)", value=0.0, step=1.0)
-    max_offers = st.number_input("Max offerte nuove", value=50, step=1)
+    min_pct = st.number_input(
+        "Margine minimo (%)",
+        value=st.session_state.get("min_pct", 0.0),
+        step=0.1,
+        key="min_pct",
+    )
+    min_volume = st.number_input(
+        "Volume minimo (bought 30d)",
+        value=st.session_state.get("min_volume", 0.0),
+        step=1.0,
+        key="min_volume",
+    )
+    max_offers = st.number_input(
+        "Max offerte nuove",
+        value=st.session_state.get("max_offers", 50),
+        step=1,
+        key="max_offers",
+    )
 
     colored_header(
         label="📈 Opportunity Score",
@@ -888,7 +1047,7 @@ with st.sidebar:
             "Peso penalizzante per Offer Count",
             0.0,
             5.0,
-            st.session_state.get("delta", 1.0),
+            st.session_state.get("delta", 2.0),
             step=0.1,
             key="delta",
         )
@@ -1351,12 +1510,6 @@ if avvia:
 
     # Classifica cross-country per ASIN
     df_ranked = aggregate_opportunities(df_finale)
-
-    triaging_df = best_cross_market_combo(
-        df_finale, sell_targets, min_pct=min_pct, min_volume=min_volume, max_offers=max_offers
-    )
-    st.subheader("Triaging df")
-    st.dataframe(triaging_df, use_container_width=True)
 
     # Salviamo i dati nella sessione per i filtri interattivi
     st.session_state["filtered_data"] = df_finale
