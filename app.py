@@ -378,6 +378,37 @@ def compute_historic_deals(df: pd.DataFrame) -> pd.DataFrame:
 
     return work
 
+
+@st.cache_data(ttl=180)
+def filter_view(
+    df: pd.DataFrame,
+    params_model: Dict[str, Any],
+    params_filters: Dict[str, Any],
+) -> pd.DataFrame:
+    """Return ``df`` filtered according to ``params_filters``.
+
+    The cache key includes ``params_model`` and ``params_filters`` to ensure
+    views are invalidated when either changes.
+    """
+
+    work = df.copy()
+
+    if not params_filters.get("include_refurbished", True) and "condition" in work.columns:
+        work = work[work["condition"] != "refurbished/ricondizionato"]
+    if params_filters.get("prime_bb_only", False) and "prime_bb" in work.columns:
+        work = work[work["prime_bb"]]
+    if "return_rate_pct" in work.columns:
+        rr = pd.to_numeric(work["return_rate_pct"], errors="coerce").fillna(0)
+        max_rr = params_filters.get("max_return_rate_pct", float("inf"))
+        work = work[rr <= max_rr]
+    if params_filters.get("exclude_amz_dom", False) and "amz_dominant" in work.columns:
+        work = work[~work["amz_dominant"]]
+    max_offers = params_filters.get("max_new_offers")
+    if max_offers is not None and "offer_new_now" in work.columns:
+        work = work[work["offer_new_now"].fillna(0) <= max_offers]
+
+    return work
+
 def render_results(
     df_finale: pd.DataFrame,
     df_ranked: pd.DataFrame,
@@ -389,18 +420,15 @@ def render_results(
     max_return_rate_pct: float,
 ) -> None:
     """Render the dashboard and detailed results grids."""
-    work = df_finale.copy()
-    if not include_refurbished and "condition" in work.columns:
-        work = work[work["condition"] != "refurbished/ricondizionato"]
-    if prime_bb_only and "prime_bb" in work.columns:
-        work = work[work["prime_bb"]]
-    if "return_rate_pct" in work.columns:
-        rr = pd.to_numeric(work["return_rate_pct"], errors="coerce").fillna(0)
-        work = work[rr <= max_return_rate_pct]
-    if exclude_amz_dom and "amz_dominant" in work.columns:
-        work = work[~work["amz_dominant"]]
-    if "offer_new_now" in work.columns:
-        work = work[work["offer_new_now"].fillna(0) <= max_new_offers]
+    params_model = st.session_state.get("params_model", {})
+    params_filters = {
+        "include_refurbished": include_refurbished,
+        "prime_bb_only": prime_bb_only,
+        "max_return_rate_pct": max_return_rate_pct,
+        "exclude_amz_dom": exclude_amz_dom,
+        "max_new_offers": max_new_offers,
+    }
+    work = filter_view(df_finale, params_model, params_filters)
     df_ranked = aggregate_opportunities(work)
 
     triaging_raw = best_cross_market_combo(
