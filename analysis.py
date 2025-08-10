@@ -21,6 +21,20 @@ def amazon_dominance_flag(row: pd.Series) -> bool:
     )
 
 
+def condition_flag(row: pd.Series) -> str:
+    """Return product condition based on title or category information.
+
+    If the title contains "Ricondizionato" or the ``cat_sub`` field contains
+    "Renewed", the product is flagged as
+    ``"refurbished/ricondizionato"``. Otherwise ``"new"`` is returned.
+    """
+    title = str(row.get("title", "")).lower()
+    cat_sub = str(row.get("cat_sub", "")).lower()
+    if "ricondizionato" in title or "renewed" in cat_sub:
+        return "refurbished/ricondizionato"
+    return "new"
+
+
 def competition_score(row: pd.Series) -> float:
     """Calculate a simple competition score based on offers and buy box winners.
 
