@@ -43,6 +43,7 @@ from ui import apply_dark_theme, render_triaging_table
 from costs import compute_costs
 from analysis import (
     amazon_dominance_flag,
+    condition_flag,
     competition_score as offers_competition_score,
     best_cross_market_combo,
 )
@@ -383,9 +384,19 @@ def render_results(
     include_shipping: bool,
     exclude_amz_dom: bool,
     max_new_offers: int,
+    include_refurbished: bool,
+    prime_bb_only: bool,
+    max_return_rate_pct: float,
 ) -> None:
     """Render the dashboard and detailed results grids."""
     work = df_finale.copy()
+    if not include_refurbished and "condition" in work.columns:
+        work = work[work["condition"] != "refurbished/ricondizionato"]
+    if prime_bb_only and "prime_bb" in work.columns:
+        work = work[work["prime_bb"]]
+    if "return_rate_pct" in work.columns:
+        rr = pd.to_numeric(work["return_rate_pct"], errors="coerce").fillna(0)
+        work = work[rr <= max_return_rate_pct]
     if exclude_amz_dom and "amz_dominant" in work.columns:
         work = work[~work["amz_dominant"]]
     if "offer_new_now" in work.columns:
@@ -1117,6 +1128,11 @@ with st.sidebar:
 
     exclude_amz_dom = st.checkbox("Escludi Amazon dominante", value=True)
     max_new_offers = st.slider("Max offerte nuove", 0, 50, 25)
+    include_refurbished = st.checkbox("Includi ricondizionati", value=True)
+    prime_bb_only = st.checkbox("Solo Prime BB", value=False)
+    max_return_rate_pct = st.number_input(
+        "Return rate massimo (%)", min_value=0.0, value=10.0
+    )
 
     colored_header(
         label="📋 Ricette",
@@ -1460,6 +1476,7 @@ if avvia:
 
     df_merged["amz_dominant"] = df_merged.apply(amazon_dominance_flag, axis=1)
     df_merged["offers_competition"] = df_merged.apply(offers_competition_score, axis=1)
+    df_merged["condition"] = df_merged.apply(condition_flag, axis=1)
 
     # Aggiunta dell'informazione sulle aliquote IVA utilizzate
     df_merged["IVA_Origine"] = df_merged["Locale (base)"].map(
@@ -1480,6 +1497,12 @@ if avvia:
     df_finale = df_merged[cols_final].copy()
     if "offer_new_now" in df_merged.columns:
         df_finale["offer_new_now"] = df_merged["offer_new_now"]
+    if "prime_bb" in df_merged.columns:
+        df_finale["prime_bb"] = df_merged["prime_bb"]
+    if "return_rate_pct" in df_merged.columns:
+        df_finale["return_rate_pct"] = df_merged["return_rate_pct"]
+    if "condition" in df_merged.columns:
+        df_finale["condition"] = df_merged["condition"]
 
     # Arrotonda i valori numerici principali a 2 decimali
     cols_to_round = [
@@ -1516,7 +1539,16 @@ if avvia:
     st.session_state["ranked_data"] = df_ranked
     analysis_available = True
 
-    render_results(df_finale, df_ranked, include_shipping, exclude_amz_dom, max_new_offers)
+    render_results(
+        df_finale,
+        df_ranked,
+        include_shipping,
+        exclude_amz_dom,
+        max_new_offers,
+        include_refurbished,
+        prime_bb_only,
+        max_return_rate_pct,
+    )
 elif analysis_available:
     render_results(
         st.session_state["filtered_data"],
@@ -1524,6 +1556,9 @@ elif analysis_available:
         include_shipping,
         exclude_amz_dom,
         max_new_offers,
+        include_refurbished,
+        prime_bb_only,
+        max_return_rate_pct,
     )
 
 # Aggiunta dell'help
