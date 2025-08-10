@@ -38,8 +38,15 @@ from score import (
     compute_scores,
     aggregate_opportunities,
 )
-from utils import load_preset, save_preset
+from utils import load_preset, save_preset, hash_file
 from ui import apply_dark_theme
+
+
+@st.cache_data(show_spinner=False)
+def _load_cached(data: bytes, name: str, key: tuple[str, str]):
+    bio = io.BytesIO(data)
+    bio.name = name
+    return load_data(bio)
 
 apply_dark_theme()
 
@@ -707,7 +714,8 @@ with st.sidebar:
     if files_base:
         base_list = []
         for f in files_base:
-            df_temp = load_data(f)
+            data_bytes = f.getvalue()
+            df_temp = _load_cached(data_bytes, f.name, (hash_file(data_bytes), "schema_v2"))
             if df_temp is not None and not df_temp.empty:
                 base_list.append(df_temp)
         if base_list:
@@ -984,7 +992,8 @@ if avvia:
 
     base_list = []
     for f in files_base:
-        df_temp = load_data(f)
+        data_bytes = f.getvalue()
+        df_temp = _load_cached(data_bytes, f.name, (hash_file(data_bytes), "schema_v2"))
         if df_temp is not None and not df_temp.empty:
             base_list.append(df_temp)
         else:
@@ -1006,7 +1015,8 @@ if avvia:
     # Elaborazione Liste di Confronto
     comp_list = []
     for f in comparison_files:
-        df_temp = load_data(f)
+        data_bytes = f.getvalue()
+        df_temp = _load_cached(data_bytes, f.name, (hash_file(data_bytes), "schema_v2"))
         if df_temp is not None and not df_temp.empty:
             comp_list.append(df_temp)
         else:
