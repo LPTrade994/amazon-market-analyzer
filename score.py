@@ -121,16 +121,28 @@ def compute_scores(df: pd.DataFrame, weights: Dict[str, float]) -> pd.DataFrame:
 
 
 def aggregate_opportunities(df: pd.DataFrame) -> pd.DataFrame:
-    """Return one row per ASIN with the best market and score."""
+    """Return one row per ASIN with the best market and score.
+
+    The ``Locale (base)`` column is mandatory. If the input lacks
+    ``Locale (comp)``, the result includes an empty ``Best_Market`` column
+    for each ASIN instead of raising an error.
+    """
     if df is None or df.empty or "ASIN" not in df.columns:
         return pd.DataFrame(columns=["ASIN", "Best_Market", "Opportunity_Score"])
 
     if "Opportunity_Score" not in df.columns:
         return pd.DataFrame(columns=["ASIN", "Best_Market", "Opportunity_Score"])
 
-    idx = df.groupby("ASIN") ["Opportunity_Score"].idxmax()
+    if "Locale (base)" not in df.columns:
+        raise KeyError("Locale (base) column missing")
+
+    idx = df.groupby("ASIN")["Opportunity_Score"].idxmax()
     best = df.loc[idx].copy()
-    best = best.rename(columns={"Locale (comp)": "Best_Market"})
+
+    if "Locale (comp)" in best.columns:
+        best = best.rename(columns={"Locale (comp)": "Best_Market"})
+    else:
+        best["Best_Market"] = ""
 
     cols = ["ASIN"]
     if "Title (base)" in best.columns:

@@ -5,6 +5,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from loaders import load_keepa
 import pandas as pd
+import pytest
 from score import (
     margin_score,
     demand_score,
@@ -39,6 +40,7 @@ def test_aggregate_opportunities():
             "ASIN": ["A1", "A1", "A2"],
             "Opportunity_Score": [10, 20, 15],
             "Locale (comp)": ["DE", "FR", "IT"],
+            "Locale (base)": ["DE", "DE", "DE"],
         }
     )
     agg = aggregate_opportunities(df)
@@ -46,3 +48,29 @@ def test_aggregate_opportunities():
     a1 = agg[agg["ASIN"] == "A1"].iloc[0]
     assert a1["Opportunity_Score"] == 20
     assert a1["Best_Market"] == "FR"
+
+
+def test_aggregate_opportunities_no_locale_comp():
+    df = pd.DataFrame(
+        {
+            "ASIN": ["A1", "A2"],
+            "Opportunity_Score": [10, 15],
+            "Locale (base)": ["DE", "DE"],
+        }
+    )
+    agg = aggregate_opportunities(df)
+    assert len(agg) == 2
+    assert "Best_Market" in agg.columns
+    assert (agg["Best_Market"] == "").all()
+
+
+def test_aggregate_opportunities_missing_base_locale():
+    df = pd.DataFrame(
+        {
+            "ASIN": ["A1"],
+            "Opportunity_Score": [10],
+            "Locale (comp)": ["DE"],
+        }
+    )
+    with pytest.raises(KeyError, match=r"Locale \(base\) column missing"):
+        aggregate_opportunities(df)
