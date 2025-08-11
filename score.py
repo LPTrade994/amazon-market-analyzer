@@ -139,15 +139,11 @@ def aggregate_opportunities(df: pd.DataFrame) -> pd.DataFrame:
     idx = df.groupby("ASIN")["Opportunity_Score"].idxmax()
     best = df.loc[idx].copy()
     
- # Normalizza il nome del mercato di confronto in una colonna unica
-if "Locale (comp)" in best.columns:
-    best["Best_Market"] = best["Locale (comp)"]
-elif "Locale" in best.columns:
-    best["Best_Market"] = best["Locale"]
-
- feature/opportunity-score-v2-fb
+    # Normalizza il nome del mercato di confronto in una colonna unica
     if "Locale (comp)" in best.columns:
-        best = best.rename(columns={"Locale (comp)": "Best_Market"})
+        best["Best_Market"] = best["Locale (comp)"]
+    elif "Locale" in best.columns:
+        best["Best_Market"] = best["Locale"]
     else:
         best["Best_Market"] = ""
 
