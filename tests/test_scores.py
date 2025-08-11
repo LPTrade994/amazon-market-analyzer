@@ -46,3 +46,16 @@ def test_aggregate_opportunities():
     a1 = agg[agg["ASIN"] == "A1"].iloc[0]
     assert a1["Opportunity_Score"] == 20
     assert a1["Best_Market"] == "FR"
+
+
+def test_aggregate_opportunities_without_locale():
+    df = pd.DataFrame(
+        {
+            "ASIN": ["A1", "A1", "A2"],
+            "Opportunity_Score": [10, 20, 15],
+        }
+    )
+    agg = aggregate_opportunities(df)
+    assert len(agg) == 2
+    assert "Best_Market" in agg.columns
+    assert agg["Best_Market"].eq("").all()

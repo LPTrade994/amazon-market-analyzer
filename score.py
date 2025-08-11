@@ -130,7 +130,10 @@ def aggregate_opportunities(df: pd.DataFrame) -> pd.DataFrame:
 
     idx = df.groupby("ASIN") ["Opportunity_Score"].idxmax()
     best = df.loc[idx].copy()
-    best = best.rename(columns={"Locale (comp)": "Best_Market"})
+    if "Locale (comp)" in best.columns:
+        best = best.rename(columns={"Locale (comp)": "Best_Market"})
+    else:
+        best["Best_Market"] = ""
 
     cols = ["ASIN"]
     if "Title (base)" in best.columns:
