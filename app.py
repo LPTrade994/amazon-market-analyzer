@@ -1211,10 +1211,29 @@ if avvia:
     )
 
     # Aggiunta dell'informazione sulle aliquote IVA utilizzate
-    df_merged["IVA_Origine"] = df_merged["Locale (base)"].map(
+    locale_base = df_merged.get(
+        "Locale (base)", pd.Series("", index=df_merged.index)
+    )
+    locale_comp = df_merged.get(
+        "Locale (comp)", pd.Series("", index=df_merged.index)
+    )
+
+    missing_locales = [
+        col
+        for col in ["Locale (base)", "Locale (comp)"]
+        if col not in df_merged.columns
+    ]
+    if missing_locales:
+        st.warning(
+            "Colonne mancanti: "
+            + ", ".join(missing_locales)
+            + ". Fornire i dati necessari per calcolare l'IVA."
+        )
+
+    df_merged["IVA_Origine"] = locale_base.map(
         lambda x: f"{VAT_RATES.get(normalize_locale(x), 0)}%"
     )
-    df_merged["IVA_Confronto"] = df_merged["Locale (comp)"].map(
+    df_merged["IVA_Confronto"] = locale_comp.map(
         lambda x: f"{VAT_RATES.get(normalize_locale(x), 0)}%"
     )
 
