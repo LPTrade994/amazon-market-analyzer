@@ -80,6 +80,27 @@ DISPLAY_COLS_ORDER = [
 ]
 
 
+# Columns required for processing the uploaded datasets
+REQUIRED_COLUMNS = {
+    "ASIN": ["ASIN", "asin"],
+    "Locale": ["Locale", "locale"],
+    "Buy Box 🚚: Current": ["Buy Box 🚚: Current", "bb_now"],
+    "Amazon: Current": ["Amazon: Current", "amazon_now"],
+    "New Offer Count: Current": ["New Offer Count: Current", "new_offer_count_now"],
+    "Sales Rank: Current": ["Sales Rank: Current", "rank_cur"],
+    "Bought in past month": ["Bought in past month", "bought_month"],
+}
+
+
+def find_missing_columns(df: pd.DataFrame) -> list[str]:
+    """Return a list of required columns missing from ``df``."""
+    missing = []
+    for display_name, options in REQUIRED_COLUMNS.items():
+        if not any(col in df.columns for col in options):
+            missing.append(display_name)
+    return missing
+
+
 # Helper functions
 def float_or_nan(x) -> float:
     try:
@@ -680,6 +701,9 @@ tab_main1, tab_main2, tab_main3, tab_rank, tab_deals = st.tabs(
     ]
 )
 
+missing_base_cols: set[str] = set()
+missing_comp_cols: set[str] = set()
+
 #################################
 # Sidebar: Caricamento file, Prezzo di riferimento, Sconto, Impostazioni e Ricette
 #################################
@@ -709,8 +733,17 @@ with st.sidebar:
         for f in files_base:
             df_temp = load_data(f)
             if df_temp is not None and not df_temp.empty:
-                base_list.append(df_temp)
-        if base_list:
+                missing = find_missing_columns(df_temp)
+                if missing:
+                    missing_base_cols.update(missing)
+                else:
+                    base_list.append(df_temp)
+        if missing_base_cols:
+            st.error(
+                "Colonne mancanti nei file di origine: "
+                + ", ".join(sorted(missing_base_cols))
+            )
+        if base_list and not missing_base_cols:
             df_base = pd.concat(base_list, ignore_index=True)
             if "ASIN" in df_base.columns:
                 asin_list = (
@@ -722,6 +755,19 @@ with st.sidebar:
                     .unique()
                     .tolist()
                 )
+
+    if comparison_files:
+        for f in comparison_files:
+            df_temp = load_data(f)
+            if df_temp is not None and not df_temp.empty:
+                missing = find_missing_columns(df_temp)
+                if missing:
+                    missing_comp_cols.update(missing)
+        if missing_comp_cols:
+            st.error(
+                "Colonne mancanti nei file di confronto: "
+                + ", ".join(sorted(missing_comp_cols))
+            )
 
     colored_header(
         label="💰 Impostazioni Prezzi",
@@ -945,6 +991,8 @@ with st.sidebar:
     st.markdown("---")
     avvia = st.button("🚀 Calcola Opportunity Score", use_container_width=True)
 
+columns_ready = not missing_base_cols and not missing_comp_cols
+
 with tab_main1:
     if asin_list:
         asin_text = "\n".join(asin_list)
@@ -977,6 +1025,13 @@ with tab_main1:
 # Elaborazione Completa e Calcolo Opportunity Score
 #################################
 if avvia:
+    if not columns_ready:
+        missing_all = sorted(missing_base_cols.union(missing_comp_cols))
+        with tab_main1:
+            st.error(
+                "Colonne obbligatorie mancanti: " + ", ".join(missing_all)
+            )
+        st.stop()
     if not files_base:
         with tab_main1:
             st.error("Carica almeno un file di Lista di Origine.")
@@ -986,10 +1041,21 @@ if avvia:
     for f in files_base:
         df_temp = load_data(f)
         if df_temp is not None and not df_temp.empty:
-            base_list.append(df_temp)
+            missing = find_missing_columns(df_temp)
+            if missing:
+                missing_base_cols.update(missing)
+            else:
+                base_list.append(df_temp)
         else:
             with tab_main1:
                 st.warning(f"Il file base {f.name} è vuoto o non valido.")
+    if missing_base_cols:
+        with tab_main1:
+            st.error(
+                "Colonne mancanti nei file di origine: "
+                + ", ".join(sorted(missing_base_cols))
+            )
+        st.stop()
     if not base_list:
         with tab_main1:
             st.error("Nessun file di origine valido caricato.")
@@ -1008,10 +1074,21 @@ if avvia:
     for f in comparison_files:
         df_temp = load_data(f)
         if df_temp is not None and not df_temp.empty:
-            comp_list.append(df_temp)
+            missing = find_missing_columns(df_temp)
+            if missing:
+                missing_comp_cols.update(missing)
+            else:
+                comp_list.append(df_temp)
         else:
             with tab_main1:
                 st.warning(f"Il file di confronto {f.name} è vuoto o non valido.")
+    if missing_comp_cols:
+        with tab_main1:
+            st.error(
+                "Colonne mancanti nei file di confronto: "
+                + ", ".join(sorted(missing_comp_cols))
+            )
+        st.stop()
     if not comp_list:
         with tab_main1:
             st.error("Nessun file di confronto valido caricato.")
@@ -1224,11 +1301,12 @@ if avvia:
         if col not in df_merged.columns
     ]
     if missing_locales:
-        st.warning(
+        st.error(
             "Colonne mancanti: "
             + ", ".join(missing_locales)
             + ". Fornire i dati necessari per calcolare l'IVA."
         )
+        st.stop()
 
     df_merged["IVA_Origine"] = locale_base.map(
         lambda x: f"{VAT_RATES.get(normalize_locale(x), 0)}%"
@@ -1267,7 +1345,10 @@ if avvia:
             df_finale[col] = df_finale[col].round(2)
 
     # Classifica cross-country per ASIN
-    df_ranked = aggregate_opportunities(df_finale)
+    if {"ASIN", "Opportunity_Score"}.issubset(df_finale.columns):
+        df_ranked = aggregate_opportunities(df_finale)
+    else:
+        df_ranked = pd.DataFrame(columns=["ASIN", "Best_Market", "Opportunity_Score"])
 
     # Salviamo i dati nella sessione per i filtri interattivi
     st.session_state["filtered_data"] = df_finale

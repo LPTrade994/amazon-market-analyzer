@@ -50,17 +50,26 @@ def test_aggregate_opportunities():
     assert a1["Best_Market"] == "FR"
 
 
+ lp2c3v-codex/add-test-for-aggregate_opportunities
 def test_aggregate_opportunities_no_locale_comp():
     df = pd.DataFrame(
         {
             "ASIN": ["A1", "A2"],
             "Opportunity_Score": [10, 15],
             "Locale (base)": ["DE", "DE"],
+=======
+def test_aggregate_opportunities_without_locale():
+    df = pd.DataFrame(
+        {
+            "ASIN": ["A1", "A1", "A2"],
+            "Opportunity_Score": [10, 20, 15],
+ feature/opportunity-score-v2-fb
         }
     )
     agg = aggregate_opportunities(df)
     assert len(agg) == 2
     assert "Best_Market" in agg.columns
+ lp2c3v-codex/add-test-for-aggregate_opportunities
     assert (agg["Best_Market"] == "").all()
 
 
@@ -74,3 +83,6 @@ def test_aggregate_opportunities_missing_base_locale():
     )
     with pytest.raises(KeyError, match=r"Locale \(base\) column missing"):
         aggregate_opportunities(df)
+=======
+    assert agg["Best_Market"].eq("").all()
+ feature/opportunity-score-v2-fb
