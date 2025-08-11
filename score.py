@@ -128,9 +128,16 @@ def aggregate_opportunities(df: pd.DataFrame) -> pd.DataFrame:
     if "Opportunity_Score" not in df.columns:
         return pd.DataFrame(columns=["ASIN", "Best_Market", "Opportunity_Score"])
 
-    idx = df.groupby("ASIN") ["Opportunity_Score"].idxmax()
+    if "Locale (base)" not in df.columns:
+        raise KeyError("Locale (base) column missing")
+
+    idx = df.groupby("ASIN")["Opportunity_Score"].idxmax()
     best = df.loc[idx].copy()
-    best = best.rename(columns={"Locale (comp)": "Best_Market"})
+
+    if "Locale (comp)" in best.columns:
+        best = best.rename(columns={"Locale (comp)": "Best_Market"})
+    else:
+        best["Best_Market"] = ""
 
     cols = ["ASIN"]
     if "Title (base)" in best.columns:
