@@ -63,6 +63,17 @@ def test_aggregate_opportunities_no_locale_comp():
     assert agg["Best_Market"].eq("").all()
 
 
+def test_aggregate_opportunities_without_locale():
+    df = pd.DataFrame(
+        {
+            "ASIN": ["A1"],
+            "Opportunity_Score": [10],
+        }
+    )
+    with pytest.raises(KeyError, match=r"Locale \(base\) column missing"):
+        aggregate_opportunities(df)
+
+
 def test_aggregate_opportunities_missing_base_locale():
     df = pd.DataFrame(
         {
