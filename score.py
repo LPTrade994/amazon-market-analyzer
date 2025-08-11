@@ -150,6 +150,10 @@ def aggregate_opportunities(df: pd.DataFrame) -> pd.DataFrame:
     cols = ["ASIN"]
     if "Title (base)" in best.columns:
         cols.append("Title (base)")
-    cols += ["Best_Market", "Opportunity_Score"]
+    cols.extend(["Best_Market", "Opportunity_Score"])
 
-    return best[cols].sort_values("Opportunity_Score", ascending=False).reset_index(drop=True)
+    return (
+        best[cols]
+        .sort_values("Opportunity_Score", ascending=False)
+        .reset_index(drop=True)
+    )
