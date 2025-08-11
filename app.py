@@ -225,6 +225,14 @@ def get_vat_for_locale(locale_raw: str) -> float:
         return 0.22
 
 
+def _vat_to_decimal(v):
+    # accetta sia 0.22 che 22
+    if v is None or not np.isfinite(float(v)):
+        return 0.22
+    v = float(v)
+    return v if v < 1.0 else v / 100.0
+
+
 def score_to_class(score: float) -> str:
     """Map opportunity score to class A/B/C."""
     label = classify_opportunity(score)[0]
@@ -1439,7 +1447,10 @@ if avvia:
     df_merged["Vendita_Netto"] = df_merged.apply(
         lambda row: row["Price_Comp"]
         / (
-            1 + VAT_RATES.get(normalize_locale(row.get("Locale (comp)", "")), 0) / 100.0
+            1.0
+            + _vat_to_decimal(
+                VAT_RATES.get(normalize_locale(row.get("Locale (comp)", "")), 0.22)
+            )
         ),
         axis=1,
     )
