@@ -49,11 +49,20 @@ from analysis import (
 )
 
 
+def _align_legacy_headers(df: pd.DataFrame) -> pd.DataFrame:
+    ren = {}
+    if "asin" in df.columns and "ASIN" not in df.columns:
+        ren["asin"] = "ASIN"
+    if "locale" in df.columns and "Locale" not in df.columns:
+        ren["locale"] = "Locale"
+    return df.rename(columns=ren)
+
+
 @st.cache_data(show_spinner=False)
 def _load_cached(data: bytes, name: str, key: tuple[str, str]):
     bio = io.BytesIO(data)
     bio.name = name
-    return load_data(bio)
+    return _align_legacy_headers(load_data(bio))
 
 apply_dark_theme()
 
@@ -926,6 +935,7 @@ with st.sidebar:
         for f in files_base:
             data_bytes = f.getvalue()
             df_temp = _load_cached(data_bytes, f.name, (hash_file(data_bytes), "schema_v2"))
+            df_temp = _align_legacy_headers(df_temp)
             if df_temp is not None and not df_temp.empty:
                 base_list.append(df_temp)
         if base_list:
@@ -1263,6 +1273,7 @@ if avvia:
     for f in files_base:
         data_bytes = f.getvalue()
         df_temp = _load_cached(data_bytes, f.name, (hash_file(data_bytes), "schema_v2"))
+        df_temp = _align_legacy_headers(df_temp)
         if df_temp is not None and not df_temp.empty:
             base_list.append(df_temp)
         else:
@@ -1286,6 +1297,7 @@ if avvia:
     for f in comparison_files:
         data_bytes = f.getvalue()
         df_temp = _load_cached(data_bytes, f.name, (hash_file(data_bytes), "schema_v2"))
+        df_temp = _align_legacy_headers(df_temp)
         if df_temp is not None and not df_temp.empty:
             comp_list.append(df_temp)
         else:
