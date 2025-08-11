@@ -1297,17 +1297,28 @@ if avvia:
         st.stop()
     df_comp = pd.concat(comp_list, ignore_index=True)
 
-    # Verifica della presenza della colonna ASIN in entrambi i dataset
-    if "ASIN" not in df_base.columns or "ASIN" not in df_comp.columns:
-        with tab_main1:
-            st.error(
-                "Assicurati che entrambi i file (origine e confronto) contengano la colonna ASIN."
-            )
-        st.stop()
+    # --- NORMALIZZA IL NOME COLONNA ASIN IN MODO ROBUSTO ---
+    def _ensure_asin(df, label):
+        if df is None or df.empty:
+            return df
+        # trova qualunque colonna che equivalga a "asin" ignorando spazi, simboli, maiuscole
+        asin_like = None
+        for c in df.columns:
+            key = re.sub(r"[^A-Za-z0-9]", "", str(c)).strip().lower()
+            if key == "asin":
+                asin_like = c
+                break
+        if asin_like and asin_like != "ASIN":
+            df.rename(columns={asin_like: "ASIN"}, inplace=True)
+        if "ASIN" not in df.columns:
+            st.error(f"{label}: non trovo la colonna ASIN. Colonne viste: {list(df.columns)[:10]} …")
+            st.stop()
+        # pulizia standard
+        df["ASIN"] = df["ASIN"].astype(str).str.strip().str.upper()
+        return df
 
-    # Normalizza gli ASIN rimuovendo spazi e usando il maiuscolo
-    df_base["ASIN"] = df_base["ASIN"].str.strip().str.upper()
-    df_comp["ASIN"] = df_comp["ASIN"].str.strip().str.upper()
+    df_base = _ensure_asin(df_base, "Lista di Origine")
+    df_comp = _ensure_asin(df_comp, "Lista di Confronto")
 
     # Merge tra base e confronto sulla colonna ASIN
     df_merged = pd.merge(
