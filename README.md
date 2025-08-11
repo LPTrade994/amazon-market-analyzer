@@ -86,6 +86,18 @@ columns listed in `DISPLAY_COLS_ORDER` are shown:
 Any additional columns present in your dataset are ignored.
 
 
+## Uso dei dati
+
+Le colonne `Locale (base)` e `Locale (comp)` sono obbligatorie per il calcolo dell'IVA e del punteggio opportunità. Assicurati che entrambi i campi siano valorizzati in ogni riga del dataset.
+
+Esempio di record completo:
+
+```
+ASIN,Title (base),Locale (base),Locale (comp),Price_Base,Price_Comp,Bought_Comp,SalesRank_Comp
+B000123456,Prodotto esempio,IT,DE,10.00,12.00,500,15000
+```
+
+
 ## VAT and Discount Logic
 
 Locale strings from the CSV files are normalized to a two letter country code (e.g. `Amazon.de` or `de-DE` become `DE`). `GB` is converted to `UK` so that the correct VAT rate is applied automatically.
