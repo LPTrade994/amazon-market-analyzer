@@ -11,6 +11,14 @@ import pandas as pd
 import duckdb
 import streamlit as st
 
+from core.columns import (
+    apply_canonical,
+    parse_bool,
+    parse_dt,
+    parse_euro,
+    parse_pct,
+)
+
 
 def load_data(uploaded_file: Any) -> Optional[pd.DataFrame]:
     """Load a CSV or XLSX file into a pandas DataFrame.
@@ -32,14 +40,28 @@ def load_data(uploaded_file: Any) -> Optional[pd.DataFrame]:
             uploaded_file.seek(0)
             df = pd.read_csv(uploaded_file, sep=",", dtype=str)
     df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
+    df = apply_canonical(df)
+    df = _coerce_types(df)
     return df
 
 
 @st.cache_data(show_spinner=False)
-def load_keepa(path: str | Path) -> pd.DataFrame:
-    """Load a Keepa export file from ``path``."""
+def load_keepa(path: str | Path, canonical: bool = False) -> pd.DataFrame:
+    """Load a Keepa export file from ``path``.
+
+    Parameters
+    ----------
+    path:
+        File system path to the export file.
+    canonical:
+        When ``True`` columns are normalized using :func:`apply_canonical`.
+    """
     df = pd.read_excel(path, dtype=str)
-    return df.loc[:, ~df.columns.str.contains("^Unnamed")]
+    df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
+    if canonical:
+        df = apply_canonical(df)
+        df = _coerce_types(df)
+    return df
 
 
 @st.cache_data(show_spinner=False)
@@ -49,7 +71,52 @@ def load_prices(path: str | Path) -> pd.DataFrame:
         df = pd.read_excel(path, dtype=str)
     else:
         df = pd.read_csv(path, sep=";", dtype=str)
-    return df.loc[:, ~df.columns.str.contains("^Unnamed")]
+    df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
+    df = apply_canonical(df)
+    return _coerce_types(df)
+
+
+def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
+    """Coerce column types based on their names."""
+    for col in df.columns:
+        name = col.lower()
+        if "%" in col or "pct" in name:
+            df[col] = df[col].apply(parse_pct)
+            continue
+        if "€" in col or any(
+            kw in name
+            for kw in [
+                "price",
+                "fee",
+                "amount",
+                "threshold",
+                "coupon",
+                "discount",
+                "now",
+                "avg",
+                "highest",
+                "lowest",
+                "cost",
+            ]
+        ):
+            df[col] = df[col].apply(parse_euro)
+            continue
+        if any(
+            kw in name
+            for kw in [
+                "is_",
+                "eligible",
+                "availability",
+                "unqualified",
+                "map_restriction",
+                "prime",
+            ]
+        ):
+            df[col] = df[col].apply(parse_bool)
+            continue
+        if any(kw in name for kw in ["date", "time", "update", "change", "last"]):
+            df[col] = df[col].apply(parse_dt)
+    return df
 
 
 def merge_data(df_keepa: pd.DataFrame, df_prices: pd.DataFrame) -> pd.DataFrame:
