@@ -1224,11 +1224,12 @@ if avvia:
         if col not in df_merged.columns
     ]
     if missing_locales:
-        st.warning(
+        st.error(
             "Colonne mancanti: "
             + ", ".join(missing_locales)
             + ". Fornire i dati necessari per calcolare l'IVA."
         )
+        st.stop()
 
     df_merged["IVA_Origine"] = locale_base.map(
         lambda x: f"{VAT_RATES.get(normalize_locale(x), 0)}%"
@@ -1267,7 +1268,10 @@ if avvia:
             df_finale[col] = df_finale[col].round(2)
 
     # Classifica cross-country per ASIN
-    df_ranked = aggregate_opportunities(df_finale)
+    if {"ASIN", "Opportunity_Score"}.issubset(df_finale.columns):
+        df_ranked = aggregate_opportunities(df_finale)
+    else:
+        df_ranked = pd.DataFrame(columns=["ASIN", "Best_Market", "Opportunity_Score"])
 
     # Salviamo i dati nella sessione per i filtri interattivi
     st.session_state["filtered_data"] = df_finale
