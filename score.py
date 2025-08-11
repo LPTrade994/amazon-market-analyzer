@@ -121,7 +121,12 @@ def compute_scores(df: pd.DataFrame, weights: Dict[str, float]) -> pd.DataFrame:
 
 
 def aggregate_opportunities(df: pd.DataFrame) -> pd.DataFrame:
-    """Return one row per ASIN with the best market and score."""
+    """Return one row per ASIN with the best market and score.
+
+    The ``Locale (base)`` column is mandatory. If the input lacks
+    ``Locale (comp)``, the result includes an empty ``Best_Market`` column
+    for each ASIN instead of raising an error.
+    """
     if df is None or df.empty or "ASIN" not in df.columns:
         return pd.DataFrame(columns=["ASIN", "Best_Market", "Opportunity_Score"])
 

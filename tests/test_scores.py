@@ -61,6 +61,7 @@ def test_aggregate_opportunities_no_locale_comp():
     agg = aggregate_opportunities(df)
     assert len(agg) == 2
     assert "Best_Market" in agg.columns
+    assert (agg["Best_Market"] == "").all()
 
 
 def test_aggregate_opportunities_missing_base_locale():
@@ -71,5 +72,5 @@ def test_aggregate_opportunities_missing_base_locale():
             "Locale (comp)": ["DE"],
         }
     )
-    with pytest.raises(KeyError):
+    with pytest.raises(KeyError, match=r"Locale \(base\) column missing"):
         aggregate_opportunities(df)
