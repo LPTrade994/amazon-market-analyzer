@@ -200,6 +200,22 @@ def fair_price_row(row: pd.Series) -> float:
     return fair
 
 
+def _pick_price_series(df: pd.DataFrame, human_label: str, suffix: str) -> pd.Series:
+    """Select a price series, falling back to alternate column names if needed."""
+    col_human = f"{human_label} {suffix}"
+    if col_human in df.columns:
+        return df[col_human].apply(parse_float)
+    alt = {
+        "Buy Box 🚚: Current": "bb_now",
+        "Amazon: Current": "amz_now",
+        "New: Current": "new_now",
+    }
+    alt_col = alt.get(human_label)
+    if alt_col and f"{alt_col} {suffix}" in df.columns:
+        return df[f"{alt_col} {suffix}"].apply(parse_float)
+    return pd.Series(np.nan, index=df.index)
+
+
 def get_vat_for_locale(locale_raw: str) -> float:
     # RIUSA la tua mappa IVA se esiste (VAT_RATES + normalize_locale).
     try:
@@ -1344,14 +1360,8 @@ if avvia:
         st.stop()
 
     # Utilizza le colonne di prezzo selezionate dalla sidebar
-    price_col_base = f"{ref_price_base} (base)"
-    price_col_comp = f"{ref_price_comp} (comp)"
-    df_merged["Price_Base"] = df_merged.get(price_col_base, pd.Series(np.nan)).apply(
-        parse_float
-    )
-    df_merged["Price_Comp"] = df_merged.get(price_col_comp, pd.Series(np.nan)).apply(
-        parse_float
-    )
+    df_merged["Price_Base"] = _pick_price_series(df_merged, ref_price_base, "(base)")
+    df_merged["Price_Comp"] = _pick_price_series(df_merged, ref_price_comp, "(comp)")
 
     # Conversione dei dati dal mercato di confronto per le altre metriche
     df_merged["SalesRank_Comp"] = df_merged.get(
