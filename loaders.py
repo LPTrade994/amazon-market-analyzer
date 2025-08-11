@@ -22,13 +22,11 @@ from core.columns import (
 
 def load_data(uploaded_file: Any) -> Optional[pd.DataFrame]:
     """Load a CSV or XLSX file into a pandas DataFrame.
-
-    This function imports pandas lazily to avoid requiring it at import time.
-    It returns ``None`` if ``uploaded_file`` is falsy.
+    
+    Returns ``None`` if ``uploaded_file`` is falsy.
     """
     if not uploaded_file:
         return None
-    import pandas as pd  # imported lazily
 
     fname = uploaded_file.name.lower()
     if fname.endswith(".xlsx"):
