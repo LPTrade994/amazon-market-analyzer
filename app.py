@@ -1018,22 +1018,24 @@ if avvia:
         st.stop()
     df_comp = pd.concat(comp_list, ignore_index=True)
 
-    # Verifica della presenza della colonna ASIN in entrambi i dataset
-    if "ASIN" not in df_base.columns or "ASIN" not in df_comp.columns:
+    # Verifica della presenza della colonna asin in entrambi i dataset
+    if "asin" not in df_base.columns or "asin" not in df_comp.columns:
         with tab_main1:
             st.error(
-                "Assicurati che entrambi i file (origine e confronto) contengano la colonna ASIN."
+                "Assicurati che entrambi i file (origine e confronto) contengano la colonna asin."
             )
         st.stop()
 
     # Normalizza gli ASIN rimuovendo spazi e usando il maiuscolo
-    df_base["ASIN"] = df_base["ASIN"].str.strip().str.upper()
-    df_comp["ASIN"] = df_comp["ASIN"].str.strip().str.upper()
+    df_base["asin"] = df_base["asin"].str.strip().str.upper()
+    df_comp["asin"] = df_comp["asin"].str.strip().str.upper()
 
-    # Merge tra base e confronto sulla colonna ASIN
+    # Merge tra base e confronto sulla colonna asin
     df_merged = pd.merge(
-        df_base, df_comp, on="ASIN", how="inner", suffixes=(" (base)", " (comp)")
+        df_base, df_comp, on="asin", how="inner", suffixes=(" (base)", " (comp)")
     )
+    # Rinomina la colonna per la visualizzazione nell'interfaccia
+    df_merged.rename(columns={"asin": "ASIN"}, inplace=True)
     if df_merged.empty:
         with tab_main1:
             st.error(
