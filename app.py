@@ -853,23 +853,40 @@ def prepare_consolidated_data(best_routes_df: pd.DataFrame) -> pd.DataFrame:
     df['Target Price €'] = df['target_price'].apply(format_currency)
     df['Gross Margin €'] = df['gross_margin_eur'].apply(format_currency)
     df['Gross Margin %'] = df['gross_margin_pct'].apply(format_percentage)
+    # Add fallback for gross_margin_pct if missing
+    if 'gross_margin_pct' not in df.columns:
+        df['gross_margin_pct'] = 0  # Default fallback
+    df['Margine %'] = df['gross_margin_pct'].apply(format_percentage)
     df['ROI %'] = df['roi'].apply(format_percentage)
     df['Opportunity Score'] = df['opportunity_score'].apply(get_opportunity_badge)
     
-    # Final column selection with proper names
+    # Add combined profit column with Amazon primary and website as note
+    df['Profit Amazon €'] = df['gross_margin_eur'].apply(format_currency)
+    df['Profit Info'] = df.apply(lambda x: 
+        f"{format_currency(x['gross_margin_eur'])} | Web: {format_currency(x['profit_website'])}", axis=1)
+    df['Best Channel'] = df['best_channel']
+    df['Δ Profit'] = df['profit_difference'].apply(lambda x: f"+€{x:.2f}" if x > 0 else f"-€{abs(x):.2f}")
+    
+    # Final columns with Amazon profit primary
     final_columns = [
-        'asin', 'title', 'Best Route', 'Purchase Price €', 'Net Cost €',
-        'Target Price €', 'Fees €', 'Gross Margin €', 'Gross Margin %',
-        'ROI %', 'Opportunity Score', 'Links'
+        'asin', 'title', 'Best Route', 
+        'Purchase Price €', 'Net Cost €', 'Target Price €',
+        'Fees €', 'Gross Margin €', 'Margine %', 'ROI %',  # Amazon/FBM Primary
+        'Profit Info',                          # Combined profit info
+        'Best Channel', 'Δ Profit',            # Confronto
+        'Opportunity Score', 'Links'
     ]
     
     display_df = df[final_columns].copy()
     
     # Rename columns for display
     display_df.columns = [
-        'ASIN', 'Title', 'Best Route', 'Purchase Price €', 'Net Cost €',
-        'Target Price €', 'Fees €', 'Gross Margin €', 'Gross Margin %',
-        'ROI %', 'Opportunity Score', 'Links'
+        'ASIN', 'Title', 'Best Route', 
+        'Purchase Price €', 'Net Cost €', 'Target Price €',
+        'Fees €', 'Gross Margin €', 'Margine %', 'ROI %',  # Amazon/FBM Primary
+        'Profit (Amazon | Web)',                 # Combined profit info
+        'Best Channel', 'Δ Profit',            # Confronto
+        'Opportunity Score', 'Links'
     ]
     
     return display_df
@@ -888,7 +905,9 @@ def display_consolidated_table(consolidated_df: pd.DataFrame):
         'Fees €': st.column_config.TextColumn('Fees €', width=80),
         'Gross Margin €': st.column_config.TextColumn('Gross Margin €', width=130),
         'Gross Margin %': st.column_config.TextColumn('Gross Margin %', width=120),
+        'Margine %': st.column_config.TextColumn('Margine %', width=90),
         'ROI %': st.column_config.TextColumn('ROI %', width=80),
+        'Profit (Amazon | Web)': st.column_config.TextColumn('Profit (Amazon | Web)', width=160, help="Amazon profit (primary) | Website profit (secondary)"),
         'Opportunity Score': st.column_config.TextColumn('Opportunity Score', width=150),
         'Links': st.column_config.TextColumn('Links', width=80)
     }
@@ -903,80 +922,215 @@ def display_consolidated_table(consolidated_df: pd.DataFrame):
     )
 
 
-def display_card_view(routes_df):
-    """Display opportunities as cards with pagination"""
+def display_enhanced_consolidated_view(routes_df):
+    """Enhanced consolidated view with historic deals styling"""
     
     if routes_df.empty:
-        st.info("No opportunities to display")
+        st.info("🔍 Nessuna opportunità trovata con i filtri correnti")
         return
     
     # Sort by opportunity score descending
     routes_df = routes_df.sort_values('opportunity_score', ascending=False)
     
-    # Pagination settings
-    ITEMS_PER_PAGE = 10
+    # 📊 1. AGGREGATE METRICS AT TOP
+    st.markdown("### 📊 Metriche Consolidate")
+    col1, col2, col3, col4 = st.columns(4)
     
-    # Initialize page in session state
-    if 'card_page' not in st.session_state:
-        st.session_state.card_page = 0
-    
-    total_items = len(routes_df)
-    total_pages = (total_items - 1) // ITEMS_PER_PAGE + 1
-    
-    # Calculate slice for current page
-    start_idx = st.session_state.card_page * ITEMS_PER_PAGE
-    end_idx = min(start_idx + ITEMS_PER_PAGE, total_items)
-    
-    # Get current page items
-    current_page_df = routes_df.iloc[start_idx:end_idx]
-    
-    # Display page info
-    st.info(f"📄 Page {st.session_state.card_page + 1} of {total_pages} | Showing {start_idx + 1}-{end_idx} of {total_items} items")
-    
-    # Display cards in 2-column grid
-    cols = st.columns(2)
-    
-    for idx, (_, opp) in enumerate(current_page_df.iterrows()):
-        with cols[idx % 2]:
-            display_opportunity_card(opp, start_idx + idx)
-    
-    # Pagination controls
-    st.markdown("---")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
+    total_opportunities = len(routes_df)
+    avg_margin = routes_df['gross_margin_pct'].mean() if 'gross_margin_pct' in routes_df.columns else routes_df['roi'].mean()
+    avg_score = routes_df['opportunity_score'].mean()
+    hot_deals_count = len(routes_df[routes_df['opportunity_score'] > 80])
     
     with col1:
-        if st.button("⬅️ Previous", disabled=(st.session_state.card_page == 0)):
-            st.session_state.card_page -= 1
-            st.rerun()
-    
+        st.metric("🎯 Opportunità Totali", total_opportunities, delta=f"+{total_opportunities}")
     with col2:
-        # Page selector
-        new_page = st.selectbox(
-            "Go to page:",
-            range(1, total_pages + 1),
-            index=st.session_state.card_page,
-            key="page_selector"
-        )
-        if new_page - 1 != st.session_state.card_page:
-            st.session_state.card_page = new_page - 1
-            st.rerun()
-    
+        margin_label = "Margine %" if 'gross_margin_pct' in routes_df.columns else "ROI %"
+        st.metric(f"💰 {margin_label} Medio", f"{avg_margin:.1f}%", 
+                 delta=f"{avg_margin-20:.1f}%" if avg_margin > 20 else None)
     with col3:
-        if st.button("Next ➡️", disabled=(st.session_state.card_page >= total_pages - 1)):
-            st.session_state.card_page += 1
-            st.rerun()
+        st.metric("⭐ Score Medio", f"{avg_score:.0f}", delta=f"{avg_score-70:.0f}")
+    with col4:
+        st.metric("🔥 Top Deals (>80)", hot_deals_count, delta=hot_deals_count)
     
-    # Quick jump buttons for convenience
-    if total_pages > 5:
-        st.markdown("**Quick Jump:**")
-        jump_cols = st.columns(5)
+    # 🏆 2. DEAL OF THE DAY
+    st.markdown("### 🏆 Opportunità del Giorno")
+    best_deal = routes_df.iloc[0]
+    source = best_deal.get('source', '').upper()
+    target = best_deal.get('target', '').upper()
+    route_display = f"🛣️ {source} → {target}"
+    margin_val = best_deal.get('gross_margin_pct', best_deal.get('roi', 0))
+    
+    st.success(f"**{best_deal.get('title', '')[:60]}...** | {route_display} | Margine {margin_val:.1f}% | SCORE {best_deal.get('opportunity_score', 0):.0f}")
+    
+    # ⚡ 3. TOP OPPORTUNITIES CARDS
+    st.markdown("### ⚡ Top Opportunità")
+    
+    # Show top 10 in enhanced card format
+    top_deals = routes_df.head(10)
+    
+    for i, (_, deal) in enumerate(top_deals.iterrows()):
+        with st.container():
+            # Create enhanced card with gradient styling
+            display_enhanced_opportunity_card(deal, i+1)
+    
+    # 📋 4. QUICK SUMMARY TABLE
+    if len(routes_df) > 10:
+        st.markdown("### 📋 Riepilogo Completo")
+        st.caption(f"Mostrando tutte le {len(routes_df)} opportunità in formato tabella")
         
-        for i, col in enumerate(jump_cols):
-            with col:
-                if st.button(f"Page {i+1}", key=f"jump_{i}"):
-                    st.session_state.card_page = i
-                    st.rerun()
+        # Prepare summary data
+        summary_data = []
+        for _, deal in routes_df.iterrows():
+            source = deal.get('source', '').upper()
+            target = deal.get('target', '').upper() 
+            margin_val = deal.get('gross_margin_pct', deal.get('roi', 0))
+            
+            summary_data.append({
+                'ASIN': deal.get('asin', ''),
+                'Title': deal.get('title', '')[:50] + "..." if len(str(deal.get('title', ''))) > 50 else deal.get('title', ''),
+                'Route': f"{source}→{target}",
+                'Margine %': f"{margin_val:.1f}%",
+                'Score': f"{deal.get('opportunity_score', 0):.0f}",
+                'Amazon €': f"{deal.get('gross_margin_eur', 0):.2f}",
+                'Web €': f"{deal.get('profit_website', 0):.2f}"
+            })
+        
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+
+def display_enhanced_opportunity_card(opportunity, rank):
+    """Enhanced opportunity card with gradient styling like historic deals"""
+    
+    # Get values with fallbacks
+    asin = opportunity.get('asin', 'N/A')
+    title = opportunity.get('title', 'N/A')[:60] + "..." if len(str(opportunity.get('title', ''))) > 60 else opportunity.get('title', 'N/A')
+    source = opportunity.get('source', '').upper()
+    target = opportunity.get('target', '').upper()
+    margin_val = opportunity.get('gross_margin_pct', opportunity.get('roi', 0))
+    score = opportunity.get('opportunity_score', 0)
+    
+    # Amazon profit primary, website secondary
+    profit_amazon = opportunity.get('gross_margin_eur', 0)
+    profit_website = opportunity.get('profit_website', 0)
+    
+    buy_price = opportunity.get('purchase_price', 0)
+    sell_price = opportunity.get('target_price', 0)
+    
+    # Determine score emoji and color
+    if score >= 90:
+        score_emoji = "🌟"
+        score_color = "#00ff00"
+    elif score >= 80:
+        score_emoji = "⭐"
+        score_color = "#90EE90"
+    elif score >= 70:
+        score_emoji = "🔥"
+        score_color = "#ffaa00"
+    elif score >= 60:
+        score_emoji = "👍"
+        score_color = "#ffa500"
+    else:
+        score_emoji = "⚠️"
+        score_color = "#ff6666"
+    
+    # Margin color
+    if margin_val >= 30:
+        margin_color = "#00ff00"
+        margin_emoji = "🟢"
+    elif margin_val >= 20:
+        margin_color = "#90EE90"
+        margin_emoji = "🟡"
+    elif margin_val >= 10:
+        margin_color = "#ffaa00"
+        margin_emoji = "🟠"
+    else:
+        margin_color = "#ff6666"
+        margin_emoji = "🔴"
+    
+    # Create enhanced card HTML with opportunity-card styling
+    card_html = f'''
+    <div class="opportunity-card" style="
+        background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
+        border: 1px solid #2a2a2a;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 16px;
+        box-shadow: 
+            0 4px 6px rgba(0,0,0,0.5),
+            0 1px 3px rgba(0,0,0,0.08),
+            inset 0 1px 0 rgba(255,255,255,0.05);
+        transition: all 0.3s ease;
+        color: white;
+    ">
+        <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 12px;">
+            <h4 style="color: #ff0000; margin: 0; font-size: 16px;">#{rank} | {title}</h4>
+            <div style="text-align: right;">
+                <span style="background: {score_color}; color: black; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">
+                    {score_emoji} {score:.0f}
+                </span>
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 12px;">
+            <span style="color: #cccccc; font-size: 12px;">ASIN:</span>
+            <span style="color: white; font-weight: bold; margin-right: 20px;">{asin}</span>
+            <span style="color: #ff0000; font-size: 14px; font-weight: bold;">🛣️ {source} → {target}</span>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
+            <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+                <div style="color: #cccccc; font-size: 11px;">ACQUISTO</div>
+                <div style="color: white; font-weight: bold;">€{buy_price:.2f}</div>
+            </div>
+            <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+                <div style="color: #cccccc; font-size: 11px;">VENDITA</div>
+                <div style="color: white; font-weight: bold;">€{sell_price:.2f}</div>
+            </div>
+            <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 8px;">
+                <div style="color: #cccccc; font-size: 11px;">AMAZON</div>
+                <div style="color: #00ff00; font-weight: bold;">€{profit_amazon:.2f}</div>
+                <div style="color: #888888; font-size: 10px;">Web: €{profit_website:.2f}</div>
+            </div>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center;">
+                <span style="color: {margin_color}; font-size: 18px; font-weight: bold; margin-right: 8px;">
+                    {margin_emoji} {margin_val:.1f}%
+                </span>
+                <span style="color: #cccccc; font-size: 12px;">Margine</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <a href="https://www.amazon.it/dp/{asin}" target="_blank" style="
+                    background: #ff0000; 
+                    color: white; 
+                    padding: 6px 12px; 
+                    border-radius: 6px; 
+                    text-decoration: none; 
+                    font-size: 12px;
+                    font-weight: bold;
+                ">🛒 Amazon</a>
+                <a href="https://keepa.com/#!product/8-{asin}" target="_blank" style="
+                    background: #666666; 
+                    color: white; 
+                    padding: 6px 12px; 
+                    border-radius: 6px; 
+                    text-decoration: none; 
+                    font-size: 12px;
+                    font-weight: bold;
+                ">📊 Keepa</a>
+            </div>
+        </div>
+    </div>
+    '''
+    
+    st.markdown(card_html, unsafe_allow_html=True)
+
+
+def display_card_view(routes_df):
+    """Legacy card view - calls enhanced version"""
+    display_enhanced_consolidated_view(routes_df)
 
 
 def display_opportunity_card(opportunity, idx):
@@ -1081,8 +1235,9 @@ def display_analytics_dashboard(routes_df: pd.DataFrame, original_df: pd.DataFra
     
     with col1:
         avg_roi = routes_df['roi'].mean()
-        st.metric("Avg ROI", f"{avg_roi:.1f}%", 
-                 delta=f"{avg_roi-25:.1f}%" if avg_roi > 25 else None)
+        avg_margin = df['gross_margin_pct'].mean() if 'gross_margin_pct' in df.columns else 0
+        st.metric("Avg Margine %", f"{avg_margin:.1f}%", 
+                 delta=f"{avg_margin-15:.1f}%" if avg_margin > 15 else None)
     
     with col2:
         total_profit_potential = routes_df['gross_margin_eur'].sum() if 'gross_margin_eur' in routes_df.columns else routes_df['net_profit'].sum()
@@ -1102,16 +1257,21 @@ def display_analytics_dashboard(routes_df: pd.DataFrame, original_df: pd.DataFra
     col1, col2 = st.columns(2)
     
     with col1:
-        # ROI Distribution Histogram
-        fig_roi = px.histogram(
+        # Margine % Distribution Histogram
+        # Use gross_margin_pct if available, otherwise fallback to roi
+        margin_col = 'gross_margin_pct' if 'gross_margin_pct' in routes_df.columns else 'roi'
+        title = "Margine % Distribution" if margin_col == 'gross_margin_pct' else "ROI % Distribution"
+        label = 'Margine %' if margin_col == 'gross_margin_pct' else 'ROI %'
+        
+        fig_margin = px.histogram(
             routes_df, 
-            x='roi', 
+            x=margin_col, 
             nbins=20,
-            title="ROI Distribution",
-            labels={'roi': 'ROI %', 'count': 'Number of Products'},
+            title=title,
+            labels={margin_col: label, 'count': 'Number of Products'},
             color_discrete_sequence=['#ff0000']
         )
-        st.plotly_chart(fig_roi, use_container_width=True)
+        st.plotly_chart(fig_margin, use_container_width=True)
     
     with col2:
         # Route Profitability Heatmap
@@ -1135,13 +1295,16 @@ def display_analytics_dashboard(routes_df: pd.DataFrame, original_df: pd.DataFra
             
             # Fallback: Simple bar chart of routes
             if 'route' in routes_df.columns:
-                route_avg = routes_df.groupby('route')['roi'].mean().sort_values(ascending=False).head(10)
+                if 'gross_margin_pct' in routes_df.columns:
+                    route_avg = routes_df.groupby('route')['gross_margin_pct'].mean().sort_values(ascending=False).head(10)
+                else:
+                    route_avg = routes_df.groupby('route')['roi'].mean().sort_values(ascending=False).head(10)
                 fig_routes = px.bar(
                     x=route_avg.values,
                     y=route_avg.index,
                     orientation='h',
-                    title="Top 10 Routes by ROI",
-                    labels={'x': 'Avg ROI %', 'y': 'Route'},
+                    title="Top 10 Routes by Margine %",
+                    labels={'x': 'Avg Margine %', 'y': 'Route'},
                     color_discrete_sequence=['#ff0000']
                 )
                 st.plotly_chart(fig_routes, use_container_width=True)
@@ -1218,7 +1381,10 @@ def apply_preset_filter(df: pd.DataFrame, preset_name: str) -> pd.DataFrame:
         return df
     
     if preset_name == "🔥 Hot Deals":
-        return df[df['roi'] > 35]
+        if 'gross_margin_pct' in df.columns:
+            return df[df['gross_margin_pct'] > 25]
+        else:
+            return df[df['roi'] > 35]  # Fallback to ROI
     
     elif preset_name == "👍 Safe Bets":
         # Need to calculate risk for all items
@@ -1511,7 +1677,7 @@ def display_risk_alerts(opportunities_df):
                         # ROI e margini
                         roi = row.get('roi', 0)
                         margin = row.get('gross_margin_pct', 0)
-                        st.write(f"• ROI: {roi:.1f}% | Margine: {margin:.1f}%")
+                        st.write(f"• Margine: {margin:.1f}% | ROI: {roi:.1f}%")
                         
                         # ROI validation warning
                         if roi > 50:
@@ -1652,7 +1818,7 @@ def main():
             )
             
             min_roi = st.slider(
-                "Minimum ROI %",
+                "Minimum Margine %",
                 min_value=0.0,
                 max_value=100.0,
                 value=10.0,
@@ -1839,7 +2005,8 @@ def main():
                 
                 with col4:
                     best_roi = best_routes['roi'].max() if 'roi' in best_routes.columns else 0
-                    st.metric("💰 Miglior ROI", f"{best_roi:.1f}%")
+                    best_margin = df['gross_margin_pct'].max() if 'gross_margin_pct' in df.columns else 0
+                    st.metric("💰 Miglior Margine %", f"{best_margin:.1f}%")
                     
                     # ROI validation warning for best ROI
                     if best_roi > 50:
@@ -1907,7 +2074,7 @@ def main():
                             if valid_deal:
                                 # Apply sidebar preset filters
                                 if preset_filter == "🔥 Hot Deals":
-                                    if enhanced_deal['roi_pct'] > 35:
+                                    if enhanced_deal.get('margin_pct', enhanced_deal.get('roi_pct', 0)) > 25:
                                         enhanced_deals.append(enhanced_deal)
                                 elif preset_filter == "👍 Safe Bets":
                                     risk = get_deal_risk_alert(deal)
@@ -1938,7 +2105,7 @@ def main():
                         total_opportunities = len(enhanced_deals)
                         avg_roi = sum(d['roi_pct'] for d in enhanced_deals) / len(enhanced_deals)
                         avg_score = sum(d['score'] for d in enhanced_deals) / len(enhanced_deals)
-                        hot_deals_count = len([d for d in enhanced_deals if d['roi_pct'] > 40])
+                        hot_deals_count = len([d for d in enhanced_deals if d.get('margin_pct', d.get('roi_pct', 0)) > 30])
                         
                         with col1:
                             st.metric("🎯 Opportunità Totali", total_opportunities, delta=f"+{total_opportunities}")
@@ -1947,14 +2114,14 @@ def main():
                         with col3:
                             st.metric("⭐ Score Medio", f"{avg_score:.0f}", delta=f"{avg_score-70:.0f}")
                         with col4:
-                            st.metric("🔥 Hot Deals (>40% ROI)", hot_deals_count, delta=hot_deals_count)
+                            st.metric("🔥 Hot Deals (>30% Margine)", hot_deals_count, delta=hot_deals_count)
                         
                         # 🏆 2. DEAL OF THE DAY
                         st.markdown("### 🏆 Deal of the Day")
                         best_deal = enhanced_deals[0]
                         route_display = create_route_display(best_deal['source'], best_deal['target'])
                         
-                        st.success(f"**{best_deal['title'][:60]}...** | {route_display} | ROI {best_deal['roi_pct']:.1f}% | SCORE {best_deal['score']:.0f}")
+                        st.success(f"**{best_deal['title'][:60]}...** | {route_display} | Margine {best_deal.get('margin_pct', best_deal['roi_pct']):.1f}% | SCORE {best_deal['score']:.0f}")
                         
                         # ROI validation warning for best deal
                         if best_deal['roi_pct'] > 50:
@@ -2035,7 +2202,8 @@ def main():
                                 'Net Cost €': f"{deal['net_cost']:.2f}",
                                 'Sell €': f"{sell_price:.2f}",
                                 'Profit €': f"{profit_value:.2f}",  # USA VALORE VALIDATO
-                                'ROI': f"{roi_emoji} {roi_value:.1f}%",  # USA VALORE VALIDATO
+                                'Margine %': f"{roi_emoji} {roi_value:.1f}%",  # USA VALORE VALIDATO
+                                'ROI': f"{roi_value:.1f}%",
                                 'Score': f"{score_stars} ({deal['score']:.0f})",
                                 'Killer Metrics': killer_display,
                                 'Risk': f"{risk_emoji} {risk_alert}"
@@ -2081,38 +2249,38 @@ def main():
                             break
                     
                     if nintendo_data:
-                        st.write("**DATI NINTENDO SWITCH CAMERA:**")
-                        st.write(f"Buy Price: €{nintendo_data.get('buy_price', 0):.2f}")
-                        st.write(f"Net Cost: €{nintendo_data.get('net_cost', 0):.2f}")
-                        st.write(f"Sell Price: €{nintendo_data.get('sell_price', 0):.2f}")
-                        st.write(f"Profit (dal sistema): €{nintendo_data.get('profit_eur', 0):.2f}")
-                        st.write(f"ROI (dal sistema): {nintendo_data.get('roi_pct', 0):.1f}%")
+                        st.write("**CALCOLI NINTENDO SWITCH CAMERA:**")
                         
-                        # Mostra cost breakdown se disponibile
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.write("**AMAZON/FBM:**")
+                            st.write(f"Profitto: €{nintendo_data.get('gross_margin_eur', 0):.2f}")
+                            st.write(f"ROI: {nintendo_data.get('roi', 0):.1f}%")
+                            st.write(f"Referral Fee: €{nintendo_data.get('cost_breakdown', {}).get('referral_fee', 0):.2f}")
+                            st.write(f"Fulfillment: €{nintendo_data.get('cost_breakdown', {}).get('fulfillment_fee', 0):.2f}")
+                        
+                        with col2:
+                            st.write("**SITO WEB (Info):**")
+                            st.caption(f"Profitto: €{nintendo_data.get('profit_website', 0):.2f}")
+                            st.caption(f"ROI: {nintendo_data.get('roi_website', 0):.1f}%")
+                            st.caption(f"Fee 5%: €{nintendo_data.get('cost_breakdown', {}).get('website_fee_5pct', 0):.2f}")
+                            st.caption(f"Spedizione: €{nintendo_data.get('cost_breakdown', {}).get('website_shipping', 0):.2f}")
+                        
+                        with col3:
+                            st.write("**CONFRONTO:**")
+                            diff = nintendo_data.get('profit_difference', 0)
+                            if diff > 0:
+                                st.success(f"Sito Web +€{diff:.2f}")
+                            else:
+                                st.error(f"Amazon +€{abs(diff):.2f}")
+                            st.info(f"Canale Migliore: {nintendo_data.get('best_channel', 'N/A')}")
+                        
+                        # Mostra cost breakdown dettagliato
                         if 'cost_breakdown' in nintendo_data:
-                            st.write("\n**Cost Breakdown:**")
+                            st.write("\n**Cost Breakdown Completo:**")
                             for cost_type, amount in nintendo_data['cost_breakdown'].items():
                                 st.write(f"  {cost_type}: €{amount:.2f}")
-                        
-                        # CALCOLO MANUALE CORRETTO
-                        st.write("\n**CALCOLO CORRETTO (Amazon Calculator):**")
-                        buy = 39.29
-                        net_after_discount = buy * 0.79 / 1.19  # Sconto 21% e rimuovi IVA 19%
-                        inbound = 5.14
-                        referral = 56.39 * 0.15
-                        fba = 3.0
-                        returns = 56.39 * 0.02
-                        total_cost = net_after_discount + inbound + referral + fba + returns + 1.5
-                        real_profit = 56.39 - total_cost
-                        real_roi = (real_profit / (net_after_discount + inbound)) * 100
-                        
-                        st.write(f"Net dopo sconto/IVA: €{net_after_discount:.2f}")
-                        st.write(f"Costi totali: €{total_cost:.2f}")
-                        st.write(f"**PROFITTO REALE: €{real_profit:.2f}**")
-                        st.write(f"**ROI REALE: {real_roi:.1f}%**")
-                        
-                        if abs(nintendo_data.get('profit_eur', 0) - real_profit) > 2:
-                            st.error(f"⚠️ DISCREPANZA: Sistema mostra €{nintendo_data.get('profit_eur', 0):.2f}, dovrebbe essere €{real_profit:.2f}")
                     else:
                         st.info("Nintendo Switch Camera (B0F3JNJXQ5) non trovato nei dati")
                 
@@ -2136,6 +2304,7 @@ def main():
                                 st.write(f"Target Price: €{prod.get('target_price', 0):.2f}")
                                 st.write(f"Total Cost: €{prod.get('total_cost', 0):.2f}")
                                 st.write(f"**Profit: €{prod.get('gross_margin_eur', 0):.2f}**")
+                                st.write(f"**Margine: {prod.get('gross_margin_pct', 0):.1f}%**")
                                 st.write(f"**ROI: {prod.get('roi', 0):.1f}%**")
                                 
                                 # Mostra breakdown se disponibile
@@ -2188,6 +2357,7 @@ def main():
                                 st.write(f"Revenue: €{sell:.2f}")
                                 st.write(f"- Costi: €{total_manual:.2f}")
                                 st.write(f"= **PROFITTO: €{profit_manual:.2f}**")
+                                st.write(f"**Margine: {(profit_manual/target_price*100) if target_price > 0 else 0:.1f}%**")
                                 st.write(f"**ROI: {roi_manual:.1f}%**")
                                 
                                 # Confronto
@@ -2249,7 +2419,11 @@ def main():
                 # Enhanced Filters Section
                 st.subheader("🔧 Filtri Avanzati")
                 
-                # Basic filters (always visible)
+                # Initialize session state for filters if not exists
+                if 'filters_applied' not in st.session_state:
+                    st.session_state.filters_applied = False
+                
+                # Basic filters (always visible) - moved to session state
                 st.markdown("**Filtri Base:**")
                 col1, col2, col3 = st.columns(3)
                 
@@ -2258,56 +2432,139 @@ def main():
                         "Min Opportunity Score",
                         min_value=0,
                         max_value=100,
-                        value=50,
+                        value=st.session_state.get('min_score_filter', 50),
                         step=5,
+                        key='min_score_slider',
                         help="Filter products by minimum opportunity score"
                     )
+                    st.session_state.min_score_filter = min_score_filter
                 
                 with col2:
                     min_roi_filter = st.slider(
-                        "Min ROI %",
+                        "Min Margine %",
                         min_value=0,
                         max_value=100,
-                        value=10,
+                        value=st.session_state.get('min_roi_filter', 10),
                         step=5,
-                        help="Filter products by minimum ROI percentage"
+                        key='min_roi_slider',
+                        help="Filter products by minimum margin percentage"
                     )
+                    st.session_state.min_roi_filter = min_roi_filter
                 
                 with col3:
                     max_amazon_dominance = st.slider(
                         "Max Amazon Dominance %",
                         min_value=0,
                         max_value=100,
-                        value=80,
+                        value=st.session_state.get('max_amazon_dominance', 80),
                         step=5,
+                        key='max_amazon_slider',
                         help="Filter products by maximum Amazon buy box dominance"
                     )
+                    st.session_state.max_amazon_dominance = max_amazon_dominance
                 
-                # Advanced filters (expandable)
+                # Advanced filters (expandable) - moved to session state
                 with st.expander("⚙️ Filtri Dettagliati", expanded=False):
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        min_velocity = st.slider("Min Velocity Score", 0, 100, 30)
-                        max_amazon_share = st.slider("Max Amazon Share %", 0, 100, 80)
+                        min_velocity = st.slider(
+                            "Min Velocity Score", 
+                            0, 100, 
+                            st.session_state.get('min_velocity', 30),
+                            key='min_velocity_slider'
+                        )
+                        st.session_state.min_velocity = min_velocity
+                        
+                        max_amazon_share = st.slider(
+                            "Max Amazon Share %", 
+                            0, 100, 
+                            st.session_state.get('max_amazon_share', 80),
+                            key='max_amazon_share_slider'
+                        )
+                        st.session_state.max_amazon_share = max_amazon_share
                     
                     with col2:
-                        min_rating = st.slider("Min Rating", 1.0, 5.0, 3.5, 0.1)
-                        max_return_rate = st.slider("Max Return Rate %", 0, 50, 20)
+                        min_rating = st.slider(
+                            "Min Rating", 
+                            1.0, 5.0, 
+                            st.session_state.get('min_rating', 3.5), 
+                            0.1,
+                            key='min_rating_slider'
+                        )
+                        st.session_state.min_rating = min_rating
+                        
+                        max_return_rate = st.slider(
+                            "Max Return Rate %", 
+                            0, 50, 
+                            st.session_state.get('max_return_rate', 20),
+                            key='max_return_rate_slider'
+                        )
+                        st.session_state.max_return_rate = max_return_rate
                     
                     with col3:
-                        only_historic_deals = st.checkbox("Solo Affari Storici")
-                        only_prime_eligible = st.checkbox("Solo Prime Eligible")
+                        only_historic_deals = st.checkbox(
+                            "Solo Affari Storici",
+                            value=st.session_state.get('only_historic_deals', False),
+                            key='only_historic_checkbox'
+                        )
+                        st.session_state.only_historic_deals = only_historic_deals
+                        
+                        only_prime_eligible = st.checkbox(
+                            "Solo Prime Eligible",
+                            value=st.session_state.get('only_prime_eligible', False),
+                            key='only_prime_checkbox'
+                        )
+                        st.session_state.only_prime_eligible = only_prime_eligible
                 
-                # Apply all filters to the data
-                filtered_routes = best_routes.copy()
-                original_count = len(filtered_routes)
+                # Apply Filters Button
+                st.markdown("---")
+                col1, col2 = st.columns([1, 3])
                 
-                # Basic filters
-                filtered_routes = filtered_routes[filtered_routes['opportunity_score'] >= min_score_filter]
-                filtered_routes = filtered_routes[filtered_routes['roi'] >= min_roi_filter]
+                with col1:
+                    apply_filters_button = st.button(
+                        "🔍 Applica Filtri", 
+                        type="primary",
+                        help="Applica i filtri selezionati ai risultati"
+                    )
                 
-                # CRITICAL: Filter out same-country routes and zero/negative ROI
+                with col2:
+                    if not st.session_state.filters_applied:
+                        st.info("💡 Modifica i filtri e premi 'Applica Filtri' per aggiornare i risultati")
+                    else:
+                        st.success("✅ Filtri applicati! Modifica i parametri sopra e riapplica se necessario.")
+                
+                # Set flag if button was pressed
+                if apply_filters_button:
+                    st.session_state.filters_applied = True
+                
+                # Apply all filters to the data - ONLY if filters have been applied
+                if st.session_state.filters_applied:
+                    filtered_routes = best_routes.copy()
+                    original_count = len(filtered_routes)
+                    
+                    # Get filter values from session state
+                    min_score_filter = st.session_state.get('min_score_filter', 50)
+                    min_roi_filter = st.session_state.get('min_roi_filter', 10)
+                    max_amazon_dominance = st.session_state.get('max_amazon_dominance', 80)
+                    min_velocity = st.session_state.get('min_velocity', 30)
+                    max_amazon_share = st.session_state.get('max_amazon_share', 80)
+                    min_rating = st.session_state.get('min_rating', 3.5)
+                    max_return_rate = st.session_state.get('max_return_rate', 20)
+                    only_historic_deals = st.session_state.get('only_historic_deals', False)
+                    only_prime_eligible = st.session_state.get('only_prime_eligible', False)
+                    
+                    # Basic filters
+                    filtered_routes = filtered_routes[filtered_routes['opportunity_score'] >= min_score_filter]
+                    filtered_routes = filtered_routes[filtered_routes['roi'] >= min_roi_filter]
+                else:
+                    # Show unfiltered data with message to apply filters
+                    filtered_routes = best_routes.copy()
+                    original_count = len(filtered_routes)
+                    
+                    st.warning("⚠️ Filtri non ancora applicati. Usa il bottone 'Applica Filtri' per filtrare i risultati.")
+                
+                # CRITICAL: Always filter out same-country routes and zero/negative ROI (basic sanity filters)
                 # Fix column names - use 'source' and 'target' not 'source_market'/'target_market'
                 if 'source' in filtered_routes.columns and 'target' in filtered_routes.columns:
                     # Remove same-country routes (IT->IT, DE->DE, etc.)
@@ -2324,76 +2581,78 @@ def main():
                 # Remove routes with ROI <= 0 (impossible/invalid)
                 filtered_routes = filtered_routes[filtered_routes['roi'] > 0]
                 
-                # Logica di filtering geografico
-                if 'Tutti' not in purchase_countries and len(purchase_countries) > 0:
-                    # Filtra DOPO il calcolo di tutte le route
-                    filtered_routes = filtered_routes[
-                        filtered_routes['source'].str.upper().isin(purchase_countries)
-                    ]
-                
-                # Add additional data from original dataset for advanced filtering
-                if not df.empty and 'ASIN' in df.columns:
-                    # Create mapping for additional data - handle duplicate ASINs
-                    additional_data = {}
-                    for col in ['Buy Box: % Amazon 90 days', 'Reviews Rating', 'Return Rate', 'Prime Eligible']:
-                        if col in df.columns:
-                            # Use groupby to handle duplicate ASINs - take mean of numeric values
-                            try:
-                                if pd.api.types.is_numeric_dtype(df[col]):
-                                    additional_data[col] = df.groupby('ASIN')[col].mean().to_dict()
-                                else:
-                                    # For non-numeric, take first value
-                                    additional_data[col] = df.groupby('ASIN')[col].first().to_dict()
-                            except Exception:
-                                # Fallback: create empty mapping
-                                additional_data[col] = {}
+                # Apply advanced filtering only if filters are applied
+                if st.session_state.filters_applied:
+                    # Logica di filtering geografico
+                    if 'Tutti' not in purchase_countries and len(purchase_countries) > 0:
+                        # Filtra DOPO il calcolo di tutte le route
+                        filtered_routes = filtered_routes[
+                            filtered_routes['source'].str.upper().isin(purchase_countries)
+                        ]
                     
-                    # Add velocity scores if not present
-                    if 'velocity_score' not in filtered_routes.columns:
-                        velocity_scores = {}
-                        for _, row in df.iterrows():
-                            asin = row.get('ASIN')
-                            if asin:
+                    # Add additional data from original dataset for advanced filtering
+                    if not df.empty and 'ASIN' in df.columns:
+                        # Create mapping for additional data - handle duplicate ASINs
+                        additional_data = {}
+                        for col in ['Buy Box: % Amazon 90 days', 'Reviews Rating', 'Return Rate', 'Prime Eligible']:
+                            if col in df.columns:
+                                # Use groupby to handle duplicate ASINs - take mean of numeric values
                                 try:
-                                    from analytics import velocity_index
-                                    velocity_scores[asin] = velocity_index(row)
+                                    if pd.api.types.is_numeric_dtype(df[col]):
+                                        additional_data[col] = df.groupby('ASIN')[col].mean().to_dict()
+                                    else:
+                                        # For non-numeric, take first value
+                                        additional_data[col] = df.groupby('ASIN')[col].first().to_dict()
                                 except Exception:
-                                    velocity_scores[asin] = 0
-                        filtered_routes['velocity_score'] = filtered_routes['asin'].map(velocity_scores).fillna(0)
-                    
-                    # Apply Amazon dominance filter
-                    if 'Buy Box: % Amazon 90 days' in additional_data:
-                        filtered_routes['amazon_dominance'] = filtered_routes['asin'].map(additional_data['Buy Box: % Amazon 90 days']).fillna(0)
-                        filtered_routes = filtered_routes[filtered_routes['amazon_dominance'] <= max_amazon_dominance]
-                    
-                    # Apply advanced filters
-                    if min_velocity > 0:
-                        filtered_routes = filtered_routes[filtered_routes['velocity_score'] >= min_velocity]
-                    
-                    if max_amazon_share < 100:
-                        if 'amazon_dominance' in filtered_routes.columns:
-                            filtered_routes = filtered_routes[filtered_routes['amazon_dominance'] <= max_amazon_share]
-                    
-                    if min_rating > 1.0:
-                        if 'Reviews Rating' in additional_data:
-                            filtered_routes['rating'] = filtered_routes['asin'].map(additional_data['Reviews Rating']).fillna(0)
-                            filtered_routes = filtered_routes[filtered_routes['rating'] >= min_rating]
-                    
-                    if max_return_rate < 50:
-                        if 'Return Rate' in additional_data:
-                            filtered_routes['return_rate'] = filtered_routes['asin'].map(additional_data['Return Rate']).fillna(0)
-                            filtered_routes = filtered_routes[filtered_routes['return_rate'] <= max_return_rate]
-                    
-                    if only_historic_deals:
-                        # Filter only historic deals
-                        historic_asins = set(historic_deals_df['ASIN'].tolist() if 'ASIN' in historic_deals_df.columns else 
-                                           historic_deals_df['asin'].tolist() if 'asin' in historic_deals_df.columns else [])
-                        filtered_routes = filtered_routes[filtered_routes['asin'].isin(historic_asins)]
-                    
-                    if only_prime_eligible:
-                        if 'Prime Eligible' in additional_data:
-                            filtered_routes['prime_eligible'] = filtered_routes['asin'].map(additional_data['Prime Eligible']).fillna(False)
-                            filtered_routes = filtered_routes[filtered_routes['prime_eligible'] == True]
+                                    # Fallback: create empty mapping
+                                    additional_data[col] = {}
+                        
+                        # Add velocity scores if not present
+                        if 'velocity_score' not in filtered_routes.columns:
+                            velocity_scores = {}
+                            for _, row in df.iterrows():
+                                asin = row.get('ASIN')
+                                if asin:
+                                    try:
+                                        from analytics import velocity_index
+                                        velocity_scores[asin] = velocity_index(row)
+                                    except Exception:
+                                        velocity_scores[asin] = 0
+                            filtered_routes['velocity_score'] = filtered_routes['asin'].map(velocity_scores).fillna(0)
+                        
+                        # Apply Amazon dominance filter
+                        if 'Buy Box: % Amazon 90 days' in additional_data:
+                            filtered_routes['amazon_dominance'] = filtered_routes['asin'].map(additional_data['Buy Box: % Amazon 90 days']).fillna(0)
+                            filtered_routes = filtered_routes[filtered_routes['amazon_dominance'] <= max_amazon_dominance]
+                        
+                        # Apply advanced filters
+                        if min_velocity > 0:
+                            filtered_routes = filtered_routes[filtered_routes['velocity_score'] >= min_velocity]
+                        
+                        if max_amazon_share < 100:
+                            if 'amazon_dominance' in filtered_routes.columns:
+                                filtered_routes = filtered_routes[filtered_routes['amazon_dominance'] <= max_amazon_share]
+                        
+                        if min_rating > 1.0:
+                            if 'Reviews Rating' in additional_data:
+                                filtered_routes['rating'] = filtered_routes['asin'].map(additional_data['Reviews Rating']).fillna(0)
+                                filtered_routes = filtered_routes[filtered_routes['rating'] >= min_rating]
+                        
+                        if max_return_rate < 50:
+                            if 'Return Rate' in additional_data:
+                                filtered_routes['return_rate'] = filtered_routes['asin'].map(additional_data['Return Rate']).fillna(0)
+                                filtered_routes = filtered_routes[filtered_routes['return_rate'] <= max_return_rate]
+                        
+                        if only_historic_deals:
+                            # Filter only historic deals
+                            historic_asins = set(historic_deals_df['ASIN'].tolist() if 'ASIN' in historic_deals_df.columns else 
+                                               historic_deals_df['asin'].tolist() if 'asin' in historic_deals_df.columns else [])
+                            filtered_routes = filtered_routes[filtered_routes['asin'].isin(historic_asins)]
+                        
+                        if only_prime_eligible:
+                            if 'Prime Eligible' in additional_data:
+                                filtered_routes['prime_eligible'] = filtered_routes['asin'].map(additional_data['Prime Eligible']).fillna(False)
+                                filtered_routes = filtered_routes[filtered_routes['prime_eligible'] == True]
                 
                 # Sort by Opportunity Score descending
                 filtered_routes = filtered_routes.sort_values('opportunity_score', ascending=False)
@@ -2402,20 +2661,25 @@ def main():
                 routes_before_preset = len(filtered_routes)
                 if preset_filter != "Tutti":
                     filtered_routes = apply_preset_filter(filtered_routes, preset_filter)
-                    st.info(f"🎯 Preset '{preset_filter}' applicato: {len(filtered_routes)} opportunità ({routes_before_preset - len(filtered_routes)} filtrate)")
+                    if st.session_state.filters_applied:
+                        st.info(f"🎯 Preset '{preset_filter}' applicato: {len(filtered_routes)} opportunità ({routes_before_preset - len(filtered_routes)} filtrate)")
                 
                 # Enhanced filter results display
                 filtered_count = len(filtered_routes)
-                filter_rate = filtered_count / original_count * 100 if original_count > 0 else 0
                 
-                # Mostra info su quante opportunità sono state filtrate geograficamente
-                if 'Tutti' not in purchase_countries and len(purchase_countries) > 0:
-                    st.info(f"🌍 Mostrando solo opportunità con acquisto in: {', '.join(purchase_countries)}")
-                
-                if filtered_count < original_count:
-                    st.info(f"📊 Mostrando {filtered_count} di {original_count} ASIN ({filter_rate:.1f}% - {original_count - filtered_count} filtrati)")
+                if st.session_state.filters_applied:
+                    filter_rate = filtered_count / original_count * 100 if original_count > 0 else 0
+                    
+                    # Mostra info su quante opportunità sono state filtrate geograficamente
+                    if 'Tutti' not in purchase_countries and len(purchase_countries) > 0:
+                        st.info(f"🌍 Mostrando solo opportunità con acquisto in: {', '.join(purchase_countries)}")
+                    
+                    if filtered_count < original_count:
+                        st.success(f"✅ Filtri applicati: {filtered_count} di {original_count} ASIN ({filter_rate:.1f}% - {original_count - filtered_count} filtrati)")
+                    else:
+                        st.success(f"✅ Filtri applicati: tutti i {filtered_count} ASIN passano i criteri")
                 else:
-                    st.info(f"📊 Mostrando tutti i {filtered_count} ASIN")
+                    st.info(f"📊 Visualizzando {filtered_count} opportunità (filtri di base applicati)")
                 
                 if not filtered_routes.empty:
                     # Prepare consolidated data

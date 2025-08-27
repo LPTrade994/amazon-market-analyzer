@@ -50,37 +50,66 @@ def calculate_all_routes_cached(df_csv: str, discount: float, strategy: str, sce
 
 def compute_fees(row: pd.Series, sale_price: float, target_locale: str, mode: str = 'FBA') -> Dict[str, float]:
     """
-    Calcola TUTTE le fees Amazon correttamente
+    Usa la referral fee REALE dal dataset Keepa
     """
     if sale_price <= 0:
-        return {'referral': 0.0, 'fba': 0.0, 'shipping': 0.0, 'total': 0.0}
+        return {'referral': 0.0, 'fulfillment': 0.0, 'total': 0.0}
     
-    # REFERRAL FEE - SEMPRE 15% del prezzo di vendita
-    # Non importa cosa dice il dataset, usa sempre 15%
-    referral_fee = sale_price * 0.15
+    # USA IL VALORE ESATTO DAL DATASET KEEPA
+    referral_fee = 0.0
+    if 'Referral Fee based on current Buy Box price' in row.index:
+        referral_fee = float(row.get('Referral Fee based on current Buy Box price', 0))
     
-    # FBA fees (fulfillment)
+    # Fallback se non presente
+    if referral_fee == 0:
+        referral_pct = float(row.get('Referral Fee %', 0.15))
+        referral_fee = sale_price * referral_pct
+    
+    # FULFILLMENT COSTS
     if mode == 'FBA':
-        # Usa il valore dal dataset o default €3
-        fba_fee = float(row.get('FBA Pick&Pack Fee', 3.0))
-        shipping_cost = 0  # Incluso in FBA
+        # USA IL VALORE ESATTO DAL DATASET per FBA
+        fulfillment_fee = float(row.get('FBA Pick&Pack Fee', 3.0))
     else:  # FBM
-        fba_fee = 0
-        # Calcola shipping per FBM
-        weight = row.get('Weight', 0.5)
-        if weight < 1:
-            shipping_cost = 4.5
-        elif weight < 3:
-            shipping_cost = 6.5
-        else:
-            shipping_cost = 9.5
+        # Calcola costo spedizione per FBM con listino GLS
+        fulfillment_fee = calculate_fbm_shipping_cost(row, target_locale)
     
     return {
         'referral': referral_fee,
-        'fba': fba_fee,
-        'shipping': shipping_cost,
-        'total': referral_fee + fba_fee + shipping_cost
+        'fulfillment': fulfillment_fee,
+        'total': referral_fee + fulfillment_fee
     }
+
+
+def calculate_fbm_shipping_cost(row: pd.Series, target_locale: str) -> float:
+    """
+    Calcola costo spedizione FBM basato su listino GLS Italia
+    """
+    # Per spedizioni estero fisso €10 IVA inclusa
+    if target_locale.lower() != 'it':
+        return 10.0  # €10 IVA inclusa per estero
+    
+    # Per Italia usa listino GLS
+    weight = float(row.get('Weight', 0.5))  # Peso in kg, default 500g
+    
+    # Listino GLS Light CE (prezzi IVA esclusa)
+    if weight <= 3:
+        base_cost = 4.05
+    elif weight <= 4:
+        base_cost = 5.05
+    elif weight <= 5:
+        base_cost = 6.05
+    else:
+        # Oltre 5kg: €6.05 + €2.20 per ogni kg aggiuntivo
+        extra_kg = weight - 5
+        base_cost = 6.05 + (extra_kg * 2.20)
+    
+    # Aggiungi fuel surcharge 4%
+    base_cost = base_cost * 1.04
+    
+    # Aggiungi IVA 22%
+    final_cost = base_cost * 1.22
+    
+    return round(final_cost, 2)
 
 
 def compute_route_metrics(
@@ -136,7 +165,7 @@ def compute_route_metrics(
             'purchase_price': purchase_price,
             'net_cost': net_cost,
             'target_price': 0.0,
-            'fees': {'referral': 0.0, 'fba': 0.0, 'shipping': 0.0, 'total': 0.0},
+            'fees': {'referral': 0.0, 'fulfillment': 0.0, 'total': 0.0},
             'gross_margin_eur': 0.0,
             'gross_margin_pct': 0.0,
             'roi': 0.0,
@@ -147,45 +176,42 @@ def compute_route_metrics(
             'competition_score': 0.0
         }
     
-    # AGGIUNGI TUTTI I COSTI REALI
-    inbound_shipping = params.get('inbound_logistics', 5.0)  # €5 come da tuo esempio
-    
-    # Fees Amazon (referral + FBA)
+    # FEES AMAZON/FBM - USA VALORI REALI DAL DATASET
     mode = params.get('mode', 'FBA')
     fees = compute_fees(row, target_price, target_locale, mode)
     
-    # IMPORTANTE: Amazon Calculator usa target_price_ex_vat per il calcolo delle fees
-    # Questo riduce le fees totali
-    target_vat = 0.22 if target_locale == 'it' else 0.19  # IT=22%, DE=19%
-    target_price_ex_vat = target_price / (1 + target_vat)  # Prezzo senza VAT
-    
-    # Ricalcola fees sul prezzo ex-VAT per essere più accurati
-    fees_ex_vat = compute_fees(row, target_price_ex_vat, target_locale, mode)
-    
-    # Costi aggiuntivi più conservativi per allinearsi ad Amazon Calculator
-    returns_cost = target_price_ex_vat * 0.015  # 1.5% resi (più conservativo)
-    storage_cost = target_price_ex_vat * 0.003  # 0.3% storage (più conservativo) 
-    misc_costs = 0.25  # Altri costi operativi ridotti ulteriormente
-    
-    # CALCOLO TOTALE COSTI (come Amazon Seller Central)
-    total_costs = (
-        net_cost +                    # Costo prodotto dopo sconto e IVA
-        inbound_shipping +            # Spedizione verso Amazon (€5)
-        fees_ex_vat['referral'] +     # Referral fee su prezzo ex-VAT
-        fees_ex_vat['fba'] +          # FBA fee su prezzo ex-VAT
-        returns_cost +               # Perdite da resi
-        storage_cost +               # Storage mensile
-        misc_costs                   # Altri costi
+    # CALCOLO PROFITTO AMAZON/FBM - ALLINEATO AL REVENUE CALCULATOR UFFICIALE
+    # Solo costi base: prodotto + spedizione + fees ufficiali Amazon
+    total_costs_marketplace = (
+        net_cost +                      # Costo prodotto netto
+        params.get('inbound_logistics', 2.0) +  # Inbound verso magazzino
+        fees['referral'] +              # Referral fee
+        fees['fulfillment']             # Fulfillment fee
     )
     
-    # PROFITTO REALE (target_price_ex_vat già calcolato sopra)
-    real_profit = target_price_ex_vat - total_costs
+    profit_marketplace = target_price - total_costs_marketplace
     
-    # ROI REALE (basato su investimento iniziale)
-    investment = net_cost + inbound_shipping
-    real_roi = (real_profit / investment * 100) if investment > 0 else 0
+    # CALCOLO PROFITTO SITO WEB (5% fee)
+    website_fee = target_price * 0.05
+    website_shipping = calculate_fbm_shipping_cost(row, target_locale)  # Usa sempre FBM per sito
     
-    # MARGINE % SUL REVENUE
+    total_costs_website = (
+        net_cost +                      # Costo prodotto netto
+        params.get('inbound_logistics', 2.0) +  # Inbound verso magazzino
+        website_fee +                   # 5% piattaforma
+        website_shipping                # Spedizione GLS
+    )
+    
+    profit_website = target_price - total_costs_website
+    
+    # ROI per entrambi i canali
+    investment = net_cost + params.get('inbound_logistics', 2.0)
+    roi_marketplace = (profit_marketplace / investment * 100) if investment > 0 else 0
+    roi_website = (profit_website / investment * 100) if investment > 0 else 0
+    
+    # Usa il profitto migliore per il calcolo scores
+    real_profit = max(profit_marketplace, profit_website)
+    real_roi = max(roi_marketplace, roi_website)
     real_margin_pct = (real_profit / target_price * 100) if target_price > 0 else 0
     
     # Scoring
@@ -196,35 +222,40 @@ def compute_route_metrics(
     scoring_weights = params.get('scoring_weights', SCORING_WEIGHTS)
     opp_score = opportunity_score(profit_sc, velocity_sc, competition_sc, scoring_weights)
     
-    # IMPORTANTE: Restituisci i valori NEI CAMPI GIUSTI!
     return {
         'source': source_locale,
         'target': target_locale,
         'purchase_price': purchase_price,
-        'net_cost': net_cost,  # Costo netto dopo sconto/IVA
+        'net_cost': net_cost,
         'target_price': target_price,
         'fees': fees,
         
-        # QUESTI SONO I CAMPI CRITICI - DEVONO ESSERE CORRETTI!
-        'gross_margin_eur': real_profit,  # <-- PROFITTO REALE QUI
-        'gross_margin_pct': real_margin_pct,
-        'roi': real_roi,
-        'net_profit': real_profit,  # Duplicato per compatibilità
+        # Profitti per canale
+        'gross_margin_eur': profit_marketplace,  # Amazon/FBM
+        'profit_website': profit_website,        # Sito Web
+        'gross_margin_pct': (profit_marketplace / target_price * 100) if target_price > 0 else 0,
+        'margin_website_pct': (profit_website / target_price * 100) if target_price > 0 else 0,
         
-        # Totali per debug
-        'total_cost': total_costs,
-        'investment': investment,
+        # ROI per canale
+        'roi': roi_marketplace,
+        'roi_website': roi_website,
         
-        # Breakdown dettagliato per debug
+        # Miglior canale
+        'best_channel': 'Website' if profit_website > profit_marketplace else mode,
+        'profit_difference': profit_website - profit_marketplace,
+        
+        # Costi totali per debug
+        'total_cost': total_costs_marketplace,
+        'total_cost_website': total_costs_website,
+        
+        # Breakdown dettagliato
         'cost_breakdown': {
             'product_net_cost': net_cost,
-            'inbound_shipping': inbound_shipping,
-            'referral_fee': fees_ex_vat['referral'],
-            'fba_fee': fees_ex_vat.get('fba', 0),
-            'returns_cost': returns_cost,
-            'storage_cost': storage_cost,
-            'misc_costs': misc_costs,
-            'total_costs': total_costs
+            'inbound_shipping': params.get('inbound_logistics', 2.0),
+            'referral_fee': fees['referral'],
+            'fulfillment_fee': fees['fulfillment'],
+            'website_fee_5pct': website_fee,
+            'website_shipping': website_shipping
         },
         
         # Scores
