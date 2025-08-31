@@ -166,11 +166,15 @@ def calculate_profit_metrics(row: pd.Series, purchase_strategy: str, target_loca
     
     referral_fee = target_selling_price * referral_fee_pct
     
-    # Calculate profit
-    gross_profit = target_selling_price - net_purchase_cost - referral_fee - fba_fee
+    # RIMUOVI IVA dal prezzo di vendita per calcolo profitto corretto
+    target_vat_rate = vat_rates.get(target_locale.upper(), 0.20)
+    target_selling_price_net = target_selling_price / (1 + target_vat_rate)
     
-    # Calculate margins
-    profit_margin = (gross_profit / target_selling_price * 100) if target_selling_price > 0 else 0
+    # Calculate profit (USA PREZZO NETTO)
+    gross_profit = target_selling_price_net - net_purchase_cost - referral_fee - fba_fee
+    
+    # Calculate margins (usa prezzo netto per margine realistico)
+    profit_margin = (gross_profit / target_selling_price_net * 100) if target_selling_price_net > 0 else 0
     roi = (gross_profit / net_purchase_cost * 100) if net_purchase_cost > 0 else 0
     
     return {

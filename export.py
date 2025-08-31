@@ -32,8 +32,9 @@ def export_consolidated_csv(df: pd.DataFrame, filename: str = "analyzer_export.c
     # Definisci colonne per export in ordine preferito
     export_columns = [
         'ASIN', 'Title', 'Best Route', 
-        'Purchase Price €', 'Net Cost €', 'Target Price €', 'Fees €',
-        'Gross Margin €', 'Gross Margin %', 'ROI %', 'Opportunity Score',
+        'Purchase Price €', 'Net Cost €', 'Target Price €', 
+        'Target Price (Gross)', 'Target Price (Net)', 'VAT Amount', 'Fees €',
+        'Gross Margin €', 'Real Profit', 'Gross Margin %', 'ROI %', 'Opportunity Score',
         'Velocity Score', 'Competition Score', 'Risk Score', 'Momentum Score',
         'is_historic_deal', 'amazon_share', 'sales_rank'
     ]
@@ -57,6 +58,19 @@ def export_consolidated_csv(df: pd.DataFrame, filename: str = "analyzer_export.c
     
     # Crea DataFrame per export e ordina per ROI descending
     export_df = df[available_cols].copy()
+    
+    # Crea colonne VAT se non esistono già
+    if 'Target Price (Gross)' not in export_df.columns and 'target_price_gross' in df.columns:
+        export_df['Target Price (Gross)'] = df['target_price_gross']
+    
+    if 'Target Price (Net)' not in export_df.columns and 'target_price_net' in df.columns:
+        export_df['Target Price (Net)'] = df['target_price_net']
+    
+    if 'VAT Amount' not in export_df.columns and 'target_vat_amount' in df.columns:
+        export_df['VAT Amount'] = df['target_vat_amount']
+    
+    if 'Real Profit' not in export_df.columns and 'gross_margin_eur' in df.columns:
+        export_df['Real Profit'] = df['gross_margin_eur']
     
     # ORDINA per ROI descending di default
     roi_col = 'ROI %' if 'ROI %' in export_df.columns else 'roi'

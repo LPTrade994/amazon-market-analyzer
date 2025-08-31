@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, Tuple
 from scoring import velocity_index
+from config import VAT_RATES
 
 
 def calculate_historic_metrics(row: pd.Series) -> Dict[str, float]:
