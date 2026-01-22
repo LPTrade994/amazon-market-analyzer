@@ -36,7 +36,28 @@ def load_keepa_csv_cached(file_bytes: bytes, encoding: str) -> pd.DataFrame:
         pd.DataFrame: Loaded DataFrame
     """
     csv_file = BytesIO(file_bytes)
-    return pd.read_csv(csv_file, encoding=encoding)
+    
+    # Rileva automaticamente il formato CSV
+    csv_file.seek(0)
+    sample = csv_file.read(2048).decode(encoding, errors='ignore')
+    csv_file.seek(0)
+    
+    # Rileva il separatore più probabile
+    separators = ['\t', ';', ',', '|']
+    separator_counts = {sep: sample.count(sep) for sep in separators}
+    best_separator = max(separator_counts, key=separator_counts.get)
+    
+    # Se il miglior separatore ha almeno 3 occorrenze, usalo
+    if separator_counts[best_separator] >= 3:
+        if best_separator in ['\t', ';']:
+            # Tab o semicolon: probabilmente formato europeo con virgola decimale
+            return pd.read_csv(csv_file, encoding=encoding, decimal=',', sep=best_separator)
+        else:
+            # Virgola o pipe: formato standard
+            return pd.read_csv(csv_file, encoding=encoding, sep=best_separator)
+    else:
+        # Fallback: formato standard
+        return pd.read_csv(csv_file, encoding=encoding)
 
 # Try to import chardet for encoding detection
 try:
@@ -295,7 +316,20 @@ def validate_schema(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             if config.DEBUG_MODE:
                 st.write(f"  Converting {col}...")
+            
+            # DEBUG SPECIALE per Buy Box
+            if col == 'Buy Box 🚚: Current':
+                if config.DEBUG_MODE:
+                    sample_values = df[col].head(3).tolist()
+                    st.write(f"    Buy Box sample values BEFORE conversion: {sample_values}")
+                
             df[col] = force_numeric_conversion(df[col])
+            
+            if col == 'Buy Box 🚚: Current':
+                if config.DEBUG_MODE:
+                    sample_values = df[col].head(3).tolist()
+                    st.write(f"    Buy Box sample values AFTER conversion: {sample_values}")
+                    st.write(f"    Buy Box data type: {df[col].dtype}")
         else:
             # CREA colonna mancante con default
             if config.DEBUG_MODE:
@@ -441,7 +475,8 @@ def load_data(uploaded_files: List[Any]) -> pd.DataFrame:
             all_data.append(df)
             
         except Exception as e:
-            st.error(f"Errore caricamento {uploaded_file.name}: {str(e)}")
+            error_msg = str(e)
+            st.error(f"Errore caricamento {uploaded_file.name}: {error_msg}")
             
             # Diagnosi specifica del tipo di errore
             if 'utf-8' in error_msg and 'decode' in error_msg:

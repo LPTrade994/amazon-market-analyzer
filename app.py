@@ -2855,43 +2855,113 @@ def main():
                 
                 # Basic filters (always visible) - moved to session state
                 st.markdown("**Filtri Base:**")
+                
+                # --- SYNC FUNCTIONS ---
+                def update_score_from_slider():
+                    st.session_state.temp_min_score = st.session_state.min_score_slider_widget
+                def update_score_from_input():
+                    st.session_state.temp_min_score = st.session_state.min_score_input_widget
+                
+                def update_roi_from_slider():
+                    st.session_state.temp_min_roi = st.session_state.min_roi_slider_widget
+                def update_roi_from_input():
+                    st.session_state.temp_min_roi = st.session_state.min_roi_input_widget
+
+                def update_dominance_from_slider():
+                    st.session_state.temp_max_dominance = st.session_state.max_dominance_slider_widget
+                def update_dominance_from_input():
+                    st.session_state.temp_max_dominance = st.session_state.max_dominance_input_widget
+
+                # Initialize temp states if not present (defaults to last applied filter or default)
+                if 'temp_min_score' not in st.session_state:
+                    st.session_state.temp_min_score = st.session_state.get('min_score_filter', 50)
+                if 'temp_min_roi' not in st.session_state:
+                    st.session_state.temp_min_roi = st.session_state.get('min_roi_filter', 10)
+                if 'temp_max_dominance' not in st.session_state:
+                    st.session_state.temp_max_dominance = st.session_state.get('max_amazon_dominance', 80)
+
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    min_score_filter = st.slider(
-                        "Min Opportunity Score",
-                        min_value=0,
-                        max_value=100,
-                        value=st.session_state.get('min_score_filter', 50),
-                        step=5,
-                        key='min_score_slider',
-                        help="Filter products by minimum opportunity score"
-                    )
-                    st.session_state.min_score_filter = min_score_filter
+                    st.markdown("**Min Opportunity Score**")
+                    c1_a, c1_b = st.columns([2, 1])
+                    with c1_a:
+                        st.slider(
+                            "Slider Score", # Label hidden via CSS usually or just ignored
+                            min_value=0,
+                            max_value=100,
+                            value=int(st.session_state.temp_min_score),
+                            step=5,
+                            key='min_score_slider_widget',
+                            on_change=update_score_from_slider,
+                            label_visibility="collapsed"
+                        )
+                    with c1_b:
+                        st.number_input(
+                            "Input Score",
+                            min_value=0,
+                            max_value=100,
+                            value=int(st.session_state.temp_min_score),
+                            step=5,
+                            key='min_score_input_widget',
+                            on_change=update_score_from_input,
+                            label_visibility="collapsed"
+                        )
+                    min_score_filter = st.session_state.temp_min_score
                 
                 with col2:
-                    min_roi_filter = st.slider(
-                        "Min Margine %",
-                        min_value=0,
-                        max_value=100,
-                        value=st.session_state.get('min_roi_filter', 10),
-                        step=5,
-                        key='min_roi_slider',
-                        help="Filter products by minimum margin percentage"
-                    )
-                    st.session_state.min_roi_filter = min_roi_filter
+                    st.markdown("**Min Margine %**")
+                    c2_a, c2_b = st.columns([2, 1])
+                    with c2_a:
+                        st.slider(
+                            "Slider Margine",
+                            min_value=0,
+                            max_value=100,
+                            value=int(st.session_state.temp_min_roi),
+                            step=5,
+                            key='min_roi_slider_widget',
+                            on_change=update_roi_from_slider,
+                            label_visibility="collapsed"
+                        )
+                    with c2_b:
+                        st.number_input(
+                            "Input Margine",
+                            min_value=0,
+                            max_value=100,
+                            value=int(st.session_state.temp_min_roi),
+                            step=5,
+                            key='min_roi_input_widget',
+                            on_change=update_roi_from_input,
+                            label_visibility="collapsed"
+                        )
+                    min_roi_filter = st.session_state.temp_min_roi
                 
                 with col3:
-                    max_amazon_dominance = st.slider(
-                        "Max Amazon Dominance %",
-                        min_value=0,
-                        max_value=100,
-                        value=st.session_state.get('max_amazon_dominance', 80),
-                        step=5,
-                        key='max_amazon_slider',
-                        help="Filter products by maximum Amazon buy box dominance"
-                    )
-                    st.session_state.max_amazon_dominance = max_amazon_dominance
+                    st.markdown("**Max Amazon Dominance %**")
+                    c3_a, c3_b = st.columns([2, 1])
+                    with c3_a:
+                        st.slider(
+                            "Slider Dominance",
+                            min_value=0,
+                            max_value=100,
+                            value=int(st.session_state.temp_max_dominance),
+                            step=5,
+                            key='max_dominance_slider_widget',
+                            on_change=update_dominance_from_slider,
+                            label_visibility="collapsed"
+                        )
+                    with c3_b:
+                        st.number_input(
+                            "Input Dominance",
+                            min_value=0,
+                            max_value=100,
+                            value=int(st.session_state.temp_max_dominance),
+                            step=5,
+                            key='max_dominance_input_widget',
+                            on_change=update_dominance_from_input,
+                            label_visibility="collapsed"
+                        )
+                    max_amazon_dominance = st.session_state.temp_max_dominance
                 
                 # Advanced filters (expandable) - moved to session state
                 with st.expander("⚙️ Filtri Dettagliati", expanded=False):
@@ -2904,7 +2974,6 @@ def main():
                             st.session_state.get('min_velocity', 30),
                             key='min_velocity_slider'
                         )
-                        st.session_state.min_velocity = min_velocity
                         
                         max_amazon_share = st.slider(
                             "Max Amazon Share %", 
@@ -2912,7 +2981,6 @@ def main():
                             st.session_state.get('max_amazon_share', 80),
                             key='max_amazon_share_slider'
                         )
-                        st.session_state.max_amazon_share = max_amazon_share
                     
                     with col2:
                         min_rating = st.slider(
@@ -2922,7 +2990,6 @@ def main():
                             0.1,
                             key='min_rating_slider'
                         )
-                        st.session_state.min_rating = min_rating
                         
                         max_return_rate = st.slider(
                             "Max Return Rate %", 
@@ -2930,7 +2997,6 @@ def main():
                             st.session_state.get('max_return_rate', 20),
                             key='max_return_rate_slider'
                         )
-                        st.session_state.max_return_rate = max_return_rate
                     
                     with col3:
                         only_historic_deals = st.checkbox(
@@ -2938,14 +3004,34 @@ def main():
                             value=st.session_state.get('only_historic_deals', False),
                             key='only_historic_checkbox'
                         )
-                        st.session_state.only_historic_deals = only_historic_deals
                         
                         only_prime_eligible = st.checkbox(
                             "Solo Prime Eligible",
                             value=st.session_state.get('only_prime_eligible', False),
                             key='only_prime_checkbox'
                         )
-                        st.session_state.only_prime_eligible = only_prime_eligible
+                        
+                        # Filtro prezzo di acquisto
+                        st.markdown("**💰 Prezzo di Acquisto:**")
+                        col3_1, col3_2 = st.columns(2)
+                        with col3_1:
+                            min_purchase_price = st.number_input(
+                                "Min €",
+                                min_value=0.0,
+                                max_value=10000.0,
+                                value=st.session_state.get('min_purchase_price', 0.0),
+                                step=10.0,
+                                key='min_purchase_price_input'
+                            )
+                        with col3_2:
+                            max_purchase_price = st.number_input(
+                                "Max €",
+                                min_value=0.0,
+                                max_value=10000.0,
+                                value=st.session_state.get('max_purchase_price', 1000.0),
+                                step=10.0,
+                                key='max_purchase_price_input'
+                            )
                 
                 # Target Countries Filter Section
                 st.markdown("**🌍 Mercati di Vendita:**")
@@ -2964,7 +3050,6 @@ def main():
                         key='target_countries_multiselect',
                         help="Seleziona i mercati dove vendere i prodotti"
                     )
-                    st.session_state.target_countries = target_countries
                     
                     # Informational message
                     if len(target_countries) == 5:
@@ -2982,15 +3067,12 @@ def main():
                     # Quick action buttons
                     if st.button("🇪🇺 Solo EU", help="Seleziona solo mercati EU (IT, DE, FR, ES)", key="eu_only_btn"):
                         st.session_state.target_countries = ['IT', 'DE', 'FR', 'ES']
-                        st.rerun()
                     
                     if st.button("🇮🇹 Italia", help="Solo mercato italiano", key="italy_only_btn"):
                         st.session_state.target_countries = ['IT']
-                        st.rerun()
                     
                     if st.button("🌍 Reset", help="Seleziona tutti i mercati", key="reset_countries_btn"):
                         st.session_state.target_countries = ['IT', 'DE', 'FR', 'ES', 'UK']
-                        st.rerun()
                 
                 # Bottone per applicare filtri
                 st.markdown("---")
@@ -3004,9 +3086,25 @@ def main():
                     )
                 
                 # Applicare filtri solo quando bottone premuto
-                if apply_filters or 'initial_load' not in st.session_state:
-                    st.session_state.initial_load = True
+                if apply_filters:
                     st.session_state.filters_applied = True
+                    
+                    # Salva tutti i valori correnti dei filtri nel session_state
+                    st.session_state.min_score_filter = min_score_filter
+                    st.session_state.min_roi_filter = min_roi_filter
+                    st.session_state.max_amazon_dominance = max_amazon_dominance
+                    st.session_state.min_velocity = min_velocity
+                    st.session_state.max_amazon_share = max_amazon_share
+                    st.session_state.min_rating = min_rating
+                    st.session_state.max_return_rate = max_return_rate
+                    st.session_state.only_historic_deals = only_historic_deals
+                    st.session_state.only_prime_eligible = only_prime_eligible
+                    st.session_state.target_countries = target_countries
+                    st.session_state.min_purchase_price = min_purchase_price
+                    st.session_state.max_purchase_price = max_purchase_price
+                elif 'filters_applied' not in st.session_state:
+                    # Solo al primo caricamento, inizializza come non applicati
+                    st.session_state.filters_applied = False
                 
                 # Apply all filters to the data - ONLY if filters have been applied
                 if st.session_state.filters_applied:
@@ -3023,10 +3121,26 @@ def main():
                     max_return_rate = st.session_state.get('max_return_rate', 20)
                     only_historic_deals = st.session_state.get('only_historic_deals', False)
                     only_prime_eligible = st.session_state.get('only_prime_eligible', False)
+                    min_purchase_price = st.session_state.get('min_purchase_price', 0.0)
+                    max_purchase_price = st.session_state.get('max_purchase_price', 1000.0)
                     
                     # Basic filters
                     filtered_routes = filtered_routes[filtered_routes['opportunity_score'] >= min_score_filter]
                     filtered_routes = filtered_routes[filtered_routes['roi'] >= min_roi_filter]
+                    
+                    # Purchase price filter
+                    if 'purchase_price' in filtered_routes.columns:
+                        if max_purchase_price > min_purchase_price:
+                            before_count = len(filtered_routes)
+                            filtered_routes = filtered_routes[
+                                (filtered_routes['purchase_price'] >= min_purchase_price) &
+                                (filtered_routes['purchase_price'] <= max_purchase_price)
+                            ]
+                            after_count = len(filtered_routes)
+                            if before_count != after_count:
+                                st.info(f"💰 Filtro prezzo applicato: {before_count} → {after_count} prodotti (€{min_purchase_price:.0f}-€{max_purchase_price:.0f})")
+                    else:
+                        st.warning("⚠️ Colonna 'purchase_price' non trovata per il filtro prezzi")
                     
                     # Target Countries Filter
                     target_countries_selected = st.session_state.get('target_countries', ['IT', 'DE', 'FR', 'ES', 'UK'])

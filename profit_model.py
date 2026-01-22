@@ -390,13 +390,17 @@ def find_best_routes_internal(df: pd.DataFrame, params: Dict[str, Any]) -> pd.Da
                 # CRITICAL: Use target market price if available
                 target_price = None
                 if target_market in [m.lower() for m in available_markets]:
-                    # ASIN disponibile anche nel mercato target - usa prezzo reale
+                    # ASIN disponibile anche nel mercato target - usa Buy Box come prezzo di vendita di riferimento
                     target_row = group[group['source_market'] == target_market].iloc[0]
-                    target_price = select_purchase_price(target_row, params['purchase_strategy'])
+                    scenario = params.get('scenario', 'current')
+                    target_price = select_target_price(target_row, target_market, scenario)
                 else:
-                    # ASIN NON disponibile nel target - stima prezzo con markup
+                    # ASIN NON disponibile nel target - stima Buy Box del mercato target
+                    # Usa il Buy Box del mercato source come base, non il prezzo di acquisto
+                    scenario = params.get('scenario', 'current')
+                    source_buybox_price = select_target_price(source_row, source_market.lower(), scenario)
                     markup = CROSS_MARKET_MARKUP.get(target_market, 1.05)
-                    target_price = source_price * markup
+                    target_price = source_buybox_price * markup
                 
                 if DEBUG_MODE and processed_asins <= 1:
                     st.write(f"    Route {source_market}->{target_market}: source €{source_price}, target €{target_price}")

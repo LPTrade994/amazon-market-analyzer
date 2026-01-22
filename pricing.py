@@ -87,6 +87,7 @@ def select_purchase_price(row: pd.Series, strategy: str) -> float:
 def select_target_price(row: pd.Series, target_locale: str, scenario: str) -> float:
     """
     Select target selling price based on locale and scenario.
+    ALWAYS uses Buy Box as the primary reference price to beat.
     
     Args:
         row: DataFrame row containing price data
@@ -94,27 +95,33 @@ def select_target_price(row: pd.Series, target_locale: str, scenario: str) -> fl
         scenario: Pricing scenario ('conservative', 'aggressive', 'current')
         
     Returns:
-        float: Target selling price
+        float: Target selling price (always based on Buy Box)
     """
-    # Primary price columns to check based on target locale
-    price_columns = [
-        'Buy Box 🚚: Current',
-        'Amazon: Current', 
-        'New FBA: Current',
-        'New FBM: Current'
-    ]
+    # SEMPRE utilizza Buy Box come prezzo di riferimento primario
+    # Questo è il prezzo da battere nel paese di riferimento
+    buy_box_column = 'Buy Box 🚚: Current'
     
-    # Find first available price
-    base_price = 0.0
-    for col in price_columns:
-        if col in row.index and pd.notna(row[col]) and row[col] > 0:
-            base_price = float(row[col])
-            break
+    # Controlla se il Buy Box è disponibile
+    if buy_box_column in row.index and pd.notna(row[buy_box_column]) and row[buy_box_column] > 0:
+        base_price = float(row[buy_box_column])
+    else:
+        # Solo se Buy Box non è disponibile, usa fallback in ordine di priorità
+        fallback_columns = [
+            'Amazon: Current', 
+            'New FBA: Current',
+            'New FBM: Current'
+        ]
+        
+        base_price = 0.0
+        for col in fallback_columns:
+            if col in row.index and pd.notna(row[col]) and row[col] > 0:
+                base_price = float(row[col])
+                break
     
     if base_price <= 0:
         return 0.0
     
-    # Apply scenario adjustment
+    # Apply scenario adjustment to the Buy Box reference price
     price = base_price
     if price > 0:
         if scenario.lower() == 'short':
